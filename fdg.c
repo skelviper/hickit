@@ -3,13 +3,29 @@
 #include <assert.h>
 #include <stdio.h>
 #include <math.h>
+#include <time.h>
+#include <sys/time.h>
 #include "hkpriv.h"
 #include "krng.h"
 #include "ksort.h"
 #include "kavl.h"
 #include "khash.h"
+#include "fdg_gpu.h"
 
 KHASH_INIT(set64, uint64_t, char, 0, hash64, kh_int64_hash_equal)
+
+static double hk_wtime(void)
+{
+#if defined(_POSIX_TIMERS) && defined(CLOCK_MONOTONIC)
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec + ts.tv_nsec * 1e-9;
+#else
+	struct timeval tv;
+	gettimeofday(&tv, 0);
+	return tv.tv_sec + tv.tv_usec * 1e-6;
+#endif
+}
 
 struct fdg_coor {
 	fvec3_t x;
@@ -28,6 +44,48 @@ KAVL_INIT(cy, struct avl_coor, head, cy_cmp)
 
 #define cx_lt(a, b) ((a).x[0] < (b).x[0])
 KSORT_INIT(cx, struct avl_coor, cx_lt)
+
+/********************
+ * GPU pair buffer  *
+ ********************/
+
+struct hk_fdg_pair_buffer {
+	struct hk_fdg_gpu_pair *a;
+	size_t n, m;
+	uint32_t totals[HK_FDG_PAIR_TYPE_COUNT];
+};
+
+static void fdg_pair_buffer_init(struct hk_fdg_pair_buffer *buf)
+{
+	memset(buf, 0, sizeof(*buf));
+}
+
+static int fdg_pair_buffer_push(struct hk_fdg_pair_buffer *buf, int32_t i, int32_t j, float k, float d_scale, uint8_t type)
+{
+	if (type >= HK_FDG_PAIR_TYPE_COUNT) return -1;
+	if (buf->n == buf->m) {
+		size_t new_m = buf->m? buf->m << 1 : 256;
+		void *tmp = realloc(buf->a, new_m * sizeof(*buf->a));
+		if (tmp == 0) return -1;
+		buf->a = (struct hk_fdg_gpu_pair*)tmp;
+		buf->m = new_m;
+	}
+	buf->a[buf->n].i = i;
+	buf->a[buf->n].j = j;
+	buf->a[buf->n].k = k;
+	buf->a[buf->n].d_scale = d_scale;
+	buf->a[buf->n].type = type;
+	buf->a[buf->n].pad[0] = buf->a[buf->n].pad[1] = buf->a[buf->n].pad[2] = 0;
+	++buf->n;
+	++buf->totals[type];
+	return 0;
+}
+
+static void fdg_pair_buffer_destroy(struct hk_fdg_pair_buffer *buf)
+{
+	free(buf->a);
+	memset(buf, 0, sizeof(*buf));
+}
 
 /*********************
  * Vector operations *
@@ -95,6 +153,7 @@ void hk_fdg_conf_init(struct hk_fdg_conf *opt)
 	opt->d_b1 = 0.1f, opt->d_b2 = 1.1f;
 	opt->d_c1 = 0.5f, opt->d_c2 = 1.5f, opt->d_c3 = 2.0f;
 	hk_fdg_cal_c(opt);
+	opt->backend = HK_FDG_BACKEND_AUTO;
 }
 
 /**********************
@@ -225,11 +284,11 @@ static inline float update_force(const struct hk_fdg_conf *conf, fvec3_t *x, int
 	return energy;
 }
 
-static double hk_fdg1(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t(set64) *h, float unit, int max_nei, int mid_dist, float rel_rep_k, int iter, fvec3_t *x0)
+static double hk_fdg1_cpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t(set64) *h, float unit, int max_nei, int mid_dist, float rel_rep_k, int iter, fvec3_t *x0, double start_time)
 {
 	const double a_third = 1.0 / 3.0;
 	int32_t i, j, n_y, left, n_bb = 0, n_rep = 0, n_con = 0;
-	struct avl_coor *y, *root = 0;
+	struct avl_coor *y = 0, *root = 0;
 	fvec3_t *f, *x = m->x;
 	double sum = 0.0, e_bb = 0.0, e_con = 0.0, e_rep = 0.0, d_bb = 0.0, d_con = 0.0, d_rep = 0.0;
 	float step, rep_radius, dist;
@@ -333,10 +392,104 @@ static double hk_fdg1(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t(
 	sum = sqrt(sum / m->n_beads);
 	e_bb /= n_bb, e_con /= n_con, e_rep /= n_rep;
 	d_bb /= n_bb, d_con /= n_con, d_rep /= n_rep;
-	if (hk_verbose >= 3 && (iter + 1) % 10 == 0)
-		fprintf(stderr, "[M::%s] iter:%d rep_coef:%.4f RMS_force:%.4f n_rep:%.4f energy:%.4f,%.4f,%.4f dist:%.4f,%.4f,%.4f\n",
-				__func__, iter+1, rel_rep_k, sum, (float)n_rep / m->n_beads, e_bb, e_con, e_rep, d_bb, d_con, d_rep);
+	if (hk_verbose >= 3 && (iter + 1) % 10 == 0) {
+		double elapsed = hk_wtime() - start_time;
+		fprintf(stderr, "[M::%s] iter:%d elapsed:%.2fs rep_coef:%.4f RMS_force:%.4f n_rep:%.4f energy:%.4f,%.4f,%.4f dist:%.4f,%.4f,%.4f\n",
+				__func__, iter+1, elapsed, rel_rep_k, sum, (float)n_rep / m->n_beads, e_bb, e_con, e_rep, d_bb, d_con, d_rep);
+	}
 	return sum;
+}
+
+static int hk_fdg1_gpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t(set64) *h, float unit, int max_nei, int mid_dist, float rel_rep_k, int iter, struct hk_fdg_gpu_ctx *gpu_ctx, double start_time, double *rms_force)
+{
+	const double a_third = 1.0 / 3.0;
+	int32_t i, j, n_bb = 0, n_con = 0;
+	struct hk_fdg_pair_buffer buf;
+	struct hk_fdg_gpu_stats stats;
+	float rep_radius = opt->d_r;
+	int ret = -1;
+	int need_build = gpu_ctx? (hk_fdg_gpu_pairs_ready(gpu_ctx) == 0) : 0;
+	uint32_t pair_totals[HK_FDG_PAIR_TYPE_COUNT];
+
+	(void)h;
+	assert(rms_force);
+	memset(&stats, 0, sizeof(stats));
+	struct hk_fdg_conf opt_gpu = *opt;
+	opt_gpu.step = opt->step * pow(m->n_beads / 1500.0, a_third);
+
+	if (need_build)
+		fdg_pair_buffer_init(&buf);
+
+	/* Attractive forces: backbone */
+	if (need_build) {
+		for (i = 0; i < m->d->n; ++i) {
+			int32_t off = m->offcnt[i] >> 32;
+			int32_t cnt = (int32_t)m->offcnt[i];
+			for (j = 1; j < cnt; ++j) {
+				int32_t bid = off + j;
+				int32_t d = ((m->beads[bid-1].en - m->beads[bid-1].st) + (m->beads[bid].en - m->beads[bid].st)) / 2;
+				float d_opt = pow((double)d / mid_dist, a_third);
+				if (fdg_pair_buffer_push(&buf, bid - 1, bid, 1.0f, d_opt, HK_FDG_PAIR_TYPE_BACKBONE) != 0)
+					goto cleanup;
+			}
+		}
+	}
+
+	/* Attractive forces: contacts */
+	if (need_build) {
+		for (i = 0; i < m->n_pairs; ++i) {
+			const struct hk_bpair *p = &m->pairs[i];
+			float k, d_scale;
+			if (p->bid[0] == p->bid[1]) continue;
+			k = p->max_nei >= max_nei? 1.0f : powf((double)p->max_nei / max_nei, a_third);
+			d_scale = pow(p->n, -a_third);
+			if (fdg_pair_buffer_push(&buf, p->bid[0], p->bid[1], k, d_scale, HK_FDG_PAIR_TYPE_CONTACT) != 0)
+				goto cleanup;
+		}
+	}
+
+	size_t pair_count;
+	const struct hk_fdg_gpu_pair *pair_data;
+	if (need_build) {
+		for (i = 0; i < HK_FDG_PAIR_TYPE_COUNT; ++i)
+			pair_totals[i] = buf.totals[i];
+		pair_count = buf.n;
+		pair_data = buf.a;
+	} else {
+		pair_count = hk_fdg_gpu_get_active_pairs(gpu_ctx);
+		pair_data = 0;
+		hk_fdg_gpu_get_pair_totals(gpu_ctx, pair_totals);
+	}
+
+	if (hk_fdg_gpu_compute(gpu_ctx, &opt_gpu, pair_data, pair_count, unit, rel_rep_k, rep_radius, &stats, rms_force) != 0)
+		goto cleanup;
+	if (need_build) {
+		hk_fdg_gpu_set_pair_totals(gpu_ctx, pair_totals);
+	}
+
+	if (hk_verbose >= 3 && (iter + 1) % 10 == 0) {
+		if (!need_build)
+			hk_fdg_gpu_get_pair_totals(gpu_ctx, pair_totals);
+		n_bb = pair_totals[HK_FDG_PAIR_TYPE_BACKBONE];
+		n_con = pair_totals[HK_FDG_PAIR_TYPE_CONTACT];
+		double e_bb = n_bb? stats.energy[HK_FDG_PAIR_TYPE_BACKBONE] / n_bb : 0.0;
+		double e_con = n_con? stats.energy[HK_FDG_PAIR_TYPE_CONTACT] / n_con : 0.0;
+		double e_rep = stats.active[HK_FDG_PAIR_TYPE_REPEL]? stats.energy[HK_FDG_PAIR_TYPE_REPEL] / stats.active[HK_FDG_PAIR_TYPE_REPEL] : 0.0;
+		double d_bb = n_bb? stats.dist_sum[HK_FDG_PAIR_TYPE_BACKBONE] / n_bb : 0.0;
+		double d_con = n_con? stats.dist_sum[HK_FDG_PAIR_TYPE_CONTACT] / n_con : 0.0;
+		double d_rep = stats.active[HK_FDG_PAIR_TYPE_REPEL]? stats.dist_sum[HK_FDG_PAIR_TYPE_REPEL] / stats.active[HK_FDG_PAIR_TYPE_REPEL] : 0.0;
+		float rep_per_bead = m->n_beads? (float)stats.active[HK_FDG_PAIR_TYPE_REPEL] / m->n_beads : 0.0f;
+		double elapsed = hk_wtime() - start_time;
+		fprintf(stderr, "[M::%s] iter:%d elapsed:%.2fs rep_coef:%.4f RMS_force:%.4f n_rep:%.4f energy:%.4f,%.4f,%.4f dist:%.4f,%.4f,%.4f\n",
+				__func__, iter + 1, elapsed, rel_rep_k, (float)(*rms_force), rep_per_bead,
+				(float)e_bb, (float)e_con, (float)e_rep, (float)d_bb, (float)d_con, (float)d_rep);
+	}
+	ret = 0;
+
+cleanup:
+	if (need_build)
+		fdg_pair_buffer_destroy(&buf);
+	return ret;
 }
 
 void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bmap *src, krng_t *rng)
@@ -347,6 +500,12 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 	fvec3_t *best_x, *x0;
 	double best = 1e30;
 	float unit;
+	struct hk_fdg_gpu_ctx *gpu_ctx = 0;
+	int use_gpu = 0;
+	enum hk_fdg_backend backend = opt->backend;
+
+	if (backend != HK_FDG_BACKEND_CPU && backend != HK_FDG_BACKEND_GPU && backend != HK_FDG_BACKEND_AUTO)
+		backend = HK_FDG_BACKEND_AUTO;
 
 	// collect attractive pairs
 	h = kh_init(set64);
@@ -362,6 +521,19 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 		const struct hk_bpair *p = &m->pairs[i];
 		kh_put(set64, h, (uint64_t)p->bid[0] << 32 | p->bid[1], &absent);
 		kh_put(set64, h, (uint64_t)p->bid[1] << 32 | p->bid[0], &absent);
+	}
+
+	size_t n_block_keys = 0;
+	for (khint_t k = kh_begin(h); k != kh_end(h); ++k)
+		if (kh_exist(h, k))
+			++n_block_keys;
+	uint64_t *block_keys = 0;
+	if (n_block_keys) {
+		block_keys = MALLOC(uint64_t, n_block_keys);
+		size_t idx = 0;
+		for (khint_t k = kh_begin(h); k != kh_end(h); ++k)
+			if (kh_exist(h, k))
+				block_keys[idx++] = kh_key(h, k);
 	}
 
 	// figure out max_nei
@@ -385,18 +557,68 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 	}
 	m->unit = unit;
 
+	// prepare GPU backend if requested
+	if (backend == HK_FDG_BACKEND_GPU || backend == HK_FDG_BACKEND_AUTO) {
+		if (hk_fdg_gpu_is_available()) {
+			gpu_ctx = hk_fdg_gpu_create(m->n_beads);
+			if (gpu_ctx) {
+				if (hk_fdg_gpu_prepare(gpu_ctx, m->n_beads, n_block_keys) != 0 ||
+					hk_fdg_gpu_upload_positions(gpu_ctx, (const fvec3_t*)m->x, m->n_beads) != 0 ||
+					hk_fdg_gpu_set_blocklist(gpu_ctx, block_keys, n_block_keys) != 0) {
+					if (hk_verbose >= 1)
+						fprintf(stderr, "[W::%s] GPU setup failed; falling back to CPU backend.\n", __func__);
+					hk_fdg_gpu_destroy(gpu_ctx);
+					gpu_ctx = 0;
+				} else {
+					use_gpu = 1;
+					if (hk_verbose >= 2)
+						fprintf(stderr, "[I::%s] GPU backend enabled (%d beads).\n", __func__, m->n_beads);
+				}
+			} else if (backend == HK_FDG_BACKEND_GPU && hk_verbose >= 1) {
+				fprintf(stderr, "[W::%s] GPU backend requested but initialization failed; falling back to CPU.\n", __func__);
+			}
+		} else if (backend == HK_FDG_BACKEND_GPU && hk_verbose >= 1) {
+			fprintf(stderr, "[W::%s] GPU backend requested but not available; falling back to CPU.\n", __func__);
+		}
+	}
+
 	// FDG
 	best_x = CALLOC(fvec3_t, m->n_beads);
 	x0 = CALLOC(fvec3_t, m->n_beads);
 	memcpy(x0, m->x, m->n_beads * sizeof(fvec3_t));
+	memcpy(best_x, m->x, m->n_beads * sizeof(fvec3_t));
+	double start_time = hk_wtime();
 	for (iter = 0; iter < opt->n_iter; ++iter) {
 		double s, rel_rep_k;
 		rel_rep_k = (double)(iter + 1) / opt->n_iter;
 		rel_rep_k = 1.0 / (1.0 + exp(-alpha * (rel_rep_k - turning)));
 		//rel_rep_k = 1.0;
-		s = hk_fdg1(opt, m, h, unit, max_nei, mid_dist, rel_rep_k, iter, x0);
+		if (use_gpu) {
+			double s_gpu = 0.0;
+			if (hk_fdg1_gpu(opt, m, h, unit, max_nei, mid_dist, rel_rep_k, iter, gpu_ctx, start_time, &s_gpu) == 0) {
+				s = s_gpu;
+			} else {
+				if (hk_verbose >= 1)
+					fprintf(stderr, "[W::%s] GPU iteration failed at iter %d; switching to CPU backend.\n", __func__, iter + 1);
+				if (hk_fdg_gpu_download_positions(gpu_ctx, m->x, m->n_beads) == 0)
+					memcpy(x0, m->x, sizeof(fvec3_t) * m->n_beads);
+				hk_fdg_gpu_destroy(gpu_ctx);
+				gpu_ctx = 0;
+				use_gpu = 0;
+				s = hk_fdg1_cpu(opt, m, h, unit, max_nei, mid_dist, rel_rep_k, iter, x0, start_time);
+			}
+		} else {
+			s = hk_fdg1_cpu(opt, m, h, unit, max_nei, mid_dist, rel_rep_k, iter, x0, start_time);
+		}
 		if (s < best) {
-			memcpy(best_x, m->x, sizeof(fvec3_t) * m->n_beads);
+			if (use_gpu) {
+				if (hk_fdg_gpu_download_positions(gpu_ctx, best_x, m->n_beads) != 0) {
+					if (hk_verbose >= 1)
+						fprintf(stderr, "[W::%s] failed to download GPU coordinates for best state.\n", __func__);
+				}
+			} else {
+				memcpy(best_x, m->x, sizeof(fvec3_t) * m->n_beads);
+			}
 			best = s;
 		}
 	}
@@ -404,6 +626,8 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 	memcpy(m->x, best_x, sizeof(fvec3_t) * m->n_beads);
 	free(x0);
 	free(best_x);
+	if (gpu_ctx) hk_fdg_gpu_destroy(gpu_ctx);
+	if (block_keys) free(block_keys);
 }
 
 int32_t hk_pair_flt_3d(const struct hk_bmap *m, int32_t n_pairs, struct hk_pair *pairs, float max_factor)

@@ -61,6 +61,34 @@ Hickit depends on [zlib][zlib]. The command-line tools can be compiled by
 typing `make` in the source code directory. The 3D viewer further requires
 OpenGL and GLUT and can be compiled with `make gl=1`.
 
+To enable the GPU-accelerated force-directed graph backend, compile with the
+CUDA toolkit by running `make gpu=1`. This expects `nvcc` in `PATH` and links
+against `libcudart`. The command-line switch `--fdg-backend=cpu|gpu|auto`
+selects the runtime backend (default: `auto`, which prefers GPU when compiled
+with CUDA and a device is available).
+
+### Benchmarking CPU vs GPU
+
+Use the provided Snakemake workflow to launch parallel benchmarking runs across
+multiple seeds and both backends:
+
+```sh
+snakemake --cores 10
+```
+
+Configuration lives in `config/fdg_benchmark.yaml`.  Adjust the Hickit binary
+path, input pairs file, and seeds/backends as needed.  Each run generates
+intermediate `.3dg` files down to 20kb resolution as well as a `benchmark.tsv`
+with timing statistics.  After the workflow finishes, summarize the results via:
+
+```sh
+python scripts/summarize_fdg_benchmark.py fdg_benchmark_runs
+```
+
+The existing `scripts/fdg_benchmark.py` can still be used for ad-hoc serial
+runs, but the Snakemake pipeline ensures all ten benchmark tasks start
+concurrently when you request sufficient cores.
+
 ## <a name="guide"></a>Users' Guide
 
 Hickit keeps one list of contacts and sometimes one 3D structure in memory. It

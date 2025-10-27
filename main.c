@@ -41,6 +41,7 @@ static struct option long_options[] = {
 	{ "val-radius",     required_argument, 0, 0 },   // 20
 	{ "dbg-val",        no_argument,       0, 0 },   // 21
 	{ "all-close-leg",  no_argument,       0, 0 },   // 22
+	{ "fdg-backend",    required_argument, 0, 0 },   // 23
 	{ 0, 0, 0, 0}
 };
 
@@ -100,7 +101,10 @@ int main(int argc, char *argv[])
 		if (c == 'i') {
 			if (m) hk_map_destroy(m);
 			m = hk_map_read(optarg);
-			assert(m);
+			if (m == 0) {
+				fprintf(stderr, "[E::%s] failed to read pairs/segment file: %s\n", __func__, optarg);
+				return 1;
+			}
 			if (ploidy == 2) hk_map_phase_male_XY(m);
 			if (m->pairs == 0 && m->segs)
 				m->pairs = hk_seg2pair(m->n_segs, m->segs, min_leg_dist, max_seg, min_mapq, &m->n_pairs, all_close_leg);
@@ -229,7 +233,16 @@ int main(int argc, char *argv[])
 			else if (long_idx == 18) loop_min_q = atof(optarg); // --loop-q
 			else if (long_idx == 20) imput_val_radius = hk_parse_num(optarg, 0); // --val-radius
 			else if (long_idx == 21) hk_dbg_flag |= HK_DBG_VAL; // --dbg-val
-			else if (long_idx == 22) all_close_leg = 1; // --dbg-val
+			else if (long_idx == 22) all_close_leg = 1; // --all-close-leg
+			else if (long_idx == 23) { // --fdg-backend
+				if (strcmp(optarg, "cpu") == 0) fdg_opt.backend = HK_FDG_BACKEND_CPU;
+				else if (strcmp(optarg, "gpu") == 0) fdg_opt.backend = HK_FDG_BACKEND_GPU;
+				else if (strcmp(optarg, "auto") == 0) fdg_opt.backend = HK_FDG_BACKEND_AUTO;
+				else {
+					fprintf(stderr, "[E::%s] unknown FDG backend '%s' (expected cpu|gpu|auto)\n", __func__, optarg);
+					return 1;
+				}
+			}
 			else if (long_idx ==  4) { // --out-seg
 				assert(m && m->segs);
 				fp = strcmp(optarg, "-") == 0? stdout : fopen(optarg, "w");
@@ -349,6 +362,7 @@ int main(int argc, char *argv[])
 		fprintf(fp, "    -k FLOAT            relative repulsive stiffness [%g]\n", fdg_opt.k_rel_rep);
 		fprintf(fp, "    -R FLOAT            relative repulsive radius [%g]\n", fdg_opt.d_r);
 		fprintf(fp, "    -M                  do not merge beads that have no contacts\n");
+		fprintf(fp, "    --fdg-backend=STR   choose FDG backend: cpu, gpu, or auto [auto]\n");
 #ifdef HAVE_GL
 		fprintf(fp, "  3D viewing:\n");
 		fprintf(fp, "    --line-width=FLOAT  line width [%g]\n", v3d_opt.line_width);

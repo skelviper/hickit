@@ -1,11 +1,16 @@
 CFLAGS=		-g -Wall -O2 -Wc++-compat -ffast-math
 CPPFLAGS=
 INCLUDES=
-OBJS=		sdict.o io.o pair.o count.o phase.o bin.o fdg.o image.o view3d.o
+OBJS=		sdict.o io.o pair.o count.o phase.o bin.o fdg.o image.o view3d.o fdg_gpu_stub.o
 PROG=		hickit
 LIBS=		-lm -lz
 LIBS_GL=
 ASAN_FLAG=
+CUDA_OBJS=
+CXX?=		g++
+LINK?=		$(CC)
+NVCC?=		nvcc
+CUDAFLAGS?=	-O3 -std=c++17
 
 ifneq ($(asan),)
 	ASAN_FLAG = -fsanitize=address
@@ -21,16 +26,26 @@ ifneq ($(gl),)
 	endif
 endif
 
+ifeq ($(gpu),1)
+	OBJS := $(filter-out fdg_gpu_stub.o,$(OBJS))
+	CUDA_OBJS = fdg_gpu.o
+	LIBS += -lcudart -lstdc++
+	LINK = $(CXX)
+endif
+
 .PHONY:all clean depend
-.SUFFIXES:.c .o
+.SUFFIXES:.c .o .cu
 
 .c.o:
 		$(CC) -c $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) $< -o $@
 
+.cu.o:
+		$(NVCC) $(CUDAFLAGS) $(CPPFLAGS) -I. $(INCLUDES) -c $< -o $@
+
 all:$(PROG)
 
-hickit:$(OBJS) main.o
-		$(CC) -o $@ $^ $(ASAN_FLAG) $(LIBS_GL) $(LIBS)
+hickit:$(OBJS) $(CUDA_OBJS) main.o
+		$(LINK) -o $@ $^ $(ASAN_FLAG) $(LIBS_GL) $(LIBS)
 
 clean:
 		rm -fr gmon.out *.o a.out $(PROG) *.a *.dSYM hickit.aux hickit.log hickit.pdf
@@ -50,3 +65,5 @@ pair.o: hkpriv.h hickit.h krng.h ksort.h
 phase.o: hkpriv.h hickit.h krng.h ksort.h
 sdict.o: hkpriv.h hickit.h krng.h khash.h
 view3d.o: hkpriv.h hickit.h krng.h
+fdg_gpu_stub.o: fdg_gpu.h hickit.h
+fdg_gpu.o: fdg_gpu.h hickit.h

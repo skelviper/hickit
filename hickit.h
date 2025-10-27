@@ -84,6 +84,12 @@ struct hk_bmap {
 	float *feat;
 };
 
+enum hk_fdg_backend {
+	HK_FDG_BACKEND_CPU = 0,
+	HK_FDG_BACKEND_GPU = 1,
+	HK_FDG_BACKEND_AUTO = 2
+};
+
 struct hk_fdg_conf {
 	float target_radius;
 	int n_iter;
@@ -97,6 +103,7 @@ struct hk_fdg_conf {
 	float d_c1, d_c2, d_c3;
 
 	float c_c1, c_c2;
+	enum hk_fdg_backend backend;
 };
 
 struct hk_v3d_opt {
