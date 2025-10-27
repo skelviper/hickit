@@ -21,8 +21,6 @@ struct hk_gpu_vec3_t {
 
 static_assert(sizeof(hk_gpu_vec3_t) == sizeof(fvec3_t), "GPU vector size mismatch");
 
-#define FDG_REP_SMEM_BUCKETS 1024
-
 struct hk_fdg_gpu_ctx {
 	int32_t n_beads;
 	size_t bead_capacity;
@@ -203,7 +201,7 @@ __global__ static void init_bounds_kernel(float *bounds)
 	}
 }
 
-__global__ static void bounds_kernel(const hk_gpu_vec3_t *pos, int32_t n, float *bounds)
+__global__ static void bounds_kernel(const hk_gpu_vec3_t *__restrict__ pos, int32_t n, float *__restrict__ bounds)
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx >= n) return;
@@ -216,10 +214,10 @@ __global__ static void bounds_kernel(const hk_gpu_vec3_t *pos, int32_t n, float 
 	atomicMaxFloat(&bounds[5], p.z);
 }
 
-__global__ static void fdg_prepare_grid_kernel(const float *bounds,
+__global__ static void fdg_prepare_grid_kernel(const float *__restrict__ bounds,
 											   float unit,
 											   float rep_radius,
-											   float4 *grid_params)
+											   float4 *__restrict__ grid_params)
 {
 	if (threadIdx.x == 0 && blockIdx.x == 0) {
 		float cell_size = unit * rep_radius;
@@ -247,12 +245,12 @@ __global__ static void insert_block_keys_kernel(uint64_t *table, uint32_t mask, 
 }
 
 
-__global__ static void fdg_insert_beads_kernel(const hk_gpu_vec3_t *pos,
+__global__ static void fdg_insert_beads_kernel(const hk_gpu_vec3_t *__restrict__ pos,
 							   int32_t n_beads,
-							   const float4 *grid_params,
-							   uint64_t *cell_hash_keys,
-							   int *cell_heads,
-							   int *bead_next,
+							   const float4 *__restrict__ grid_params,
+							   uint64_t *__restrict__ cell_hash_keys,
+							   int *__restrict__ cell_heads,
+							   int *__restrict__ bead_next,
 							   uint32_t cell_hash_mask)
 {
 	const uint64_t EMPTY_KEY = 0xffffffffffffffffULL;
@@ -287,13 +285,13 @@ __global__ static void fdg_insert_beads_kernel(const hk_gpu_vec3_t *pos,
 	}
 }
 
-__global__ static void fdg_force_kernel(const hk_gpu_vec3_t *pos,
-										hk_gpu_vec3_t *force,
-										const struct hk_fdg_gpu_pair *pairs,
+__global__ static void fdg_force_kernel(const hk_gpu_vec3_t *__restrict__ pos,
+										hk_gpu_vec3_t *__restrict__ force,
+										const struct hk_fdg_gpu_pair *__restrict__ pairs,
 										size_t n_pairs,
 										struct hk_fdg_conf opt,
 										float unit,
-										struct hk_fdg_gpu_stats *stats,
+										struct hk_fdg_gpu_stats *__restrict__ stats,
 										int32_t n_beads)
 {
 	size_t idx = blockIdx.x * (size_t)blockDim.x + threadIdx.x;
@@ -371,33 +369,23 @@ __global__ static void fdg_force_kernel(const hk_gpu_vec3_t *pos,
 	}
 }
 
-__global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *pos,
-							 hk_gpu_vec3_t *force,
+__global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ pos,
+							 hk_gpu_vec3_t *__restrict__ force,
 							 int32_t n_beads,
 							 float unit,
 							 float rep_radius,
 							 float k_rep,
-							 const uint64_t *cell_hash_keys,
-							 const int *cell_hash_vals,
-							 const int *bead_next,
+							 const uint64_t *__restrict__ cell_hash_keys,
+							 const int *__restrict__ cell_hash_vals,
+							 const int *__restrict__ bead_next,
 							 uint32_t cell_hash_mask,
-							 const uint64_t *block_table,
+							 const uint64_t *__restrict__ block_table,
 							 uint32_t block_mask,
-							 struct hk_fdg_gpu_stats *stats,
-							 const float4 *grid_params)
+							 struct hk_fdg_gpu_stats *__restrict__ stats,
+							 const float4 *__restrict__ grid_params)
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx >= n_beads) return;
-
-	extern __shared__ unsigned char smem[];
-	int *bucket_keys = reinterpret_cast<int*>(smem);
-	hk_gpu_vec3_t *bucket_vals = reinterpret_cast<hk_gpu_vec3_t*>(bucket_keys + FDG_REP_SMEM_BUCKETS);
-
-	for (int t = threadIdx.x; t < FDG_REP_SMEM_BUCKETS; t += blockDim.x) {
-		bucket_keys[t] = -1;
-		bucket_vals[t].x = bucket_vals[t].y = bucket_vals[t].z = 0.0f;
-	}
-	__syncthreads();
 
 	hk_gpu_vec3_t pi = pos[idx];
 	float fx_acc = 0.0f;
@@ -457,25 +445,27 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *pos,
 					fy_acc += fy;
 					fz_acc += fz;
 
-					unsigned int slot = (uint32_t(j) * 2654435761u) & (FDG_REP_SMEM_BUCKETS - 1);
-					bool inserted = false;
-					for (int attempt = 0; attempt < FDG_REP_SMEM_BUCKETS; ++attempt) {
-						int prev = atomicCAS(&bucket_keys[slot], -1, j);
-						if (prev == -1 || prev == j) {
-							atomicAdd(&bucket_vals[slot].x, -fx);
-							atomicAdd(&bucket_vals[slot].y, -fy);
-							atomicAdd(&bucket_vals[slot].z, -fz);
-							inserted = true;
-							break;
-						}
-						slot = (slot + 1) & (FDG_REP_SMEM_BUCKETS - 1);
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
+					float fx_other = -fx;
+					float fy_other = -fy;
+					float fz_other = -fz;
+					unsigned mask = __activemask();
+					unsigned match = __match_any_sync(mask, j);
+					float fx_total = __reduce_add_sync(match, fx_other);
+					float fy_total = __reduce_add_sync(match, fy_other);
+					float fz_total = __reduce_add_sync(match, fz_other);
+					int lane = threadIdx.x & 31;
+					int leader = __ffs(match) - 1;
+					if (lane == leader) {
+						atomicAdd(&force[j].x, fx_total);
+						atomicAdd(&force[j].y, fy_total);
+						atomicAdd(&force[j].z, fz_total);
 					}
-					if (!inserted) {
-						atomicAdd(&force[j].x, -fx);
-						atomicAdd(&force[j].y, -fy);
-						atomicAdd(&force[j].z, -fz);
-					}
-
+#else
+					atomicAdd(&force[j].x, -fx);
+					atomicAdd(&force[j].y, -fy);
+					atomicAdd(&force[j].z, -fz);
+#endif
 					energy_acc += energy;
 					dist_acc += dist_unit;
 					++active_cnt;
@@ -490,19 +480,6 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *pos,
 		atomicAdd(&force[idx].z, fz_acc);
 	}
 
-	__syncthreads();
-	for (int t = threadIdx.x; t < FDG_REP_SMEM_BUCKETS; t += blockDim.x) {
-		int key = bucket_keys[t];
-		if (key >= 0) {
-			hk_gpu_vec3_t val = bucket_vals[t];
-			if (val.x != 0.0f || val.y != 0.0f || val.z != 0.0f) {
-				atomicAdd(&force[key].x, val.x);
-				atomicAdd(&force[key].y, val.y);
-				atomicAdd(&force[key].z, val.z);
-			}
-		}
-	}
-
 	if (energy_acc != 0.0f)
 		atomicAdd(&stats->energy[HK_FDG_PAIR_TYPE_REPEL], energy_acc);
 	if (dist_acc != 0.0f)
@@ -511,14 +488,14 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *pos,
 		atomicAdd(&stats->active[HK_FDG_PAIR_TYPE_REPEL], active_cnt);
 }
 
-__global__ static void fdg_update_kernel(hk_gpu_vec3_t *pos,
-										 hk_gpu_vec3_t *prev_pos,
-										 hk_gpu_vec3_t *force,
+__global__ static void fdg_update_kernel(hk_gpu_vec3_t *__restrict__ pos,
+										 hk_gpu_vec3_t *__restrict__ prev_pos,
+										 hk_gpu_vec3_t *__restrict__ force,
 										 int32_t n_beads,
 										 float step,
 										 float coef_moment,
 										 float max_f,
-										 struct hk_fdg_gpu_stats *stats)
+										 struct hk_fdg_gpu_stats *__restrict__ stats)
 {
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx >= n_beads) return;
@@ -706,8 +683,7 @@ int hk_fdg_gpu_upload_positions(struct hk_fdg_gpu_ctx *ctx, const fvec3_t *pos_h
 	err = cudaMemsetAsync(ctx->d_force, 0, ctx->bead_capacity * sizeof(hk_gpu_vec3_t), ctx->stream);
 	if (hk_fdg_gpu_cuda_check(err, "zero force buffer") != 0)
 		return -1;
-	err = cudaStreamSynchronize(ctx->stream);
-	return hk_fdg_gpu_cuda_check(err, "sync position upload");
+	return 0;
 }
 
 int hk_fdg_gpu_download_positions(const struct hk_fdg_gpu_ctx *ctx, fvec3_t *pos_host, int32_t n_beads)
@@ -822,6 +798,12 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 
 	float rep_k = opt->k_rel_rep * rel_rep_k;
 	bool do_repulsion = (rep_radius > 0.0f && rep_k > 0.0f && n_beads > 1);
+	auto pick_thread_count = [](int count) -> int {
+		if (count >= 4096) return 256;
+		if (count >= 1024) return 128;
+		if (count >= 256) return 64;
+		return 32;
+	};
 	if (do_repulsion) {
 		init_bounds_kernel<<<1, 1, 0, ctx->stream>>>(ctx->d_bounds);
 		if (hk_fdg_gpu_check_last_error("init bounds kernel") != 0)
@@ -847,9 +829,9 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 			return -1;
 		uint32_t block_mask = ctx->block_table_cap ? (uint32_t)(ctx->block_table_cap - 1) : 0u;
 		float rep_radius_norm = rep_radius;
-		size_t smem_size = FDG_REP_SMEM_BUCKETS * (sizeof(int) + sizeof(hk_gpu_vec3_t));
-		int rep_blocks = div_up_int(n_beads, threads);
-		fdg_repulsion_kernel<<<rep_blocks, threads, smem_size, ctx->stream>>>(ctx->d_pos,
+		int rep_threads = pick_thread_count(n_beads);
+		int rep_blocks = div_up_int(n_beads, rep_threads);
+		fdg_repulsion_kernel<<<rep_blocks, rep_threads, 0, ctx->stream>>>(ctx->d_pos,
 							      ctx->d_force,
 							      n_beads,
 							      unit,
@@ -868,8 +850,9 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 	}
 
 	float step = opt->step * unit;
-	int update_blocks = div_up_int(n_beads, threads);
-	fdg_update_kernel<<<update_blocks, threads, 0, ctx->stream>>>(ctx->d_pos,
+	int update_threads = pick_thread_count(n_beads);
+	int update_blocks = div_up_int(n_beads, update_threads);
+	fdg_update_kernel<<<update_blocks, update_threads, 0, ctx->stream>>>(ctx->d_pos,
 																  ctx->d_prev_pos,
 																  ctx->d_force,
 																  n_beads,
