@@ -21,6 +21,25 @@ struct hk_gpu_vec3_t {
 
 static_assert(sizeof(hk_gpu_vec3_t) == sizeof(fvec3_t), "GPU vector size mismatch");
 
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 350
+#define FDG_LDG_FLOAT(ptr) __ldg(ptr)
+#define FDG_LDG_INT(ptr) __ldg(ptr)
+#define FDG_LDG_UINT64(ptr) __ldg(ptr)
+#else
+#define FDG_LDG_FLOAT(ptr) (*(ptr))
+#define FDG_LDG_INT(ptr) (*(ptr))
+#define FDG_LDG_UINT64(ptr) (*(ptr))
+#endif
+
+__device__ __forceinline__ hk_gpu_vec3_t fdg_load_vec3(const hk_gpu_vec3_t *__restrict__ pos, int idx)
+{
+	hk_gpu_vec3_t v;
+	v.x = FDG_LDG_FLOAT(&pos[idx].x);
+	v.y = FDG_LDG_FLOAT(&pos[idx].y);
+	v.z = FDG_LDG_FLOAT(&pos[idx].z);
+	return v;
+}
+
 struct hk_fdg_gpu_ctx {
 	int32_t n_beads;
 	size_t bead_capacity;
@@ -131,7 +150,7 @@ static __device__ __forceinline__ int fdg_cell_find_slot(const uint64_t *hash_ke
 	const uint64_t EMPTY_KEY = 0xffffffffffffffffULL;
 	uint32_t slot = uint32_t(fdg_hash64(key)) & mask;
 	for (uint32_t iter = 0; iter <= mask; ++iter) {
-		uint64_t stored = hash_keys[slot];
+		uint64_t stored = FDG_LDG_UINT64(&hash_keys[slot]);
 		if (stored == EMPTY_KEY) return -1;
 		if (stored == key) return slot;
 		slot = (slot + 1u) & mask;
@@ -181,7 +200,7 @@ __device__ static inline bool block_contains(const uint64_t *table, uint32_t mas
 {
 	uint32_t slot = uint32_t(fdg_hash64(key)) & mask;
 	for (uint32_t iter = 0; iter <= mask; ++iter) {
-		uint64_t stored = table[slot];
+		uint64_t stored = FDG_LDG_UINT64(&table[slot]);
 		if (stored == 0ULL) return false;
 		if (stored == key) return true;
 		slot = (slot + 1u) & mask;
@@ -387,7 +406,18 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx >= n_beads) return;
 
-	hk_gpu_vec3_t pi = pos[idx];
+	__shared__ float4 grid_shared;
+	if (threadIdx.x == 0)
+		grid_shared = grid_params[0];
+	__syncthreads();
+
+	float4 grid = grid_shared;
+	float inv_cell = grid.w;
+	if (inv_cell <= 0.0f)
+		return;
+	float3 origin = make_float3(grid.x, grid.y, grid.z);
+
+	hk_gpu_vec3_t pi = fdg_load_vec3(pos, idx);
 	float fx_acc = 0.0f;
 	float fy_acc = 0.0f;
 	float fz_acc = 0.0f;
@@ -395,15 +425,14 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 	float dist_acc = 0.0f;
 	uint32_t active_cnt = 0;
 
-	float4 grid = grid_params[0];
-	float inv_cell = grid.w;
-	if (inv_cell <= 0.0f)
-		return;
-	float3 origin = make_float3(grid.x, grid.y, grid.z);
+	const float inv_unit = 1.0f / unit;
+	const float rep_limit = rep_radius * unit;
+	const float rep_limit_sq = rep_limit * rep_limit;
+	const float two_k_rep = 2.0f * k_rep;
 
-	int cx = int(floorf((pi.x - origin.x) * inv_cell));
-	int cy = int(floorf((pi.y - origin.y) * inv_cell));
-	int cz = int(floorf((pi.z - origin.z) * inv_cell));
+	int cx = __float2int_rd((pi.x - origin.x) * inv_cell);
+	int cy = __float2int_rd((pi.y - origin.y) * inv_cell);
+	int cz = __float2int_rd((pi.z - origin.z) * inv_cell);
 	if (cx < 0) cx = 0;
 	if (cy < 0) cy = 0;
 	if (cz < 0) cz = 0;
@@ -418,29 +447,30 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 				uint64_t nkey = pack_cell(ncx, ncy, ncz);
 				int slot = fdg_cell_find_slot(cell_hash_keys, cell_hash_mask, nkey);
 				if (slot < 0) continue;
-				int head = cell_hash_vals[slot];
+				int head = FDG_LDG_INT(&cell_hash_vals[slot]);
 				while (head >= 0) {
 					int j = head;
-					head = bead_next[j];
+					head = FDG_LDG_INT(&bead_next[j]);
 					if (j <= idx) continue;
-					hk_gpu_vec3_t pj = pos[j];
+					hk_gpu_vec3_t pj = fdg_load_vec3(pos, j);
 					float dx2 = pi.x - pj.x;
 					float dy2 = pi.y - pj.y;
 					float dz2 = pi.z - pj.z;
 					float dist_sq = dx2 * dx2 + dy2 * dy2 + dz2 * dz2;
 					if (dist_sq == 0.0f) continue;
-					float dist = sqrtf(dist_sq);
-					float dist_unit = dist / unit;
-					if (dist_unit >= rep_radius) continue;
+					if (dist_sq >= rep_limit_sq) continue;
+					float inv_dist = rsqrtf(dist_sq);
+					float dist = dist_sq * inv_dist;
+					float dist_unit = dist * inv_unit;
 					uint64_t pair_key = (uint64_t(idx) << 32) | uint32_t(j);
 					if (block_table && block_contains(block_table, block_mask, pair_key)) continue;
 					float t = rep_radius - dist_unit;
 					float energy = k_rep * t * t;
-					float force_mag = 2.0f * k_rep * t;
-					float inv_dist = 1.0f / dist;
-					float fx = dx2 * inv_dist * force_mag;
-					float fy = dy2 * inv_dist * force_mag;
-					float fz = dz2 * inv_dist * force_mag;
+					float force_mag = two_k_rep * t;
+					float scale = force_mag * inv_dist;
+					float fx = dx2 * scale;
+					float fy = dy2 * scale;
+					float fz = dz2 * scale;
 					fx_acc += fx;
 					fy_acc += fy;
 					fz_acc += fz;
