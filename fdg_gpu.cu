@@ -40,6 +40,13 @@ __device__ __forceinline__ hk_gpu_vec3_t fdg_load_vec3(const hk_gpu_vec3_t *__re
 	return v;
 }
 
+__device__ __forceinline__ void fdg_store_vec3(hk_gpu_vec3_t *__restrict__ arr, int idx, float x, float y, float z)
+{
+	arr[idx].x = x;
+	arr[idx].y = y;
+	arr[idx].z = z;
+}
+
 struct hk_fdg_gpu_ctx {
 	int32_t n_beads;
 	size_t bead_capacity;
@@ -527,40 +534,63 @@ __global__ static void fdg_update_kernel(hk_gpu_vec3_t *__restrict__ pos,
 										 float max_f,
 										 struct hk_fdg_gpu_stats *__restrict__ stats)
 {
+	extern __shared__ double s_force_sq[];
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	if (idx >= n_beads) return;
+	int lane = threadIdx.x;
+	double force_sq_acc = 0.0;
 
-	hk_gpu_vec3_t curr = pos[idx];
-	hk_gpu_vec3_t prev = prev_pos[idx];
-	hk_gpu_vec3_t f = force[idx];
+	if (idx < n_beads) {
+		hk_gpu_vec3_t curr = fdg_load_vec3(pos, idx);
+		hk_gpu_vec3_t prev = fdg_load_vec3(prev_pos, idx);
+		hk_gpu_vec3_t f = fdg_load_vec3(force, idx);
 
-	float fx = f.x;
-	float fy = f.y;
-	float fz = f.z;
+		float fx = f.x;
+		float fy = f.y;
+		float fz = f.z;
+		float force_sq = fx * fx + fy * fy + fz * fz;
 
-	float force_sq = fx * fx + fy * fy + fz * fz;
-	if (max_f > 0.0f && force_sq > 0.0f) {
-		float force_mag = sqrtf(force_sq);
-		if (force_mag > max_f) {
-			float scale = max_f / force_mag;
-			fx *= scale;
-			fy *= scale;
-			fz *= scale;
-			force_sq = max_f * max_f;
+		if (force_sq > 0.0f) {
+			if (max_f > 0.0f) {
+				float max_f_sq = max_f * max_f;
+				if (force_sq > max_f_sq) {
+					float inv_force_mag = rsqrtf(force_sq);
+					float scale = max_f * inv_force_mag;
+					fx *= scale;
+					fy *= scale;
+					fz *= scale;
+					force_sq = max_f_sq;
+				}
+			}
+			force_sq_acc = (double)force_sq;
 		}
+
+		float dx_prev = curr.x - prev.x;
+		float dy_prev = curr.y - prev.y;
+		float dz_prev = curr.z - prev.z;
+
+		float next_x = fmaf(step, fx, fmaf(coef_moment, dx_prev, curr.x));
+		float next_y = fmaf(step, fy, fmaf(coef_moment, dy_prev, curr.y));
+		float next_z = fmaf(step, fz, fmaf(coef_moment, dz_prev, curr.z));
+
+		fdg_store_vec3(prev_pos, idx, curr.x, curr.y, curr.z);
+		fdg_store_vec3(pos, idx, next_x, next_y, next_z);
+		fdg_store_vec3(force, idx, 0.0f, 0.0f, 0.0f);
 	}
 
-	hk_gpu_vec3_t next;
-	next.x = curr.x + coef_moment * (curr.x - prev.x) + fx * step;
-	next.y = curr.y + coef_moment * (curr.y - prev.y) + fy * step;
-	next.z = curr.z + coef_moment * (curr.z - prev.z) + fz * step;
+	s_force_sq[lane] = force_sq_acc;
+	__syncthreads();
 
-	prev_pos[idx] = curr;
-	pos[idx] = next;
-	force[idx].x = force[idx].y = force[idx].z = 0.0f;
+	for (int offset = blockDim.x >> 1; offset > 0; offset >>= 1) {
+		if (lane < offset)
+			s_force_sq[lane] += s_force_sq[lane + offset];
+		__syncthreads();
+	}
 
-	if (stats && force_sq > 0.0f)
-		atomicAdd_double(&stats->force_sq_sum, (double)force_sq);
+	if (lane == 0 && stats != nullptr) {
+		double block_sum = s_force_sq[0];
+		if (block_sum > 0.0)
+			atomicAdd_double(&stats->force_sq_sum, block_sum);
+	}
 }
 
 int hk_fdg_gpu_is_available(void)
@@ -882,7 +912,7 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 	float step = opt->step * unit;
 	int update_threads = pick_thread_count(n_beads);
 	int update_blocks = div_up_int(n_beads, update_threads);
-	fdg_update_kernel<<<update_blocks, update_threads, 0, ctx->stream>>>(ctx->d_pos,
+	fdg_update_kernel<<<update_blocks, update_threads, static_cast<size_t>(update_threads) * sizeof(double), ctx->stream>>>(ctx->d_pos,
 																  ctx->d_prev_pos,
 																  ctx->d_force,
 																  n_beads,
