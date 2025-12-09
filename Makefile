@@ -1,3 +1,12 @@
+# add on node03
+CUDA_HOME ?= /usr/local/cuda-12.8
+CUDA_LIB  ?= $(CUDA_HOME)/targets/x86_64-linux/lib
+
+CXX ?= g++
+LDFLAGS  += -L$(CUDA_LIB) -Wl,-rpath,$(CUDA_LIB)
+LDLIBS   += -lcudart -lm -
+
+#
 CFLAGS=		-g -Wall -O2 -Wc++-compat -ffast-math
 CPPFLAGS=
 INCLUDES=

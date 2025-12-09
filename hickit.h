@@ -65,6 +65,8 @@ struct hk_bpair {
 	int32_t n, max_nei;
 	int8_t phase[2];
 	float p;
+	float gc_exp;      // expected multiplicative bias from CpG fit
+	float gc_norm_n;   // contact count after GC normalization
 };
 
 struct hk_bead {
@@ -82,6 +84,9 @@ struct hk_bmap {
 	struct hk_bpair *pairs;
 	fvec3_t *x;
 	float *feat;
+	float *cpg;        // CpG density per bead (optional)
+	float *gc_bias;    // per-bead GC bias normalized to mean 1
+	int gc_corrected;  // GC correction applied
 };
 
 enum hk_fdg_backend {
@@ -147,6 +152,7 @@ struct hk_bmap *hk_bmap_gen(const struct hk_sdict *d, int32_t n_pairs, const str
 struct hk_bmap *hk_bmap_bead_dup(const struct hk_bmap *m0);
 int32_t hk_pair_flt_3d(const struct hk_bmap *m, int32_t n_pairs, struct hk_pair *pairs, float max_factor);
 void hk_bmap_destroy(struct hk_bmap *m);
+int hk_bmap_apply_gc_correction(struct hk_bmap *m, const char *cpg_fn);
 
 void hk_fdg_conf_init(struct hk_fdg_conf *opt);
 void hk_fdg_cal_c(struct hk_fdg_conf *opt);

@@ -128,6 +128,13 @@ static inline void fv3_scale(float a, fvec3_t x)
 	x[0] *= a, x[1] *= a, x[2] *= a;
 }
 
+static inline float fdg_contact_count(const struct hk_bmap *m, const struct hk_bpair *p)
+{
+	float n = (m->gc_corrected && p->gc_norm_n > 0.0f)? p->gc_norm_n : (float)p->n;
+	if (n < 1e-6f) n = 1e-6f;
+	return n;
+}
+
 /******************
  * FDG parameters *
  ******************/
@@ -312,10 +319,11 @@ static double hk_fdg1_cpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khas
 	}
 	for (i = 0; i < m->n_pairs; ++i) { // contact
 		const struct hk_bpair *p = &m->pairs[i];
-		float k, d_scale;
+		float k, d_scale, n_eff;
 		if (p->bid[0] == p->bid[1]) continue;
 		k = p->max_nei >= max_nei? 1.0f : powf((double)p->max_nei / max_nei, a_third);
-		d_scale = pow(p->n, -a_third);
+		n_eff = fdg_contact_count(m, p);
+		d_scale = pow(n_eff, -a_third);
 		e_con += update_force(opt, x, p->bid[0], p->bid[1], k, unit, d_scale, FORCE_CONTACT, f, &dist);
 		d_con += dist / d_scale;
 		++n_con;
@@ -439,10 +447,11 @@ static int hk_fdg1_gpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t
 	if (need_build) {
 		for (i = 0; i < m->n_pairs; ++i) {
 			const struct hk_bpair *p = &m->pairs[i];
-			float k, d_scale;
+			float k, d_scale, n_eff;
 			if (p->bid[0] == p->bid[1]) continue;
 			k = p->max_nei >= max_nei? 1.0f : powf((double)p->max_nei / max_nei, a_third);
-			d_scale = pow(p->n, -a_third);
+			n_eff = fdg_contact_count(m, p);
+			d_scale = pow(n_eff, -a_third);
 			if (fdg_pair_buffer_push(&buf, p->bid[0], p->bid[1], k, d_scale, HK_FDG_PAIR_TYPE_CONTACT) != 0)
 				goto cleanup;
 		}

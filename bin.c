@@ -1,8 +1,15 @@
 #include <string.h>
 #include <assert.h>
+#include <math.h>
+#include <zlib.h>
 #include "hkpriv.h"
 #include "khash.h"
 #include "ksort.h"
+
+#include "kseq.h"
+KSTREAM_INIT(gzFile, gzread, 0x10000)
+
+extern int hk_verbose;
 
 #define bpair_lt(a, b) ((a).bid[0] < (b).bid[0] || ((a).bid[0] == (b).bid[0] && (a).bid[1] < (b).bid[1]))
 KSORT_INIT(bpair, struct hk_bpair, bpair_lt)
@@ -174,6 +181,244 @@ struct hk_bmap *hk_bmap_gen(const struct hk_sdict *d, int32_t n_pairs, const str
 	return m;
 }
 
+static int hk_bmap_load_cpg(const struct hk_bmap *m, const char *fn, float *cpg, char *mask, int *n_used, int *n_dup)
+{
+	gzFile fp;
+	kstream_t *ks;
+	kstring_t str = {0, 0, 0};
+	int dret, used = 0, dup = 0;
+
+	fp = gzopen(fn, "rb");
+	if (fp == 0) return -1;
+	ks = ks_init(fp);
+	while (ks_getuntil(ks, KS_SEP_LINE, &str, &dret) >= 0) {
+		char *fields[4];
+		int chr, n_fields = 0;
+		int32_t st, en;
+		float val;
+		char *p, *q;
+		if (str.l == 0 || str.s[0] == '#') continue;
+		for (p = q = str.s;; ++q) {
+			if (*q == '\t' || *q == 0) {
+				int c = *q;
+				*q = 0;
+				if (n_fields < 4) fields[n_fields++] = p;
+				if (c == 0) break;
+				p = q + 1;
+			}
+		}
+		if (n_fields < 4) continue;
+		chr = hk_sd_get(m->d, fields[0]);
+		int targets[2], n_targets = 0;
+		if (chr >= 0 && chr < m->d->n) {
+			targets[n_targets++] = chr;
+		} else {
+			size_t l = strlen(fields[0]);
+			if (l + 2 < 256) {
+				char buf[256];
+				memcpy(buf, fields[0], l);
+				buf[l + 1] = 0;
+				buf[l] = 'a';
+				chr = hk_sd_get(m->d, buf);
+				if (chr >= 0 && chr < m->d->n) targets[n_targets++] = chr;
+				buf[l] = 'b';
+				chr = hk_sd_get(m->d, buf);
+				if (chr >= 0 && chr < m->d->n) targets[n_targets++] = chr;
+			}
+		}
+		if (n_targets == 0) continue;
+		st = atoi(fields[1]);
+		en = atoi(fields[2]);
+		val = atof(fields[3]);
+		for (int ti = 0; ti < n_targets; ++ti) {
+			int tgt = targets[ti];
+			if (st < 0 || st >= m->d->len[tgt]) continue;
+			if (en > 0 && st >= en) continue;
+			if ((m->offcnt[tgt] >> 32) == 0 && (int32_t)m->offcnt[tgt] == 0) continue;
+			if (st >= (int32_t)(m->d->len[tgt])) continue;
+			int32_t bid = hk_bmap_pos2bid(m, tgt, st);
+			if (bid < 0 || bid >= m->n_beads) continue;
+			if (mask[bid]) ++dup;
+			else ++used;
+			cpg[bid] = val;
+			mask[bid] = 1;
+		}
+	}
+	ks_destroy(ks);
+	free(str.s);
+	gzclose(fp);
+	if (n_used) *n_used = used;
+	if (n_dup) *n_dup = dup;
+	return 0;
+}
+
+static void hk_bmap_coverage(const struct hk_bmap *m, double *cov)
+{
+	int32_t i;
+	for (i = 0; i < m->n_pairs; ++i) {
+		const struct hk_bpair *p = &m->pairs[i];
+		cov[p->bid[0]] += p->n;
+		cov[p->bid[1]] += p->n;
+	}
+}
+
+static int solve_quadratic(const double s[5], const double t[3], double coef[3])
+{
+	double a[3][4] = {
+		{ s[0], s[1], s[2], t[0] },
+		{ s[1], s[2], s[3], t[1] },
+		{ s[2], s[3], s[4], t[2] }
+	};
+	int i, j, k;
+	for (i = 0; i < 3; ++i) {
+		int pivot = i;
+		for (j = i + 1; j < 3; ++j)
+			if (fabs(a[j][i]) > fabs(a[pivot][i]))
+				pivot = j;
+		if (fabs(a[pivot][i]) < 1e-12) return -1;
+		if (pivot != i)
+			for (k = i; k < 4; ++k) {
+				double tmp = a[i][k];
+				a[i][k] = a[pivot][k];
+				a[pivot][k] = tmp;
+			}
+		for (k = 3; k >= i; --k) a[i][k] /= a[i][i];
+		for (j = 0; j < 3; ++j) {
+			if (j == i) continue;
+			double factor = a[j][i];
+			for (k = i; k < 4; ++k)
+				a[j][k] -= factor * a[i][k];
+		}
+	}
+	for (i = 0; i < 3; ++i)
+		coef[i] = a[i][3];
+	return 0;
+}
+
+int hk_bmap_apply_gc_correction(struct hk_bmap *m, const char *cpg_fn)
+{
+	const double min_exp = 1e-6;
+	int ret = -1, n_used = 0, n_dup = 0;
+	int32_t i, n_missing;
+	float *cpg = 0, *bias = 0;
+	char *mask = 0;
+	double *cov = 0, coef[3], s[5], t[3], pred_sum = 0.0;
+
+	if (m == 0 || cpg_fn == 0) return -1;
+	if (m->cpg) free(m->cpg);
+	if (m->gc_bias) free(m->gc_bias);
+	m->cpg = 0, m->gc_bias = 0, m->gc_corrected = 0;
+
+	cpg = CALLOC(float, m->n_beads);
+	mask = CALLOC(char, m->n_beads);
+	cov = CALLOC(double, m->n_beads);
+	if (hk_bmap_load_cpg(m, cpg_fn, cpg, mask, &n_used, &n_dup) != 0) {
+		if (hk_verbose >= 1)
+			fprintf(stderr, "[E::%s] failed to read CpG file: %s\n", __func__, cpg_fn);
+		goto cleanup;
+	}
+	if (n_used < 3) {
+		if (hk_verbose >= 1)
+			fprintf(stderr, "[E::%s] insufficient CpG bins matched beads (%d found)\n", __func__, n_used);
+		goto cleanup;
+	}
+
+	hk_bmap_coverage(m, cov);
+	memset(s, 0, sizeof(s));
+	memset(t, 0, sizeof(t));
+	for (i = 0; i < m->n_beads; ++i) {
+		if (!mask[i]) continue;
+		{
+			double x = cpg[i];
+			double y = cov[i];
+			double x2 = x * x;
+			s[0] += 1.0;
+			s[1] += x;
+			s[2] += x2;
+			s[3] += x2 * x;
+			s[4] += x2 * x2;
+			t[0] += y;
+			t[1] += y * x;
+			t[2] += y * x2;
+		}
+	}
+	if (solve_quadratic(s, t, coef) != 0) {
+		if (hk_verbose >= 1)
+			fprintf(stderr, "[E::%s] failed to fit coverage~CpG quadratic\n", __func__);
+		goto cleanup;
+	}
+
+	bias = CALLOC(float, m->n_beads);
+	for (i = 0; i < m->n_beads; ++i) {
+		if (!mask[i]) continue;
+		double x = cpg[i];
+		double pred = coef[0] + coef[1] * x + coef[2] * x * x;
+		if (pred < min_exp) pred = min_exp;
+		bias[i] = (float)pred;
+		pred_sum += pred;
+	}
+	{
+		double mean_pred = pred_sum / n_used;
+		double inv_mean = mean_pred > min_exp? 1.0 / mean_pred : 1.0;
+		for (i = 0; i < m->n_beads; ++i)
+			bias[i] = mask[i]? (float)(bias[i] * inv_mean) : 1.0f;
+	}
+
+	for (i = 0; i < m->n_pairs; ++i) {
+		struct hk_bpair *p = &m->pairs[i];
+		float exp = bias[p->bid[0]] * bias[p->bid[1]];
+		if (exp < min_exp) exp = (float)min_exp;
+		p->gc_exp = exp;
+		p->gc_norm_n = p->n / exp;
+	}
+
+	n_missing = m->n_beads - n_used;
+	if (hk_verbose >= 2) {
+		fprintf(stderr, "[I::%s] GC fit y=%.4g + %.4g*x + %.4g*x^2 (used=%d missing=%d dup=%d)\n",
+				__func__, coef[0], coef[1], coef[2], n_used, n_missing, n_dup);
+	}
+	{
+		double minv = 1e9, maxv = -1e9, sumv = 0.0;
+		int n_bias = 0;
+		for (i = 0; i < m->n_beads; ++i) {
+			float b = bias[i];
+			if (b <= 0.0f) continue;
+			if (b < minv) minv = b;
+			if (b > maxv) maxv = b;
+			sumv += b;
+			++n_bias;
+		}
+		if (hk_verbose >= 1 && n_bias > 0)
+			fprintf(stderr, "[D::%s] bias n=%d min=%.4g max=%.4g mean=%.4g\n",
+					__func__, n_bias, minv, maxv, sumv / n_bias);
+		const char *dump = getenv("HK_GC_BIAS_OUT");
+		if (dump && dump[0]) {
+			FILE *fp = fopen(dump, "w");
+			if (fp) {
+				fprintf(fp, "bead\tchr\tstart\tbias\n");
+				for (i = 0; i < m->n_beads; ++i)
+					fprintf(fp, "%d\t%s\t%d\t%.6g\n", i,
+							m->d->name[m->beads[i].chr], m->beads[i].st, bias[i]);
+				fclose(fp);
+			}
+		}
+	}
+
+	m->cpg = cpg;
+	m->gc_bias = bias;
+	m->gc_corrected = 1;
+	ret = 0;
+
+cleanup:
+	free(mask);
+	free(cov);
+	if (ret != 0) {
+		if (cpg) free(cpg);
+		if (bias) free(bias);
+	}
+	return ret;
+}
+
 struct hk_bmap *hk_bmap_bead_dup(const struct hk_bmap *m0)
 {
 	struct hk_bmap *m;
@@ -188,6 +433,15 @@ struct hk_bmap *hk_bmap_bead_dup(const struct hk_bmap *m0)
 		m->x = CALLOC(fvec3_t, m->n_beads);
 		memcpy(m->x, m0->x, m->n_beads * sizeof(fvec3_t));
 	}
+	if (m0->cpg) {
+		m->cpg = CALLOC(float, m->n_beads);
+		memcpy(m->cpg, m0->cpg, m->n_beads * sizeof(float));
+	}
+	if (m0->gc_bias) {
+		m->gc_bias = CALLOC(float, m->n_beads);
+		memcpy(m->gc_bias, m0->gc_bias, m->n_beads * sizeof(float));
+	}
+	m->gc_corrected = m0->gc_corrected;
 	return m;
 }
 
@@ -199,5 +453,7 @@ void hk_bmap_destroy(struct hk_bmap *m)
 	free(m->beads);
 	free(m->pairs);
 	free(m->feat);
+	free(m->cpg);
+	free(m->gc_bias);
 	free(m);
 }

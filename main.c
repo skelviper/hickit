@@ -42,6 +42,8 @@ static struct option long_options[] = {
 	{ "dbg-val",        no_argument,       0, 0 },   // 21
 	{ "all-close-leg",  no_argument,       0, 0 },   // 22
 	{ "fdg-backend",    required_argument, 0, 0 },   // 23
+	{ "gc-corr",        no_argument,       0, 0 },   // 24
+	{ "cpg",            required_argument, 0, 0 },   // 25
 	{ 0, 0, 0, 0}
 };
 
@@ -88,6 +90,8 @@ int main(int argc, char *argv[])
 	// 3D modeling
 	struct hk_fdg_conf fdg_opt;
 	int bmap_skip_merge_flag = 0; // default: do not skip merging beads that have no contacts (hk_bmap_merge_beads)
+	int gc_correction = 0, gc_cpg_ready = 0;
+	char *gc_cpg_fn = 0;
 	// 3D viewing
 	struct hk_v3d_opt v3d_opt;
 	char *v3d_hl = 0;
@@ -96,7 +100,7 @@ int main(int argc, char *argv[])
 	hk_fdg_conf_init(&fdg_opt);
 	hk_v3d_opt_init(&v3d_opt);
 
-	while ((c = getopt_long(argc, argv, "i:o:r:c:T:P:n:w:p:b:e:k:R:a:s:I:O:D:Suz:L:EM", long_options, &long_idx)) >= 0) {
+	while ((c = getopt_long(argc, argv, "i:o:r:c:T:P:n:w:p:b:e:k:R:a:s:I:O:D:Suz:L:EMgG:", long_options, &long_idx)) >= 0) {
 		has_options = 1;
 		if (c == 'i') {
 			if (m) hk_map_destroy(m);
@@ -201,6 +205,19 @@ int main(int argc, char *argv[])
 			assert(bin_size > 0);
 			if (!(m->cols & 1<<6)) hk_pair_count_nei(m->n_pairs, m->pairs, radius, radius);
 			b = hk_bmap_gen(m->d, m->n_pairs, m->pairs, bin_size, bmap_skip_merge_flag);
+			if (gc_correction) {
+				if (!gc_cpg_ready || gc_cpg_fn == 0) {
+					fprintf(stderr, "[E::%s] GC correction requested but CpG file is missing for bin %d\n", __func__, bin_size);
+					hk_bmap_destroy(b);
+					return 1;
+				}
+				if (hk_bmap_apply_gc_correction(b, gc_cpg_fn) != 0) {
+					fprintf(stderr, "[E::%s] failed to apply GC correction with CpG file %s\n", __func__, gc_cpg_fn);
+					hk_bmap_destroy(b);
+					return 1;
+				}
+				gc_cpg_ready = 0;
+			}
 			hk_fdg(&fdg_opt, b, d3, &rng);
 			if (d3) hk_bmap_destroy(d3);
 			d3 = hk_bmap_bead_dup(b);
@@ -219,6 +236,11 @@ int main(int argc, char *argv[])
 			kr_srand_r(&rng, seed);
 		} else if (c == 'M') {
 			bmap_skip_merge_flag = 1;
+		} else if (c == 'g') {
+			gc_correction = 1;
+		} else if (c == 'G') {
+			gc_cpg_fn = optarg;
+			gc_cpg_ready = 1;
 		} else if (c == 0) {
 			if (long_idx == 0) min_leg_dist = hk_parse_num(optarg, 0); // --min-leg-dist
 			else if (long_idx ==  1) max_seg = atoi(optarg); // --max-seg
@@ -242,6 +264,11 @@ int main(int argc, char *argv[])
 					fprintf(stderr, "[E::%s] unknown FDG backend '%s' (expected cpu|gpu|auto)\n", __func__, optarg);
 					return 1;
 				}
+			} else if (long_idx == 24) { // --gc-corr
+				gc_correction = 1;
+			} else if (long_idx == 25) { // --cpg
+				gc_cpg_fn = optarg;
+				gc_cpg_ready = 1;
 			}
 			else if (long_idx ==  4) { // --out-seg
 				assert(m && m->segs);
@@ -362,6 +389,8 @@ int main(int argc, char *argv[])
 		fprintf(fp, "    -k FLOAT            relative repulsive stiffness [%g]\n", fdg_opt.k_rel_rep);
 		fprintf(fp, "    -R FLOAT            relative repulsive radius [%g]\n", fdg_opt.d_r);
 		fprintf(fp, "    -M                  do not merge beads that have no contacts\n");
+		fprintf(fp, "    -g                  enable GC/CpG-based contact normalization\n");
+		fprintf(fp, "    -G FILE             CpG track (chr start end value) for the next -b step []\n");
 		fprintf(fp, "    --fdg-backend=STR   choose FDG backend: cpu, gpu, or auto [auto]\n");
 #ifdef HAVE_GL
 		fprintf(fp, "  3D viewing:\n");
