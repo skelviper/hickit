@@ -215,6 +215,28 @@ __device__ static inline bool block_contains(const uint64_t *table, uint32_t mas
 	return false;
 }
 
+__device__ __forceinline__ void warp_sum_match3(unsigned active_mask,
+												 unsigned match_mask,
+												 float vx,
+												 float vy,
+												 float vz,
+												 float &sum_x,
+												 float &sum_y,
+												 float &sum_z)
+{
+	sum_x = 0.0f;
+	sum_y = 0.0f;
+	sum_z = 0.0f;
+	unsigned lanes = match_mask;
+	while (lanes) {
+		int src_lane = __ffs(lanes) - 1;
+		sum_x += __shfl_sync(active_mask, vx, src_lane);
+		sum_y += __shfl_sync(active_mask, vy, src_lane);
+		sum_z += __shfl_sync(active_mask, vz, src_lane);
+		lanes &= (lanes - 1u);
+	}
+}
+
 __global__ static void init_bounds_kernel(float *bounds)
 {
 	if (threadIdx.x == 0 && blockIdx.x == 0) {
@@ -488,9 +510,8 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 					float fz_other = -fz;
 					unsigned mask = __activemask();
 					unsigned match = __match_any_sync(mask, j);
-					float fx_total = __reduce_add_sync(match, fx_other);
-					float fy_total = __reduce_add_sync(match, fy_other);
-					float fz_total = __reduce_add_sync(match, fz_other);
+					float fx_total, fy_total, fz_total;
+					warp_sum_match3(mask, match, fx_other, fy_other, fz_other, fx_total, fy_total, fz_total);
 					int lane = threadIdx.x & 31;
 					int leader = __ffs(match) - 1;
 					if (lane == leader) {

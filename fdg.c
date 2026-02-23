@@ -174,7 +174,7 @@ void hk_fdg_conf_init(struct hk_fdg_conf *opt)
 	opt->step = 0.01f;
 	opt->coef_moment = 0.9f;
 	opt->max_f = 50.0f;
-	opt->contact_target = 5e5f;
+	opt->contact_target = 0.0f;
 
 	opt->k_rel_rep = 0.05f;
 	opt->d_r = 2.0f;

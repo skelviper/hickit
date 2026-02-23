@@ -54,7 +54,7 @@ endif
 all:$(PROG)
 
 hickit:$(OBJS) $(CUDA_OBJS) main.o
-		$(LINK) -o $@ $^ $(ASAN_FLAG) $(LIBS_GL) $(LIBS)
+		$(LINK) $(LDFLAGS) -o $@ $^ $(ASAN_FLAG) $(LIBS_GL) $(LIBS)
 
 clean:
 		rm -fr gmon.out *.o a.out $(PROG) *.a *.dSYM hickit.aux hickit.log hickit.pdf
