@@ -7,6 +7,7 @@
 
 #define HK_SUB_DELIM    '!'
 #define HK_MAX_LOOP_RES 8
+#define HK_GC_MAX_DEGREE 10
 
 #define HK_DBG_VAL   1
 
@@ -101,6 +102,7 @@ struct hk_fdg_conf {
 	float step;
 	float coef_moment;
 	float max_f;
+	float contact_target;
 
 	float k_rel_rep;
 	float d_r;
@@ -152,7 +154,7 @@ struct hk_bmap *hk_bmap_gen(const struct hk_sdict *d, int32_t n_pairs, const str
 struct hk_bmap *hk_bmap_bead_dup(const struct hk_bmap *m0);
 int32_t hk_pair_flt_3d(const struct hk_bmap *m, int32_t n_pairs, struct hk_pair *pairs, float max_factor);
 void hk_bmap_destroy(struct hk_bmap *m);
-int hk_bmap_apply_gc_correction(struct hk_bmap *m, const char *cpg_fn);
+int hk_bmap_apply_gc_correction(struct hk_bmap *m, const char *cpg_fn, int degree);
 
 void hk_fdg_conf_init(struct hk_fdg_conf *opt);
 void hk_fdg_cal_c(struct hk_fdg_conf *opt);

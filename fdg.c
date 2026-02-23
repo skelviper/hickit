@@ -128,11 +128,31 @@ static inline void fv3_scale(float a, fvec3_t x)
 	x[0] *= a, x[1] *= a, x[2] *= a;
 }
 
-static inline float fdg_contact_count(const struct hk_bmap *m, const struct hk_bpair *p)
+static inline float fdg_contact_base_count(const struct hk_bmap *m, const struct hk_bpair *p)
 {
 	float n = (m->gc_corrected && p->gc_norm_n > 0.0f)? p->gc_norm_n : (float)p->n;
 	if (n < 1e-6f) n = 1e-6f;
 	return n;
+}
+
+static inline float fdg_contact_count(const struct hk_bmap *m, const struct hk_bpair *p, float contact_scale)
+{
+	float n = fdg_contact_base_count(m, p);
+	if (contact_scale > 0.0f) n *= contact_scale;
+	return n;
+}
+
+static float fdg_contact_scale(const struct hk_bmap *m, float target, double *sum_out)
+{
+	double sum = 0.0;
+	int32_t i;
+	if (sum_out) *sum_out = 0.0;
+	if (target <= 0.0f) return 1.0f;
+	for (i = 0; i < m->n_pairs; ++i)
+		sum += fdg_contact_base_count(m, &m->pairs[i]);
+	if (sum_out) *sum_out = sum;
+	if (sum <= 0.0) return 1.0f;
+	return (float)(target / sum);
 }
 
 /******************
@@ -154,6 +174,7 @@ void hk_fdg_conf_init(struct hk_fdg_conf *opt)
 	opt->step = 0.01f;
 	opt->coef_moment = 0.9f;
 	opt->max_f = 50.0f;
+	opt->contact_target = 5e5f;
 
 	opt->k_rel_rep = 0.05f;
 	opt->d_r = 2.0f;
@@ -291,7 +312,7 @@ static inline float update_force(const struct hk_fdg_conf *conf, fvec3_t *x, int
 	return energy;
 }
 
-static double hk_fdg1_cpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t(set64) *h, float unit, int max_nei, int mid_dist, float rel_rep_k, int iter, fvec3_t *x0, double start_time)
+static double hk_fdg1_cpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t(set64) *h, float unit, int max_nei, int mid_dist, float contact_scale, float rel_rep_k, int iter, fvec3_t *x0, double start_time)
 {
 	const double a_third = 1.0 / 3.0;
 	int32_t i, j, n_y, left, n_bb = 0, n_rep = 0, n_con = 0;
@@ -322,7 +343,7 @@ static double hk_fdg1_cpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khas
 		float k, d_scale, n_eff;
 		if (p->bid[0] == p->bid[1]) continue;
 		k = p->max_nei >= max_nei? 1.0f : powf((double)p->max_nei / max_nei, a_third);
-		n_eff = fdg_contact_count(m, p);
+		n_eff = fdg_contact_count(m, p, contact_scale);
 		d_scale = pow(n_eff, -a_third);
 		e_con += update_force(opt, x, p->bid[0], p->bid[1], k, unit, d_scale, FORCE_CONTACT, f, &dist);
 		d_con += dist / d_scale;
@@ -408,7 +429,7 @@ static double hk_fdg1_cpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khas
 	return sum;
 }
 
-static int hk_fdg1_gpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t(set64) *h, float unit, int max_nei, int mid_dist, float rel_rep_k, int iter, struct hk_fdg_gpu_ctx *gpu_ctx, double start_time, double *rms_force)
+static int hk_fdg1_gpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t(set64) *h, float unit, int max_nei, int mid_dist, float contact_scale, float rel_rep_k, int iter, struct hk_fdg_gpu_ctx *gpu_ctx, double start_time, double *rms_force)
 {
 	const double a_third = 1.0 / 3.0;
 	int32_t i, j, n_bb = 0, n_con = 0;
@@ -450,7 +471,7 @@ static int hk_fdg1_gpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t
 			float k, d_scale, n_eff;
 			if (p->bid[0] == p->bid[1]) continue;
 			k = p->max_nei >= max_nei? 1.0f : powf((double)p->max_nei / max_nei, a_third);
-			n_eff = fdg_contact_count(m, p);
+			n_eff = fdg_contact_count(m, p, contact_scale);
 			d_scale = pow(n_eff, -a_third);
 			if (fdg_pair_buffer_push(&buf, p->bid[0], p->bid[1], k, d_scale, HK_FDG_PAIR_TYPE_CONTACT) != 0)
 				goto cleanup;
@@ -508,7 +529,8 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 	khash_t(set64) *h;
 	fvec3_t *best_x, *x0;
 	double best = 1e30;
-	float unit;
+	float unit, contact_scale;
+	double contact_sum = 0.0;
 	struct hk_fdg_gpu_ctx *gpu_ctx = 0;
 	int use_gpu = 0;
 	enum hk_fdg_backend backend = opt->backend;
@@ -554,6 +576,9 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 
 	mid_dist = hk_fdg_bead_size(m);
 	if (hk_verbose >= 3) fprintf(stderr, "[M::%s] mid_dist:%d max_nei:%d\n", __func__, mid_dist, max_nei);
+	contact_scale = fdg_contact_scale(m, opt->contact_target, &contact_sum);
+	if (hk_verbose >= 2 && opt->contact_target > 0.0f)
+		fprintf(stderr, "[M::%s] contact_sum=%.3g target=%.3g scale=%.6g\n", __func__, contact_sum, opt->contact_target, contact_scale);
 
 	// initialize
 	if (src) {
@@ -604,7 +629,7 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 		//rel_rep_k = 1.0;
 		if (use_gpu) {
 			double s_gpu = 0.0;
-			if (hk_fdg1_gpu(opt, m, h, unit, max_nei, mid_dist, rel_rep_k, iter, gpu_ctx, start_time, &s_gpu) == 0) {
+			if (hk_fdg1_gpu(opt, m, h, unit, max_nei, mid_dist, contact_scale, rel_rep_k, iter, gpu_ctx, start_time, &s_gpu) == 0) {
 				s = s_gpu;
 			} else {
 				if (hk_verbose >= 1)
@@ -614,10 +639,10 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 				hk_fdg_gpu_destroy(gpu_ctx);
 				gpu_ctx = 0;
 				use_gpu = 0;
-				s = hk_fdg1_cpu(opt, m, h, unit, max_nei, mid_dist, rel_rep_k, iter, x0, start_time);
+				s = hk_fdg1_cpu(opt, m, h, unit, max_nei, mid_dist, contact_scale, rel_rep_k, iter, x0, start_time);
 			}
 		} else {
-			s = hk_fdg1_cpu(opt, m, h, unit, max_nei, mid_dist, rel_rep_k, iter, x0, start_time);
+			s = hk_fdg1_cpu(opt, m, h, unit, max_nei, mid_dist, contact_scale, rel_rep_k, iter, x0, start_time);
 		}
 		if (s < best) {
 			if (use_gpu) {

@@ -262,49 +262,75 @@ static void hk_bmap_coverage(const struct hk_bmap *m, double *cov)
 	}
 }
 
-static int solve_quadratic(const double s[5], const double t[3], double coef[3])
+static int solve_poly(const double *sum_x, const double *sum_xy, int degree, double *coef)
 {
-	double a[3][4] = {
-		{ s[0], s[1], s[2], t[0] },
-		{ s[1], s[2], s[3], t[1] },
-		{ s[2], s[3], s[4], t[2] }
-	};
-	int i, j, k;
-	for (i = 0; i < 3; ++i) {
+	int i, j, k, n;
+	double *a = 0;
+
+	n = degree + 1;
+	a = CALLOC(double, n * (n + 1));
+	for (i = 0; i < n; ++i) {
+		for (j = 0; j < n; ++j)
+			a[i * (n + 1) + j] = sum_x[i + j];
+		a[i * (n + 1) + n] = sum_xy[i];
+	}
+
+	for (i = 0; i < n; ++i) {
 		int pivot = i;
-		for (j = i + 1; j < 3; ++j)
-			if (fabs(a[j][i]) > fabs(a[pivot][i]))
+		for (j = i + 1; j < n; ++j)
+			if (fabs(a[j * (n + 1) + i]) > fabs(a[pivot * (n + 1) + i]))
 				pivot = j;
-		if (fabs(a[pivot][i]) < 1e-12) return -1;
-		if (pivot != i)
-			for (k = i; k < 4; ++k) {
-				double tmp = a[i][k];
-				a[i][k] = a[pivot][k];
-				a[pivot][k] = tmp;
+		if (fabs(a[pivot * (n + 1) + i]) < 1e-12) {
+			free(a);
+			return -1;
+		}
+		if (pivot != i) {
+			for (k = i; k <= n; ++k) {
+				double tmp = a[i * (n + 1) + k];
+				a[i * (n + 1) + k] = a[pivot * (n + 1) + k];
+				a[pivot * (n + 1) + k] = tmp;
 			}
-		for (k = 3; k >= i; --k) a[i][k] /= a[i][i];
-		for (j = 0; j < 3; ++j) {
+		}
+		for (k = n; k >= i; --k)
+			a[i * (n + 1) + k] /= a[i * (n + 1) + i];
+		for (j = 0; j < n; ++j) {
+			double factor;
 			if (j == i) continue;
-			double factor = a[j][i];
-			for (k = i; k < 4; ++k)
-				a[j][k] -= factor * a[i][k];
+			factor = a[j * (n + 1) + i];
+			for (k = i; k <= n; ++k)
+				a[j * (n + 1) + k] -= factor * a[i * (n + 1) + k];
 		}
 	}
-	for (i = 0; i < 3; ++i)
-		coef[i] = a[i][3];
+	for (i = 0; i < n; ++i)
+		coef[i] = a[i * (n + 1) + n];
+
+	free(a);
 	return 0;
 }
 
-int hk_bmap_apply_gc_correction(struct hk_bmap *m, const char *cpg_fn)
+static int float_cmp(const void *a, const void *b)
+{
+	float fa = *(const float*)a;
+	float fb = *(const float*)b;
+	return (fa > fb) - (fa < fb);
+}
+
+int hk_bmap_apply_gc_correction(struct hk_bmap *m, const char *cpg_fn, int degree)
 {
 	const double min_exp = 1e-6;
 	int ret = -1, n_used = 0, n_dup = 0;
 	int32_t i, n_missing;
 	float *cpg = 0, *bias = 0;
 	char *mask = 0;
-	double *cov = 0, coef[3], s[5], t[3], pred_sum = 0.0;
+	double *cov = 0, *sum_x = 0, *sum_xy = 0, *coef = 0;
+	double pred_sum = 0.0;
 
 	if (m == 0 || cpg_fn == 0) return -1;
+	if (degree < 1 || degree > HK_GC_MAX_DEGREE) {
+		if (hk_verbose >= 1)
+			fprintf(stderr, "[E::%s] invalid GC degree %d (expected 1-%d)\n", __func__, degree, HK_GC_MAX_DEGREE);
+		return -1;
+	}
 	if (m->cpg) free(m->cpg);
 	if (m->gc_bias) free(m->gc_bias);
 	m->cpg = 0, m->gc_bias = 0, m->gc_corrected = 0;
@@ -317,34 +343,35 @@ int hk_bmap_apply_gc_correction(struct hk_bmap *m, const char *cpg_fn)
 			fprintf(stderr, "[E::%s] failed to read CpG file: %s\n", __func__, cpg_fn);
 		goto cleanup;
 	}
-	if (n_used < 3) {
+	if (n_used < degree + 1) {
 		if (hk_verbose >= 1)
-			fprintf(stderr, "[E::%s] insufficient CpG bins matched beads (%d found)\n", __func__, n_used);
+			fprintf(stderr, "[E::%s] insufficient CpG bins matched beads (%d found; need >=%d)\n",
+					__func__, n_used, degree + 1);
 		goto cleanup;
 	}
 
 	hk_bmap_coverage(m, cov);
-	memset(s, 0, sizeof(s));
-	memset(t, 0, sizeof(t));
+	sum_x = CALLOC(double, 2 * degree + 1);
+	sum_xy = CALLOC(double, degree + 1);
+	coef = CALLOC(double, degree + 1);
+	if (sum_x == 0 || sum_xy == 0 || coef == 0) goto cleanup;
 	for (i = 0; i < m->n_beads; ++i) {
 		if (!mask[i]) continue;
 		{
 			double x = cpg[i];
 			double y = cov[i];
-			double x2 = x * x;
-			s[0] += 1.0;
-			s[1] += x;
-			s[2] += x2;
-			s[3] += x2 * x;
-			s[4] += x2 * x2;
-			t[0] += y;
-			t[1] += y * x;
-			t[2] += y * x2;
+			double x_pow = 1.0;
+			int k;
+			for (k = 0; k <= 2 * degree; ++k) {
+				sum_x[k] += x_pow;
+				if (k <= degree) sum_xy[k] += y * x_pow;
+				x_pow *= x;
+			}
 		}
 	}
-	if (solve_quadratic(s, t, coef) != 0) {
+	if (solve_poly(sum_x, sum_xy, degree, coef) != 0) {
 		if (hk_verbose >= 1)
-			fprintf(stderr, "[E::%s] failed to fit coverage~CpG quadratic\n", __func__);
+			fprintf(stderr, "[E::%s] failed to fit coverage~CpG polynomial (degree %d)\n", __func__, degree);
 		goto cleanup;
 	}
 
@@ -352,7 +379,10 @@ int hk_bmap_apply_gc_correction(struct hk_bmap *m, const char *cpg_fn)
 	for (i = 0; i < m->n_beads; ++i) {
 		if (!mask[i]) continue;
 		double x = cpg[i];
-		double pred = coef[0] + coef[1] * x + coef[2] * x * x;
+		double pred = coef[degree];
+		int k;
+		for (k = degree - 1; k >= 0; --k)
+			pred = pred * x + coef[k];
 		if (pred < min_exp) pred = min_exp;
 		bias[i] = (float)pred;
 		pred_sum += pred;
@@ -364,6 +394,52 @@ int hk_bmap_apply_gc_correction(struct hk_bmap *m, const char *cpg_fn)
 			bias[i] = mask[i]? (float)(bias[i] * inv_mean) : 1.0f;
 	}
 
+	// Winsorize extreme bias values to prevent overly aggressive normalization.
+	{
+		const double clip_q = 0.01;
+		float hard_min = 0.5f;
+		float hard_max = 2.0f;
+		const char *min_env = getenv("HK_GC_BIAS_MIN");
+		const char *max_env = getenv("HK_GC_BIAS_MAX");
+		float *bias_used = 0;
+		int n_bias = 0, n_low = 0, n_high = 0;
+
+		if (min_env && min_env[0]) hard_min = (float)atof(min_env);
+		if (max_env && max_env[0]) hard_max = (float)atof(max_env);
+		if (hard_min <= 0.0f) hard_min = 0.05f;
+		if (hard_max < hard_min) hard_max = hard_min;
+
+		if (n_used > 0) bias_used = MALLOC(float, n_used);
+		for (i = 0; i < m->n_beads; ++i)
+			if (mask[i]) bias_used[n_bias++] = bias[i];
+		if (n_bias > 0) {
+			int idx_low, idx_high;
+			float lo, hi;
+			qsort(bias_used, n_bias, sizeof(float), float_cmp);
+			idx_low = (int)floor(clip_q * (n_bias - 1));
+			idx_high = (int)floor((1.0 - clip_q) * (n_bias - 1));
+			lo = bias_used[idx_low];
+			hi = bias_used[idx_high];
+			if (lo < hard_min) lo = hard_min;
+			if (hi > hard_max) hi = hard_max;
+			if (hi < lo) hi = lo;
+			for (i = 0; i < m->n_beads; ++i) {
+				if (!mask[i]) continue;
+				if (bias[i] < lo) {
+					bias[i] = lo;
+					++n_low;
+				} else if (bias[i] > hi) {
+					bias[i] = hi;
+					++n_high;
+				}
+			}
+			if (hk_verbose >= 2 && (n_low || n_high))
+				fprintf(stderr, "[I::%s] GC bias winsorize: lo=%.4g hi=%.4g clipped=%d/%d\n",
+						__func__, lo, hi, n_low + n_high, n_bias);
+		}
+		free(bias_used);
+	}
+
 	for (i = 0; i < m->n_pairs; ++i) {
 		struct hk_bpair *p = &m->pairs[i];
 		float exp = bias[p->bid[0]] * bias[p->bid[1]];
@@ -372,10 +448,31 @@ int hk_bmap_apply_gc_correction(struct hk_bmap *m, const char *cpg_fn)
 		p->gc_norm_n = p->n / exp;
 	}
 
+	// Rescale GC-normalized counts to keep total contact weight unchanged
+	{
+		double sum_raw = 0.0, sum_gc = 0.0;
+		for (i = 0; i < m->n_pairs; ++i) {
+			const struct hk_bpair *p = &m->pairs[i];
+			sum_raw += (double)p->n;
+			sum_gc += (double)p->gc_norm_n;
+		}
+		if (sum_gc > 0.0) {
+			double scale = sum_raw / sum_gc;
+			for (i = 0; i < m->n_pairs; ++i)
+				m->pairs[i].gc_norm_n *= (float)scale;
+			if (hk_verbose >= 2)
+				fprintf(stderr, "[I::%s] GC norm rescale: raw_sum=%.3g gc_sum=%.3g scale=%.6g\n",
+						__func__, sum_raw, sum_gc, scale);
+		}
+	}
+
 	n_missing = m->n_beads - n_used;
 	if (hk_verbose >= 2) {
-		fprintf(stderr, "[I::%s] GC fit y=%.4g + %.4g*x + %.4g*x^2 (used=%d missing=%d dup=%d)\n",
-				__func__, coef[0], coef[1], coef[2], n_used, n_missing, n_dup);
+		int k;
+		fprintf(stderr, "[I::%s] GC fit degree=%d coef:", __func__, degree);
+		for (k = 0; k <= degree; ++k)
+			fprintf(stderr, " %.4g", coef[k]);
+		fprintf(stderr, " (used=%d missing=%d dup=%d)\n", n_used, n_missing, n_dup);
 	}
 	{
 		double minv = 1e9, maxv = -1e9, sumv = 0.0;
@@ -412,6 +509,9 @@ int hk_bmap_apply_gc_correction(struct hk_bmap *m, const char *cpg_fn)
 cleanup:
 	free(mask);
 	free(cov);
+	free(sum_x);
+	free(sum_xy);
+	free(coef);
 	if (ret != 0) {
 		if (cpg) free(cpg);
 		if (bias) free(bias);

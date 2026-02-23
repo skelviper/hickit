@@ -1,5 +1,5 @@
 # add on node03
-CUDA_HOME ?= /usr/local/cuda-12.8
+CUDA_HOME ?= /usr/local/cuda
 CUDA_LIB  ?= $(CUDA_HOME)/targets/x86_64-linux/lib
 
 CXX ?= g++
@@ -18,7 +18,7 @@ ASAN_FLAG=
 CUDA_OBJS=
 CXX?=		g++
 LINK?=		$(CC)
-NVCC?=		nvcc
+NVCC?=		$(CUDA_HOME)/bin/nvcc
 CUDAFLAGS?=	-O3 -std=c++17
 
 ifneq ($(asan),)

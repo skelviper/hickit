@@ -42,8 +42,9 @@ static struct option long_options[] = {
 	{ "dbg-val",        no_argument,       0, 0 },   // 21
 	{ "all-close-leg",  no_argument,       0, 0 },   // 22
 	{ "fdg-backend",    required_argument, 0, 0 },   // 23
-	{ "gc-corr",        no_argument,       0, 0 },   // 24
+	{ "gc-corr",        optional_argument, 0, 0 },   // 24
 	{ "cpg",            required_argument, 0, 0 },   // 25
+	{ "contact-target", required_argument, 0, 'C' },
 	{ 0, 0, 0, 0}
 };
 
@@ -57,6 +58,43 @@ static inline int64_t hk_parse_num(const char *str, char **end)
 	else if (*p == 'K' || *p == 'k') x *= 1e3, ++p;
 	if (end) *end = p;
 	return (int64_t)(x + .499);
+}
+
+static int hk_parse_gc_degree(const char *str, int *degree)
+{
+	char *end;
+	long val;
+	if (str == 0 || str[0] == 0) return 0;
+	val = strtol(str, &end, 10);
+	if (*end != '\0') return 0;
+	if (val < 1 || val > HK_GC_MAX_DEGREE) return -1;
+	*degree = (int)val;
+	return 1;
+}
+
+static int hk_apply_gc_degree(int argc, char *argv[], const char *arg, int *optind, int *degree, const char **bad_arg)
+{
+	int r;
+	if (arg != 0) {
+		r = hk_parse_gc_degree(arg, degree);
+		if (r <= 0) {
+			if (bad_arg) *bad_arg = arg;
+			return -1;
+		}
+		return 0;
+	}
+	if (*optind < argc) {
+		int tmp;
+		r = hk_parse_gc_degree(argv[*optind], &tmp);
+		if (r == 1) {
+			*degree = tmp;
+			++*optind;
+		} else if (r == -1) {
+			if (bad_arg) *bad_arg = argv[*optind];
+			return -1;
+		}
+	}
+	return 0;
 }
 
 #define clear_union_flags(flag) ((flag) &= ~(0x3c | 1<<8 | 1<<10 | 0x3800))
@@ -91,6 +129,7 @@ int main(int argc, char *argv[])
 	struct hk_fdg_conf fdg_opt;
 	int bmap_skip_merge_flag = 0; // default: do not skip merging beads that have no contacts (hk_bmap_merge_beads)
 	int gc_correction = 0, gc_cpg_ready = 0;
+	int gc_degree = 2;
 	char *gc_cpg_fn = 0;
 	// 3D viewing
 	struct hk_v3d_opt v3d_opt;
@@ -100,7 +139,7 @@ int main(int argc, char *argv[])
 	hk_fdg_conf_init(&fdg_opt);
 	hk_v3d_opt_init(&v3d_opt);
 
-	while ((c = getopt_long(argc, argv, "i:o:r:c:T:P:n:w:p:b:e:k:R:a:s:I:O:D:Suz:L:EMgG:", long_options, &long_idx)) >= 0) {
+	while ((c = getopt_long(argc, argv, "i:o:r:c:T:P:n:w:p:b:e:k:R:a:s:I:O:D:Suz:L:EMg::G:C:", long_options, &long_idx)) >= 0) {
 		has_options = 1;
 		if (c == 'i') {
 			if (m) hk_map_destroy(m);
@@ -211,7 +250,7 @@ int main(int argc, char *argv[])
 					hk_bmap_destroy(b);
 					return 1;
 				}
-				if (hk_bmap_apply_gc_correction(b, gc_cpg_fn) != 0) {
+				if (hk_bmap_apply_gc_correction(b, gc_cpg_fn, gc_degree) != 0) {
 					fprintf(stderr, "[E::%s] failed to apply GC correction with CpG file %s\n", __func__, gc_cpg_fn);
 					hk_bmap_destroy(b);
 					return 1;
@@ -231,13 +270,23 @@ int main(int argc, char *argv[])
 		} else if (c == 'R') {
 			fdg_opt.d_r = atof(optarg);
 			assert(fdg_opt.d_r > 0.0f);
+		} else if (c == 'C') {
+			fdg_opt.contact_target = (float)hk_parse_num(optarg, 0);
+			assert(fdg_opt.contact_target >= 0.0f);
 		} else if (c == 's') {
 			seed = atol(optarg);
 			kr_srand_r(&rng, seed);
 		} else if (c == 'M') {
 			bmap_skip_merge_flag = 1;
 		} else if (c == 'g') {
+			const char *bad_arg = 0;
 			gc_correction = 1;
+			gc_degree = 2;
+			if (hk_apply_gc_degree(argc, argv, optarg, &optind, &gc_degree, &bad_arg) != 0) {
+				fprintf(stderr, "[E::%s] invalid GC degree '%s' (expected 1-%d)\n",
+						__func__, bad_arg? bad_arg : "", HK_GC_MAX_DEGREE);
+				return 1;
+			}
 		} else if (c == 'G') {
 			gc_cpg_fn = optarg;
 			gc_cpg_ready = 1;
@@ -265,7 +314,14 @@ int main(int argc, char *argv[])
 					return 1;
 				}
 			} else if (long_idx == 24) { // --gc-corr
+				const char *bad_arg = 0;
 				gc_correction = 1;
+				gc_degree = 2;
+				if (hk_apply_gc_degree(argc, argv, optarg, &optind, &gc_degree, &bad_arg) != 0) {
+					fprintf(stderr, "[E::%s] invalid GC degree '%s' (expected 1-%d)\n",
+							__func__, bad_arg? bad_arg : "", HK_GC_MAX_DEGREE);
+					return 1;
+				}
 			} else if (long_idx == 25) { // --cpg
 				gc_cpg_fn = optarg;
 				gc_cpg_ready = 1;
@@ -388,8 +444,9 @@ int main(int argc, char *argv[])
 		fprintf(fp, "    -e FLOAT            step size [%g]\n", fdg_opt.step);
 		fprintf(fp, "    -k FLOAT            relative repulsive stiffness [%g]\n", fdg_opt.k_rel_rep);
 		fprintf(fp, "    -R FLOAT            relative repulsive radius [%g]\n", fdg_opt.d_r);
+		fprintf(fp, "    -C NUM              scale total contacts to NUM (0 to disable) [%g]\n", fdg_opt.contact_target);
 		fprintf(fp, "    -M                  do not merge beads that have no contacts\n");
-		fprintf(fp, "    -g                  enable GC/CpG-based contact normalization\n");
+		fprintf(fp, "    -g[NUM]             enable GC/CpG-based contact normalization (degree 1-10; default 2)\n");
 		fprintf(fp, "    -G FILE             CpG track (chr start end value) for the next -b step []\n");
 		fprintf(fp, "    --fdg-backend=STR   choose FDG backend: cpu, gpu, or auto [auto]\n");
 #ifdef HAVE_GL

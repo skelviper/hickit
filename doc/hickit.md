@@ -49,8 +49,8 @@ In code:
 
 ## GC/CpG normalization (`-g` and `-G/--cpg`)
 1. Load CpG content per bead (`hk_bmap_load_cpg` via `hk_bmap_apply_gc_correction` in `bin.c`).
-2. Fit a quadratic model of coverage vs. CpG fraction: `cov ≈ a + b*x + c*x^2`, using beads with CpG data (`bin.c:326-349`).
-3. Predict per-bead bias `bias[i] = a + b*x + c*x^2`, floor at `1e-6`, then renormalize so mean bias over used beads is 1 (`bin.c:351-365`).
+2. Fit a polynomial model of coverage vs. CpG fraction with degree `d` (default 2; set by `-g[1-10]`): `cov ≈ a0 + a1*x + ... + ad*x^d` (`bin.c:326-349`).
+3. Predict per-bead bias `bias[i] = a0 + a1*x + ... + ad*x^d`, floor at `1e-6`, then renormalize so mean bias over used beads is 1 (`bin.c:351-365`).
 4. For each contact between beads `i,j`:
    - Expected multiplicative bias: `gc_exp = bias[i] * bias[j]` (floored at `1e-6`).
    - GC-normalized count: `gc_norm_n = raw_count / gc_exp` (`bin.c:367-373`).
@@ -59,6 +59,6 @@ In code:
 7. The distance scale for the contact is `d_scale = n_eff^{-1/3}`; this is the only place the normalized count enters the force law.
 
 ## CLI switches
-- `-g` / `--gc-corr`: enable GC/CpG-based normalization for subsequent `-b` binning/modeling.
+- `-g[NUM]` / `--gc-corr[=NUM]`: enable GC/CpG-based normalization for subsequent `-b` binning/modeling, with optional polynomial degree (1-10; default 2).
 - `-G <file>` / `--cpg=<file>`: provide the CpG track (bedGraph-like) required by `-g`.
 - If `-g` is set without a CpG file when binning, the program aborts with an error (`main.c:208-220`). 
