@@ -48,7 +48,8 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 					   float rel_rep_k,
 					   float rep_radius,
 					   struct hk_fdg_gpu_stats *stats,
-					   double *rms_force);
+					   double *rms_force,
+					   int need_sync);
 int hk_fdg_gpu_pairs_ready(const struct hk_fdg_gpu_ctx *ctx);
 size_t hk_fdg_gpu_get_active_pairs(const struct hk_fdg_gpu_ctx *ctx);
 void hk_fdg_gpu_set_pair_totals(struct hk_fdg_gpu_ctx *ctx, const uint32_t totals[HK_FDG_PAIR_TYPE_COUNT]);

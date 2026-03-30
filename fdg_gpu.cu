@@ -68,6 +68,7 @@ struct hk_fdg_gpu_ctx {
 	int *d_bead_next;
 	float4 *d_grid_params;
 	float *d_bounds;
+	float *h_bounds_init_pinned; /* pinned buffer for bounds initialization */
 	int n_cells;
 	cudaStream_t stream;
 	uint32_t pair_counts[HK_FDG_PAIR_TYPE_COUNT];
@@ -237,43 +238,56 @@ __device__ __forceinline__ void warp_sum_match3(unsigned active_mask,
 	}
 }
 
-__global__ static void init_bounds_kernel(float *bounds)
-{
-	if (threadIdx.x == 0 && blockIdx.x == 0) {
-		bounds[0] = FLT_MAX;
-		bounds[1] = FLT_MAX;
-		bounds[2] = FLT_MAX;
-		bounds[3] = -FLT_MAX;
-		bounds[4] = -FLT_MAX;
-		bounds[5] = -FLT_MAX;
-	}
-}
-
+/* Optimized bounds kernel: warp+block reduction, then one atomic per block */
 __global__ static void bounds_kernel(const hk_gpu_vec3_t *__restrict__ pos, int32_t n, float *__restrict__ bounds)
 {
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	if (idx >= n) return;
-	hk_gpu_vec3_t p = pos[idx];
-	atomicMinFloat(&bounds[0], p.x);
-	atomicMinFloat(&bounds[1], p.y);
-	atomicMinFloat(&bounds[2], p.z);
-	atomicMaxFloat(&bounds[3], p.x);
-	atomicMaxFloat(&bounds[4], p.y);
-	atomicMaxFloat(&bounds[5], p.z);
-}
+	float lmin_x = FLT_MAX, lmin_y = FLT_MAX, lmin_z = FLT_MAX;
+	float lmax_x = -FLT_MAX, lmax_y = -FLT_MAX, lmax_z = -FLT_MAX;
 
-__global__ static void fdg_prepare_grid_kernel(const float *__restrict__ bounds,
-											   float unit,
-											   float rep_radius,
-											   float4 *__restrict__ grid_params)
-{
-	if (threadIdx.x == 0 && blockIdx.x == 0) {
-		float cell_size = unit * rep_radius;
-		float inv_cell = (cell_size > 0.0f) ? 1.0f / cell_size : 0.0f;
-		float min_x = bounds[0] == FLT_MAX ? 0.0f : bounds[0];
-		float min_y = bounds[1] == FLT_MAX ? 0.0f : bounds[1];
-		float min_z = bounds[2] == FLT_MAX ? 0.0f : bounds[2];
-		grid_params[0] = make_float4(min_x, min_y, min_z, inv_cell);
+	for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += blockDim.x * gridDim.x) {
+		hk_gpu_vec3_t p = pos[i];
+		lmin_x = fminf(lmin_x, p.x); lmax_x = fmaxf(lmax_x, p.x);
+		lmin_y = fminf(lmin_y, p.y); lmax_y = fmaxf(lmax_y, p.y);
+		lmin_z = fminf(lmin_z, p.z); lmax_z = fmaxf(lmax_z, p.z);
+	}
+
+	/* warp reduction */
+	for (int offset = 16; offset > 0; offset >>= 1) {
+		lmin_x = fminf(lmin_x, __shfl_down_sync(0xffffffff, lmin_x, offset));
+		lmin_y = fminf(lmin_y, __shfl_down_sync(0xffffffff, lmin_y, offset));
+		lmin_z = fminf(lmin_z, __shfl_down_sync(0xffffffff, lmin_z, offset));
+		lmax_x = fmaxf(lmax_x, __shfl_down_sync(0xffffffff, lmax_x, offset));
+		lmax_y = fmaxf(lmax_y, __shfl_down_sync(0xffffffff, lmax_y, offset));
+		lmax_z = fmaxf(lmax_z, __shfl_down_sync(0xffffffff, lmax_z, offset));
+	}
+
+	__shared__ float s_min[3][8];
+	__shared__ float s_max[3][8];
+	int lane = threadIdx.x & 31;
+	int warp_id = threadIdx.x >> 5;
+	int n_warps = blockDim.x >> 5;
+
+	if (lane == 0) {
+		s_min[0][warp_id] = lmin_x; s_min[1][warp_id] = lmin_y; s_min[2][warp_id] = lmin_z;
+		s_max[0][warp_id] = lmax_x; s_max[1][warp_id] = lmax_y; s_max[2][warp_id] = lmax_z;
+	}
+	__syncthreads();
+
+	if (threadIdx.x == 0) {
+		for (int w = 1; w < n_warps; ++w) {
+			lmin_x = fminf(lmin_x, s_min[0][w]);
+			lmin_y = fminf(lmin_y, s_min[1][w]);
+			lmin_z = fminf(lmin_z, s_min[2][w]);
+			lmax_x = fmaxf(lmax_x, s_max[0][w]);
+			lmax_y = fmaxf(lmax_y, s_max[1][w]);
+			lmax_z = fmaxf(lmax_z, s_max[2][w]);
+		}
+		atomicMinFloat(&bounds[0], lmin_x);
+		atomicMinFloat(&bounds[1], lmin_y);
+		atomicMinFloat(&bounds[2], lmin_z);
+		atomicMaxFloat(&bounds[3], lmax_x);
+		atomicMaxFloat(&bounds[4], lmax_y);
+		atomicMaxFloat(&bounds[5], lmax_z);
 	}
 }
 
@@ -295,23 +309,39 @@ __global__ static void insert_block_keys_kernel(uint64_t *table, uint32_t mask, 
 
 __global__ static void fdg_insert_beads_kernel(const hk_gpu_vec3_t *__restrict__ pos,
 							   int32_t n_beads,
-							   const float4 *__restrict__ grid_params,
+							   const float *__restrict__ bounds,
+							   float unit,
+							   float rep_radius,
+							   float4 *__restrict__ grid_params,
 							   uint64_t *__restrict__ cell_hash_keys,
 							   int *__restrict__ cell_heads,
 							   int *__restrict__ bead_next,
 							   uint32_t cell_hash_mask)
 {
 	const uint64_t EMPTY_KEY = 0xffffffffffffffffULL;
+
+	/* Thread 0 computes grid params (replaces prepare_grid<<<1,1>>>) */
+	__shared__ float4 s_grid;
+	if (threadIdx.x == 0) {
+		float cell_size = unit * rep_radius;
+		float inv_cell = (cell_size > 0.0f) ? 1.0f / cell_size : 0.0f;
+		float min_x = bounds[0] == FLT_MAX ? 0.0f : bounds[0];
+		float min_y = bounds[1] == FLT_MAX ? 0.0f : bounds[1];
+		float min_z = bounds[2] == FLT_MAX ? 0.0f : bounds[2];
+		s_grid = make_float4(min_x, min_y, min_z, inv_cell);
+		grid_params[0] = s_grid;
+	}
+	__syncthreads();
+
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	if (idx >= n_beads) return;
 
-	float4 grid = grid_params[0];
-	float inv_cell = grid.w;
+	float inv_cell = s_grid.w;
 	if (inv_cell <= 0.0f) {
 		bead_next[idx] = -1;
 		return;
 	}
-	float3 origin = make_float3(grid.x, grid.y, grid.z);
+	float3 origin = make_float3(s_grid.x, s_grid.y, s_grid.z);
 	hk_gpu_vec3_t p = pos[idx];
 	int cx = int(floorf((p.x - origin.x) * inv_cell));
 	int cy = int(floorf((p.y - origin.y) * inv_cell));
@@ -398,10 +428,12 @@ __global__ static void fdg_force_kernel(const hk_gpu_vec3_t *__restrict__ pos,
 		}
 	}
 
-	if (energy > 0.0f)
-		atomicAdd(&stats->energy[pair.type], energy);
-	if (force_mag != 0.0f)
-		atomicAdd(&stats->dist_sum[pair.type], dist_norm / pair.d_scale);
+	if (stats != nullptr) {
+		if (energy > 0.0f)
+			atomicAdd(&stats->energy[pair.type], energy);
+		if (force_mag != 0.0f)
+			atomicAdd(&stats->dist_sum[pair.type], dist_norm / pair.d_scale);
+	}
 
 	if (force_mag != 0.0f) {
 		float fx = dirx * force_mag;
@@ -413,7 +445,8 @@ __global__ static void fdg_force_kernel(const hk_gpu_vec3_t *__restrict__ pos,
 		atomicAdd(&force[j].x, -fx);
 		atomicAdd(&force[j].y, -fy);
 		atomicAdd(&force[j].z, -fz);
-		atomicAdd(&stats->active[pair.type], 1u);
+		if (stats != nullptr)
+			atomicAdd(&stats->active[pair.type], 1u);
 	}
 }
 
@@ -486,8 +519,7 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 					float dy2 = pi.y - pj.y;
 					float dz2 = pi.z - pj.z;
 					float dist_sq = dx2 * dx2 + dy2 * dy2 + dz2 * dz2;
-					if (dist_sq == 0.0f) continue;
-					if (dist_sq >= rep_limit_sq) continue;
+					if (dist_sq == 0.0f || dist_sq >= rep_limit_sq) continue;
 					float inv_dist = rsqrtf(dist_sq);
 					float dist = dist_sq * inv_dist;
 					float dist_unit = dist * inv_unit;
@@ -538,12 +570,14 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 		atomicAdd(&force[idx].z, fz_acc);
 	}
 
-	if (energy_acc != 0.0f)
-		atomicAdd(&stats->energy[HK_FDG_PAIR_TYPE_REPEL], energy_acc);
-	if (dist_acc != 0.0f)
-		atomicAdd(&stats->dist_sum[HK_FDG_PAIR_TYPE_REPEL], dist_acc);
-	if (active_cnt)
-		atomicAdd(&stats->active[HK_FDG_PAIR_TYPE_REPEL], active_cnt);
+	if (stats != nullptr) {
+		if (energy_acc != 0.0f)
+			atomicAdd(&stats->energy[HK_FDG_PAIR_TYPE_REPEL], energy_acc);
+		if (dist_acc != 0.0f)
+			atomicAdd(&stats->dist_sum[HK_FDG_PAIR_TYPE_REPEL], dist_acc);
+		if (active_cnt)
+			atomicAdd(&stats->active[HK_FDG_PAIR_TYPE_REPEL], active_cnt);
+	}
 }
 
 __global__ static void fdg_update_kernel(hk_gpu_vec3_t *__restrict__ pos,
@@ -652,6 +686,8 @@ void hk_fdg_gpu_destroy(struct hk_fdg_gpu_ctx *ctx)
 	hk_fdg_gpu_free_device(&ctx->d_bounds);
 	if (ctx->h_stats_pinned)
 		cudaFreeHost(ctx->h_stats_pinned);
+	if (ctx->h_bounds_init_pinned)
+		cudaFreeHost(ctx->h_bounds_init_pinned);
 	delete ctx;
 }
 
@@ -702,6 +738,19 @@ int hk_fdg_gpu_prepare(struct hk_fdg_gpu_ctx *ctx, int32_t n_beads, size_t n_blo
 				std::fprintf(stderr, "[E::fdg-gpu] failed to allocate pinned stats buffer\n");
 			return -1;
 		}
+	}
+	if (ctx->h_bounds_init_pinned == nullptr) {
+		if (cudaHostAlloc(&ctx->h_bounds_init_pinned, 6 * sizeof(float), cudaHostAllocPortable) != cudaSuccess) {
+			if (hk_verbose >= 1)
+				std::fprintf(stderr, "[E::fdg-gpu] failed to allocate pinned bounds init buffer\n");
+			return -1;
+		}
+		ctx->h_bounds_init_pinned[0] = FLT_MAX;
+		ctx->h_bounds_init_pinned[1] = FLT_MAX;
+		ctx->h_bounds_init_pinned[2] = FLT_MAX;
+		ctx->h_bounds_init_pinned[3] = -FLT_MAX;
+		ctx->h_bounds_init_pinned[4] = -FLT_MAX;
+		ctx->h_bounds_init_pinned[5] = -FLT_MAX;
 	}
 	ctx->pairs_ready = 0;
 	ctx->active_pairs = 0;
@@ -828,7 +877,8 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 					   float rel_rep_k,
 					   float rep_radius,
 					   struct hk_fdg_gpu_stats *stats,
-					   double *rms_force)
+					   double *rms_force,
+					   int need_sync)
 {
 	if (!ctx || !opt || !stats || !rms_force) return -1;
 	int n_beads = ctx->n_beads;
@@ -855,12 +905,13 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 			return -1;
 	}
 
-	cudaError_t err = cudaMemsetAsync(ctx->d_stats, 0, sizeof(*ctx->d_stats), ctx->stream);
-	if (hk_fdg_gpu_cuda_check(err, "zero stats") != 0)
-		return -1;
-	err = cudaMemsetAsync(ctx->d_force, 0, ctx->bead_capacity * sizeof(hk_gpu_vec3_t), ctx->stream);
-	if (hk_fdg_gpu_cuda_check(err, "clear force buffer") != 0)
-		return -1;
+	struct hk_fdg_gpu_stats *stats_dev = need_sync ? ctx->d_stats : nullptr;
+	cudaError_t err;
+	if (need_sync) {
+		err = cudaMemsetAsync(ctx->d_stats, 0, sizeof(*ctx->d_stats), ctx->stream);
+		if (hk_fdg_gpu_cuda_check(err, "zero stats") != 0)
+			return -1;
+	}
 
 	const int threads = 256;
 	if (n_pairs > 0) {
@@ -871,7 +922,7 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 															   n_pairs,
 															   *opt,
 															   unit,
-															   ctx->d_stats,
+															   stats_dev,
 															   n_beads);
 		if (hk_fdg_gpu_check_last_error("force kernel") != 0)
 			return -1;
@@ -886,8 +937,9 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 		return 32;
 	};
 	if (do_repulsion) {
-		init_bounds_kernel<<<1, 1, 0, ctx->stream>>>(ctx->d_bounds);
-		if (hk_fdg_gpu_check_last_error("init bounds kernel") != 0)
+		/* Use pinned memcpy instead of <<<1,1>>> kernel for bounds init */
+		err = cudaMemcpyAsync(ctx->d_bounds, ctx->h_bounds_init_pinned, 6 * sizeof(float), cudaMemcpyHostToDevice, ctx->stream);
+		if (hk_fdg_gpu_cuda_check(err, "init bounds") != 0)
 			return -1;
 		int bound_blocks = div_up_int(n_beads, threads);
 		bounds_kernel<<<bound_blocks, threads, 0, ctx->stream>>>(ctx->d_pos, n_beads, ctx->d_bounds);
@@ -895,12 +947,12 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 			return -1;
 		if (hk_fdg_gpu_prepare_cell_hash(ctx, n_beads) != 0)
 			return -1;
-		fdg_prepare_grid_kernel<<<1, 1, 0, ctx->stream>>>(ctx->d_bounds, unit, rep_radius, ctx->d_grid_params);
-		if (hk_fdg_gpu_check_last_error("prepare grid kernel") != 0)
-			return -1;
 		int bead_blocks = div_up_int(n_beads, threads);
 		fdg_insert_beads_kernel<<<bead_blocks, threads, 0, ctx->stream>>>(ctx->d_pos,
 							     n_beads,
+							     ctx->d_bounds,
+							     unit,
+							     rep_radius,
 							     ctx->d_grid_params,
 							     ctx->d_cell_hash_keys,
 							     ctx->d_cell_hash_vals,
@@ -924,7 +976,7 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 							      (uint32_t)(ctx->cell_hash_cap - 1),
 							      ctx->d_block_table,
 							      block_mask,
-							      ctx->d_stats,
+							      stats_dev,
 							      ctx->d_grid_params);
 		if (hk_fdg_gpu_check_last_error("repulsion kernel") != 0)
 			return -1;
@@ -940,22 +992,28 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 																  step,
 																  opt->coef_moment,
 																  opt->max_f,
-																  ctx->d_stats);
+																  stats_dev);
 	if (hk_fdg_gpu_check_last_error("update kernel") != 0)
 		return -1;
 
-	err = cudaMemcpyAsync(ctx->h_stats_pinned, ctx->d_stats, sizeof(*ctx->h_stats_pinned), cudaMemcpyDeviceToHost, ctx->stream);
-	if (hk_fdg_gpu_cuda_check(err, "copy stats to host") != 0)
-		return -1;
-	err = cudaStreamSynchronize(ctx->stream);
-	if (hk_fdg_gpu_cuda_check(err, "sync hk_fdg_gpu_compute") != 0)
-		return -1;
-	std::memcpy(stats, ctx->h_stats_pinned, sizeof(*stats));
+	if (need_sync) {
+		err = cudaMemcpyAsync(ctx->h_stats_pinned, ctx->d_stats, sizeof(*ctx->h_stats_pinned), cudaMemcpyDeviceToHost, ctx->stream);
+		if (hk_fdg_gpu_cuda_check(err, "copy stats to host") != 0)
+			return -1;
+		err = cudaStreamSynchronize(ctx->stream);
+		if (hk_fdg_gpu_cuda_check(err, "sync hk_fdg_gpu_compute") != 0)
+			return -1;
+		std::memcpy(stats, ctx->h_stats_pinned, sizeof(*stats));
 
-	if (n_beads > 0 && stats->force_sq_sum > 0.0)
-		*rms_force = sqrt(stats->force_sq_sum / (double)n_beads);
-	else
+		if (n_beads > 0 && stats->force_sq_sum > 0.0)
+			*rms_force = sqrt(stats->force_sq_sum / (double)n_beads);
+		else
+			*rms_force = 0.0;
+	} else {
+		/* No sync: caller doesn't need stats this iteration */
+		std::memset(stats, 0, sizeof(*stats));
 		*rms_force = 0.0;
+	}
 
 	return 0;
 }

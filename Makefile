@@ -19,7 +19,7 @@ CUDA_OBJS=
 CXX?=		g++
 LINK?=		$(CC)
 NVCC?=		$(CUDA_HOME)/bin/nvcc
-CUDAFLAGS?=	-O3 -std=c++17
+CUDAFLAGS?=	-O3 -std=c++17 --use_fast_math -lineinfo -gencode arch=compute_89,code=sm_89
 
 ifneq ($(asan),)
 	ASAN_FLAG = -fsanitize=address

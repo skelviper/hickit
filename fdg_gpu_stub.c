@@ -67,7 +67,8 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 					   float rel_rep_k,
 					   float rep_radius,
 					   struct hk_fdg_gpu_stats *stats,
-					   double *rms_force)
+					   double *rms_force,
+					   int need_sync)
 {
 	(void)ctx;
 	(void)opt;
@@ -78,6 +79,7 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 	(void)rep_radius;
 	(void)stats;
 	(void)rms_force;
+	(void)need_sync;
 	return -1;
 }
 

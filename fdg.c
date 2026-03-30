@@ -429,7 +429,7 @@ static double hk_fdg1_cpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khas
 	return sum;
 }
 
-static int hk_fdg1_gpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t(set64) *h, float unit, int max_nei, int mid_dist, float contact_scale, float rel_rep_k, int iter, struct hk_fdg_gpu_ctx *gpu_ctx, double start_time, double *rms_force)
+static int hk_fdg1_gpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t(set64) *h, float unit, int max_nei, int mid_dist, float contact_scale, float rel_rep_k, int iter, struct hk_fdg_gpu_ctx *gpu_ctx, double start_time, double *rms_force, int need_sync)
 {
 	const double a_third = 1.0 / 3.0;
 	int32_t i, j, n_bb = 0, n_con = 0;
@@ -491,13 +491,13 @@ static int hk_fdg1_gpu(const struct hk_fdg_conf *opt, struct hk_bmap *m, khash_t
 		hk_fdg_gpu_get_pair_totals(gpu_ctx, pair_totals);
 	}
 
-	if (hk_fdg_gpu_compute(gpu_ctx, &opt_gpu, pair_data, pair_count, unit, rel_rep_k, rep_radius, &stats, rms_force) != 0)
+	if (hk_fdg_gpu_compute(gpu_ctx, &opt_gpu, pair_data, pair_count, unit, rel_rep_k, rep_radius, &stats, rms_force, need_sync) != 0)
 		goto cleanup;
 	if (need_build) {
 		hk_fdg_gpu_set_pair_totals(gpu_ctx, pair_totals);
 	}
 
-	if (hk_verbose >= 3 && (iter + 1) % 10 == 0) {
+	if (need_sync && hk_verbose >= 3 && (iter + 1) % 10 == 0) {
 		if (!need_build)
 			hk_fdg_gpu_get_pair_totals(gpu_ctx, pair_totals);
 		n_bb = pair_totals[HK_FDG_PAIR_TYPE_BACKBONE];
@@ -624,13 +624,16 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 	double start_time = hk_wtime();
 	for (iter = 0; iter < opt->n_iter; ++iter) {
 		double s, rel_rep_k;
+		int need_sync;
 		rel_rep_k = (double)(iter + 1) / opt->n_iter;
 		rel_rep_k = 1.0 / (1.0 + exp(-alpha * (rel_rep_k - turning)));
+		/* Sync every 10 iterations or on the last iteration to reduce GPU stalls */
+		need_sync = ((iter + 1) % 10 == 0) || (iter + 1 == opt->n_iter);
 		//rel_rep_k = 1.0;
 		if (use_gpu) {
 			double s_gpu = 0.0;
-			if (hk_fdg1_gpu(opt, m, h, unit, max_nei, mid_dist, contact_scale, rel_rep_k, iter, gpu_ctx, start_time, &s_gpu) == 0) {
-				s = s_gpu;
+			if (hk_fdg1_gpu(opt, m, h, unit, max_nei, mid_dist, contact_scale, rel_rep_k, iter, gpu_ctx, start_time, &s_gpu, need_sync) == 0) {
+				s = need_sync ? s_gpu : best; /* don't update best when not synced */
 			} else {
 				if (hk_verbose >= 1)
 					fprintf(stderr, "[W::%s] GPU iteration failed at iter %d; switching to CPU backend.\n", __func__, iter + 1);
