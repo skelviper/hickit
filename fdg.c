@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <math.h>
+#include <errno.h>
 #include <time.h>
 #include <sys/time.h>
 #include "hkpriv.h"
@@ -25,6 +26,20 @@ static double hk_wtime(void)
 	gettimeofday(&tv, 0);
 	return tv.tv_sec + tv.tv_usec * 1e-6;
 #endif
+}
+
+static int hk_fdg_gpu_sync_every(void)
+{
+	const char *env = getenv("HK_FDG_GPU_SYNC_EVERY");
+	if (env && *env) {
+		char *end = 0;
+		long v;
+		errno = 0;
+		v = strtol(env, &end, 10);
+		if (errno == 0 && end && *end == '\0' && v > 0)
+			return (int)v;
+	}
+	return 10;
 }
 
 struct fdg_coor {
@@ -533,6 +548,7 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 	double contact_sum = 0.0;
 	struct hk_fdg_gpu_ctx *gpu_ctx = 0;
 	int use_gpu = 0;
+	int sync_every = hk_fdg_gpu_sync_every();
 	enum hk_fdg_backend backend = opt->backend;
 
 	if (backend != HK_FDG_BACKEND_CPU && backend != HK_FDG_BACKEND_GPU && backend != HK_FDG_BACKEND_AUTO)
@@ -627,8 +643,8 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 		int need_sync;
 		rel_rep_k = (double)(iter + 1) / opt->n_iter;
 		rel_rep_k = 1.0 / (1.0 + exp(-alpha * (rel_rep_k - turning)));
-		/* Sync every 10 iterations or on the last iteration to reduce GPU stalls */
-		need_sync = ((iter + 1) % 10 == 0) || (iter + 1 == opt->n_iter);
+		/* Sync every N iterations or on the last iteration to reduce GPU stalls */
+		need_sync = ((iter + 1) % sync_every == 0) || (iter + 1 == opt->n_iter);
 		//rel_rep_k = 1.0;
 		if (use_gpu) {
 			double s_gpu = 0.0;
