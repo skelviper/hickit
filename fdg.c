@@ -39,7 +39,7 @@ static int hk_fdg_gpu_sync_every(void)
 		if (errno == 0 && end && *end == '\0' && v > 0)
 			return (int)v;
 	}
-	return 10;
+	return 50;
 }
 
 struct fdg_coor {
