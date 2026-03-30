@@ -52,8 +52,8 @@ struct hk_fdg_gpu_ctx {
 	size_t bead_capacity;
 	size_t capacity_pairs;
 	size_t active_pairs;
-	size_t block_table_cap;
-	size_t block_keys_cap;
+	size_t block_offsets_cap;
+	size_t block_neighbors_cap;
 	size_t cell_capacity;
 	size_t cell_hash_cap;
 	hk_gpu_vec3_t *d_pos;
@@ -62,8 +62,8 @@ struct hk_fdg_gpu_ctx {
 	hk_gpu_vec3_t *d_force;
 	struct hk_fdg_gpu_pair *d_pairs;
 	struct hk_fdg_gpu_stats *d_stats;
-	uint64_t *d_block_table;
-	uint64_t *d_block_keys;
+	int *d_block_offsets;
+	int *d_block_neighbors;
 	uint64_t *d_cell_hash_keys;
 	int *d_cell_hash_vals;
 	int *d_bead_next;
@@ -205,16 +205,27 @@ __device__ static inline double atomicAdd_double(double *addr, double val)
 #endif
 }
 
-__device__ static inline bool block_contains(const uint64_t *table, uint32_t mask, uint64_t key)
+__device__ __forceinline__ bool block_list_contains(const int *__restrict__ neighbors,
+									 int start,
+									 int end,
+									 int j)
 {
-	uint32_t slot = uint32_t(fdg_hash64(key)) & mask;
-	for (uint32_t iter = 0; iter <= mask; ++iter) {
-		uint64_t stored = FDG_LDG_UINT64(&table[slot]);
-		if (stored == 0ULL) return false;
-		if (stored == key) return true;
-		slot = (slot + 1u) & mask;
+	int len = end - start;
+	if (len <= 0) return false;
+	if (len <= 8) {
+		for (int k = start; k < end; ++k)
+			if (FDG_LDG_INT(&neighbors[k]) == j)
+				return true;
+		return false;
 	}
-	return false;
+	int lo = start, hi = end;
+	while (lo < hi) {
+		int mid = (lo + hi) >> 1;
+		int v = FDG_LDG_INT(&neighbors[mid]);
+		if (v < j) lo = mid + 1;
+		else hi = mid;
+	}
+	return lo < end && FDG_LDG_INT(&neighbors[lo]) == j;
 }
 
 __device__ __forceinline__ void warp_sum_match3(unsigned active_mask,
@@ -291,22 +302,6 @@ __global__ static void bounds_kernel(const hk_gpu_vec3_t *__restrict__ pos, int3
 		atomicMaxFloat(&bounds[5], lmax_z);
 	}
 }
-
-__global__ static void insert_block_keys_kernel(uint64_t *table, uint32_t mask, const uint64_t *keys, size_t n_keys)
-{
-	size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-	for (size_t i = idx; i < n_keys; i += blockDim.x * (size_t)gridDim.x) {
-		uint64_t key = keys[i];
-		if (key == 0ULL) continue;
-		uint32_t slot = uint32_t(fdg_hash64(key)) & mask;
-		while (true) {
-			uint64_t prev = atomicCAS(reinterpret_cast<unsigned long long*>(&table[slot]), 0ULL, key);
-			if (prev == 0ULL || prev == key) break;
-			slot = (slot + 1u) & mask;
-		}
-	}
-}
-
 
 __global__ static void fdg_insert_beads_kernel(const hk_gpu_vec3_t *__restrict__ pos,
 							   int32_t n_beads,
@@ -461,8 +456,8 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 							 const int *__restrict__ cell_hash_vals,
 							 const int *__restrict__ bead_next,
 							 uint32_t cell_hash_mask,
-							 const uint64_t *__restrict__ block_table,
-							 uint32_t block_mask,
+							 const int *__restrict__ block_offsets,
+							 const int *__restrict__ block_neighbors,
 							 struct hk_fdg_gpu_stats *__restrict__ stats,
 							 const float4 *__restrict__ grid_params)
 {
@@ -492,6 +487,8 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 	const float rep_limit = rep_radius * unit;
 	const float rep_limit_sq = rep_limit * rep_limit;
 	const float two_k_rep = 2.0f * k_rep;
+	int block_start = 0;
+	int block_end = 0;
 
 	int cx = __float2int_rd((pi.x - origin.x) * inv_cell);
 	int cy = __float2int_rd((pi.y - origin.y) * inv_cell);
@@ -499,6 +496,10 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 	if (cx < 0) cx = 0;
 	if (cy < 0) cy = 0;
 	if (cz < 0) cz = 0;
+	if (block_neighbors) {
+		block_start = FDG_LDG_INT(&block_offsets[idx]);
+		block_end = FDG_LDG_INT(&block_offsets[idx + 1]);
+	}
 
 	for (int dz = -1; dz <= 1; ++dz) {
 		for (int dy = -1; dy <= 1; ++dy) {
@@ -524,8 +525,7 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 					float inv_dist = rsqrtf(dist_sq);
 					float dist = dist_sq * inv_dist;
 					float dist_unit = dist * inv_unit;
-					uint64_t pair_key = (uint64_t(idx) << 32) | uint32_t(j);
-					if (block_table && block_contains(block_table, block_mask, pair_key)) continue;
+					if (block_end > block_start && block_list_contains(block_neighbors, block_start, block_end, j)) continue;
 					float t = rep_radius - dist_unit;
 					float energy = k_rep * t * t;
 					float force_mag = two_k_rep * t;
@@ -659,8 +659,8 @@ void hk_fdg_gpu_destroy(struct hk_fdg_gpu_ctx *ctx)
 	hk_fdg_gpu_free_device(&ctx->d_force);
 	hk_fdg_gpu_free_device(&ctx->d_pairs);
 	hk_fdg_gpu_free_device(&ctx->d_stats);
-	hk_fdg_gpu_free_device(&ctx->d_block_table);
-	hk_fdg_gpu_free_device(&ctx->d_block_keys);
+	hk_fdg_gpu_free_device(&ctx->d_block_offsets);
+	hk_fdg_gpu_free_device(&ctx->d_block_neighbors);
 	hk_fdg_gpu_free_device(&ctx->d_cell_hash_keys);
 	hk_fdg_gpu_free_device(&ctx->d_cell_hash_vals);
 	hk_fdg_gpu_free_device(&ctx->d_bead_next);
@@ -696,6 +696,7 @@ static int hk_fdg_gpu_ensure_bead_capacity(struct hk_fdg_gpu_ctx *ctx, size_t ne
 int hk_fdg_gpu_prepare(struct hk_fdg_gpu_ctx *ctx, int32_t n_beads, size_t n_block_keys)
 {
 	if (!ctx) return -1;
+	(void)n_block_keys;
 	ctx->n_beads = n_beads;
 	if (hk_fdg_gpu_ensure_bead_capacity(ctx, (size_t)n_beads) != 0)
 		return -1;
@@ -710,11 +711,6 @@ int hk_fdg_gpu_prepare(struct hk_fdg_gpu_ctx *ctx, int32_t n_beads, size_t n_blo
 	if (ctx->d_bounds == nullptr) {
 		if (hk_fdg_gpu_resize_device(&ctx->d_bounds, 6, "bounds buffer") != 0)
 			return -1;
-	}
-	if (n_block_keys > ctx->block_keys_cap) {
-		if (hk_fdg_gpu_resize_device(&ctx->d_block_keys, n_block_keys, "blocklist key buffer") != 0)
-			return -1;
-		ctx->block_keys_cap = n_block_keys;
 	}
 	if (ctx->h_stats_pinned == nullptr) {
 		if (cudaHostAlloc(&ctx->h_stats_pinned, sizeof(*ctx->h_stats_pinned), cudaHostAllocPortable) != cudaSuccess) {
@@ -746,38 +742,109 @@ int hk_fdg_gpu_prepare(struct hk_fdg_gpu_ctx *ctx, int32_t n_beads, size_t n_blo
 int hk_fdg_gpu_set_blocklist(struct hk_fdg_gpu_ctx *ctx, const uint64_t *keys, size_t n_keys)
 {
 	if (!ctx) return -1;
-	if (n_keys == 0) {
-		ctx->block_table_cap = 0;
-		ctx->block_keys_cap = 0;
-		hk_fdg_gpu_free_device(&ctx->d_block_table);
-		hk_fdg_gpu_free_device(&ctx->d_block_keys);
+	if (n_keys == 0 || ctx->n_beads <= 0) {
+		ctx->block_offsets_cap = 0;
+		ctx->block_neighbors_cap = 0;
+		hk_fdg_gpu_free_device(&ctx->d_block_offsets);
+		hk_fdg_gpu_free_device(&ctx->d_block_neighbors);
 		return 0;
 	}
-	if (n_keys > ctx->block_keys_cap) {
-		if (hk_fdg_gpu_resize_device(&ctx->d_block_keys, n_keys, "blocklist key buffer") != 0)
-			return -1;
-		ctx->block_keys_cap = n_keys;
-	}
-	cudaError_t err = cudaMemcpyAsync(ctx->d_block_keys, keys, n_keys * sizeof(uint64_t), cudaMemcpyHostToDevice, ctx->stream);
-	if (hk_fdg_gpu_cuda_check(err, "copy block keys") != 0)
-		return -1;
 
-	size_t table_cap = next_pow2_size(std::max<size_t>(n_keys * 2, 4));
-	if (table_cap != ctx->block_table_cap) {
-		if (hk_fdg_gpu_resize_device(&ctx->d_block_table, table_cap, "blocklist hash table") != 0)
-			return -1;
-		ctx->block_table_cap = table_cap;
-	}
-	err = cudaMemsetAsync(ctx->d_block_table, 0, ctx->block_table_cap * sizeof(uint64_t), ctx->stream);
-	if (hk_fdg_gpu_cuda_check(err, "clear block table") != 0)
+	size_t offset_count = (size_t)ctx->n_beads + 1;
+	int *offsets = CALLOC(int, offset_count);
+	if (offsets == nullptr) {
+		if (hk_verbose >= 1)
+			std::fprintf(stderr, "[E::fdg-gpu] failed to allocate blocklist offsets\n");
 		return -1;
-	int threads = 256;
-	int blocks = (int)((n_keys + threads - 1) / threads);
-	if (blocks > 0) {
-		insert_block_keys_kernel<<<blocks, threads, 0, ctx->stream>>>(ctx->d_block_table, (uint32_t)(ctx->block_table_cap - 1),
-																	  ctx->d_block_keys, n_keys);
-		if (hk_fdg_gpu_check_last_error("insert block keys kernel") != 0)
+	}
+	size_t valid_keys = 0;
+	for (size_t t = 0; t < n_keys; ++t) {
+		int32_t i = (int32_t)(keys[t] >> 32);
+		int32_t j = (int32_t)(uint32_t)keys[t];
+		if (i < 0 || j < 0 || i >= ctx->n_beads || j >= ctx->n_beads || i == j)
+			continue;
+		++offsets[(size_t)i + 1];
+		++valid_keys;
+	}
+
+	for (int i = 1; i <= ctx->n_beads; ++i)
+		offsets[i] += offsets[i - 1];
+
+	int *neighbors = nullptr;
+	if (valid_keys > 0) {
+		neighbors = MALLOC(int, valid_keys);
+		if (neighbors == nullptr) {
+			free(offsets);
+			if (hk_verbose >= 1)
+				std::fprintf(stderr, "[E::fdg-gpu] failed to allocate blocklist neighbors\n");
 			return -1;
+		}
+		int *fill = MALLOC(int, ctx->n_beads);
+		if (fill == nullptr) {
+			free(offsets);
+			free(neighbors);
+			if (hk_verbose >= 1)
+				std::fprintf(stderr, "[E::fdg-gpu] failed to allocate blocklist fill cursors\n");
+			return -1;
+		}
+		std::memcpy(fill, offsets, (size_t)ctx->n_beads * sizeof(int));
+		for (size_t t = 0; t < n_keys; ++t) {
+			int32_t i = (int32_t)(keys[t] >> 32);
+			int32_t j = (int32_t)(uint32_t)keys[t];
+			if (i < 0 || j < 0 || i >= ctx->n_beads || j >= ctx->n_beads || i == j)
+				continue;
+			neighbors[fill[i]++] = j;
+		}
+		free(fill);
+		int max_deg = 0;
+		for (int i = 0; i < ctx->n_beads; ++i) {
+			int start = offsets[i];
+			int end = offsets[i + 1];
+			int deg = end - start;
+			if (deg > 1)
+				std::sort(neighbors + start, neighbors + end);
+			if (deg > max_deg)
+				max_deg = deg;
+		}
+		if (hk_verbose >= 2) {
+			double avg_deg = ctx->n_beads? (double)valid_keys / ctx->n_beads : 0.0;
+			std::fprintf(stderr, "[I::fdg-gpu] blocklist CSR ready: edges=%zu avg_deg=%.2f max_deg=%d\n",
+						 valid_keys, avg_deg, max_deg);
+		}
+	}
+
+	if (offset_count > ctx->block_offsets_cap) {
+		if (hk_fdg_gpu_resize_device(&ctx->d_block_offsets, offset_count, "blocklist offset buffer") != 0) {
+			free(offsets);
+			if (neighbors) free(neighbors);
+			return -1;
+		}
+		ctx->block_offsets_cap = offset_count;
+	}
+	if (valid_keys > ctx->block_neighbors_cap) {
+		if (hk_fdg_gpu_resize_device(&ctx->d_block_neighbors, valid_keys, "blocklist neighbor buffer") != 0) {
+			free(offsets);
+			if (neighbors) free(neighbors);
+			return -1;
+		}
+		ctx->block_neighbors_cap = valid_keys;
+	}
+
+	cudaError_t err = cudaMemcpyAsync(ctx->d_block_offsets, offsets, offset_count * sizeof(int), cudaMemcpyHostToDevice, ctx->stream);
+	free(offsets);
+	if (hk_fdg_gpu_cuda_check(err, "copy block offsets") != 0) {
+		if (neighbors) free(neighbors);
+		return -1;
+	}
+	if (valid_keys > 0) {
+		err = cudaMemcpyAsync(ctx->d_block_neighbors, neighbors, valid_keys * sizeof(int), cudaMemcpyHostToDevice, ctx->stream);
+		free(neighbors);
+		if (hk_fdg_gpu_cuda_check(err, "copy block neighbors") != 0)
+			return -1;
+	} else {
+		if (neighbors) free(neighbors);
+		hk_fdg_gpu_free_device(&ctx->d_block_neighbors);
+		ctx->block_neighbors_cap = 0;
 	}
 	err = cudaStreamSynchronize(ctx->stream);
 	return hk_fdg_gpu_cuda_check(err, "sync blocklist setup");
@@ -965,7 +1032,6 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 							     (uint32_t)(ctx->cell_hash_cap - 1));
 		if (hk_fdg_gpu_check_last_error("insert beads kernel") != 0)
 			return -1;
-		uint32_t block_mask = ctx->block_table_cap ? (uint32_t)(ctx->block_table_cap - 1) : 0u;
 		float rep_radius_norm = rep_radius;
 		int rep_threads = pick_thread_count(n_beads);
 		int rep_blocks = div_up_int(n_beads, rep_threads);
@@ -979,8 +1045,8 @@ int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 							      ctx->d_cell_hash_vals,
 							      ctx->d_bead_next,
 							      (uint32_t)(ctx->cell_hash_cap - 1),
-							      ctx->d_block_table,
-							      block_mask,
+							      ctx->d_block_offsets,
+							      ctx->d_block_neighbors,
 							      stats_dev,
 							      ctx->d_grid_params);
 		if (hk_fdg_gpu_check_last_error("repulsion kernel") != 0)
