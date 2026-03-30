@@ -514,7 +514,7 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 				while (head >= 0) {
 					int j = head;
 					head = FDG_LDG_INT(&bead_next[j]);
-					if (j <= idx) continue;
+					if (j == idx) continue;
 					hk_gpu_vec3_t pj = fdg_load_vec3(pos, j);
 					float dx2 = pi.x - pj.x;
 					float dy2 = pi.y - pj.y;
@@ -536,39 +536,19 @@ __global__ static void fdg_repulsion_kernel(const hk_gpu_vec3_t *__restrict__ po
 					fx_acc += fx;
 					fy_acc += fy;
 					fz_acc += fz;
-
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
-					float fx_other = -fx;
-					float fy_other = -fy;
-					float fz_other = -fz;
-					unsigned mask = __activemask();
-					unsigned match = __match_any_sync(mask, j);
-					float fx_total, fy_total, fz_total;
-					warp_sum_match3(mask, match, fx_other, fy_other, fz_other, fx_total, fy_total, fz_total);
-					int lane = threadIdx.x & 31;
-					int leader = __ffs(match) - 1;
-					if (lane == leader) {
-						atomicAdd(&force[j].x, fx_total);
-						atomicAdd(&force[j].y, fy_total);
-						atomicAdd(&force[j].z, fz_total);
+					if (j > idx) {
+						energy_acc += energy;
+						dist_acc += dist_unit;
+						++active_cnt;
 					}
-#else
-					atomicAdd(&force[j].x, -fx);
-					atomicAdd(&force[j].y, -fy);
-					atomicAdd(&force[j].z, -fz);
-#endif
-					energy_acc += energy;
-					dist_acc += dist_unit;
-					++active_cnt;
 				}
 			}
 		}
 	}
 
 	if (fx_acc != 0.0f || fy_acc != 0.0f || fz_acc != 0.0f) {
-		atomicAdd(&force[idx].x, fx_acc);
-		atomicAdd(&force[idx].y, fy_acc);
-		atomicAdd(&force[idx].z, fz_acc);
+		hk_gpu_vec3_t fi = force[idx];
+		fdg_store_vec3(force, idx, fi.x + fx_acc, fi.y + fy_acc, fi.z + fz_acc);
 	}
 
 	if (stats != nullptr) {
