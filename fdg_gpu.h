@@ -39,6 +39,8 @@ int hk_fdg_gpu_prepare(struct hk_fdg_gpu_ctx *ctx, int32_t n_beads, size_t n_blo
 int hk_fdg_gpu_set_blocklist(struct hk_fdg_gpu_ctx *ctx, const uint64_t *keys, size_t n_keys);
 int hk_fdg_gpu_upload_positions(struct hk_fdg_gpu_ctx *ctx, const fvec3_t *pos_host, int32_t n_beads);
 int hk_fdg_gpu_download_positions(const struct hk_fdg_gpu_ctx *ctx, fvec3_t *pos_host, int32_t n_beads);
+int hk_fdg_gpu_snapshot_best(struct hk_fdg_gpu_ctx *ctx, int32_t n_beads);
+int hk_fdg_gpu_download_best_positions(const struct hk_fdg_gpu_ctx *ctx, fvec3_t *pos_host, int32_t n_beads);
 int hk_fdg_gpu_ensure_capacity(struct hk_fdg_gpu_ctx *ctx, size_t n_pairs);
 int hk_fdg_gpu_compute(struct hk_fdg_gpu_ctx *ctx,
 					   const struct hk_fdg_conf *opt,

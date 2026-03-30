@@ -637,6 +637,10 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 			} else {
 				if (hk_verbose >= 1)
 					fprintf(stderr, "[W::%s] GPU iteration failed at iter %d; switching to CPU backend.\n", __func__, iter + 1);
+				if (hk_fdg_gpu_download_best_positions(gpu_ctx, best_x, m->n_beads) != 0) {
+					if (hk_verbose >= 1)
+						fprintf(stderr, "[W::%s] failed to preserve GPU best-state snapshot before fallback.\n", __func__);
+				}
 				if (hk_fdg_gpu_download_positions(gpu_ctx, m->x, m->n_beads) == 0)
 					memcpy(x0, m->x, sizeof(fvec3_t) * m->n_beads);
 				hk_fdg_gpu_destroy(gpu_ctx);
@@ -649,9 +653,9 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 		}
 		if (s < best) {
 			if (use_gpu) {
-				if (hk_fdg_gpu_download_positions(gpu_ctx, best_x, m->n_beads) != 0) {
+				if (hk_fdg_gpu_snapshot_best(gpu_ctx, m->n_beads) != 0) {
 					if (hk_verbose >= 1)
-						fprintf(stderr, "[W::%s] failed to download GPU coordinates for best state.\n", __func__);
+						fprintf(stderr, "[W::%s] failed to snapshot GPU coordinates for best state.\n", __func__);
 				}
 			} else {
 				memcpy(best_x, m->x, sizeof(fvec3_t) * m->n_beads);
@@ -660,6 +664,12 @@ void hk_fdg(const struct hk_fdg_conf *opt, struct hk_bmap *m, const struct hk_bm
 		}
 	}
 	kh_destroy(set64, h);
+	if (gpu_ctx) {
+		if (hk_fdg_gpu_download_best_positions(gpu_ctx, best_x, m->n_beads) != 0) {
+			if (hk_verbose >= 1)
+				fprintf(stderr, "[W::%s] failed to download final GPU best-state snapshot.\n", __func__);
+		}
+	}
 	memcpy(m->x, best_x, sizeof(fvec3_t) * m->n_beads);
 	free(x0);
 	free(best_x);

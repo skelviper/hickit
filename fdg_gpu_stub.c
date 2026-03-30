@@ -52,6 +52,21 @@ int hk_fdg_gpu_download_positions(const struct hk_fdg_gpu_ctx *ctx, fvec3_t *pos
 	return -1;
 }
 
+int hk_fdg_gpu_snapshot_best(struct hk_fdg_gpu_ctx *ctx, int32_t n_beads)
+{
+	(void)ctx;
+	(void)n_beads;
+	return -1;
+}
+
+int hk_fdg_gpu_download_best_positions(const struct hk_fdg_gpu_ctx *ctx, fvec3_t *pos_host, int32_t n_beads)
+{
+	(void)ctx;
+	(void)pos_host;
+	(void)n_beads;
+	return -1;
+}
+
 int hk_fdg_gpu_ensure_capacity(struct hk_fdg_gpu_ctx *ctx, size_t n_pairs)
 {
 	(void)ctx;

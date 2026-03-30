@@ -57,6 +57,7 @@ struct hk_fdg_gpu_ctx {
 	size_t cell_capacity;
 	size_t cell_hash_cap;
 	hk_gpu_vec3_t *d_pos;
+	hk_gpu_vec3_t *d_best_pos;
 	hk_gpu_vec3_t *d_prev_pos;
 	hk_gpu_vec3_t *d_force;
 	struct hk_fdg_gpu_pair *d_pairs;
@@ -673,6 +674,7 @@ void hk_fdg_gpu_destroy(struct hk_fdg_gpu_ctx *ctx)
 	if (!ctx) return;
 	if (ctx->stream) cudaStreamDestroy(ctx->stream);
 	hk_fdg_gpu_free_device(&ctx->d_pos);
+	hk_fdg_gpu_free_device(&ctx->d_best_pos);
 	hk_fdg_gpu_free_device(&ctx->d_prev_pos);
 	hk_fdg_gpu_free_device(&ctx->d_force);
 	hk_fdg_gpu_free_device(&ctx->d_pairs);
@@ -697,6 +699,8 @@ static int hk_fdg_gpu_ensure_bead_capacity(struct hk_fdg_gpu_ctx *ctx, size_t ne
 		return 0;
 	size_t new_cap = next_pow2_size(std::max<size_t>(needed, 1));
 	if (hk_fdg_gpu_resize_device(&ctx->d_pos, new_cap, "position buffer") != 0)
+		return -1;
+	if (hk_fdg_gpu_resize_device(&ctx->d_best_pos, new_cap, "best position buffer") != 0)
 		return -1;
 	if (hk_fdg_gpu_resize_device(&ctx->d_prev_pos, new_cap, "previous position buffer") != 0)
 		return -1;
@@ -807,6 +811,9 @@ int hk_fdg_gpu_upload_positions(struct hk_fdg_gpu_ctx *ctx, const fvec3_t *pos_h
 	cudaError_t err = cudaMemcpyAsync(ctx->d_pos, pos_host, bytes, cudaMemcpyHostToDevice, ctx->stream);
 	if (hk_fdg_gpu_cuda_check(err, "upload positions") != 0)
 		return -1;
+	err = cudaMemcpyAsync(ctx->d_best_pos, pos_host, bytes, cudaMemcpyHostToDevice, ctx->stream);
+	if (hk_fdg_gpu_cuda_check(err, "upload best positions") != 0)
+		return -1;
 	err = cudaMemcpyAsync(ctx->d_prev_pos, pos_host, bytes, cudaMemcpyHostToDevice, ctx->stream);
 	if (hk_fdg_gpu_cuda_check(err, "upload previous positions") != 0)
 		return -1;
@@ -823,6 +830,24 @@ int hk_fdg_gpu_download_positions(const struct hk_fdg_gpu_ctx *ctx, fvec3_t *pos
 	size_t bytes = (size_t)n_beads * sizeof(hk_gpu_vec3_t);
 	cudaError_t err = cudaMemcpy(pos_host, ctx->d_pos, bytes, cudaMemcpyDeviceToHost);
 	return hk_fdg_gpu_cuda_check(err, "download positions");
+}
+
+int hk_fdg_gpu_snapshot_best(struct hk_fdg_gpu_ctx *ctx, int32_t n_beads)
+{
+	if (!ctx) return -1;
+	if (n_beads > ctx->n_beads) return -1;
+	size_t bytes = (size_t)n_beads * sizeof(hk_gpu_vec3_t);
+	cudaError_t err = cudaMemcpyAsync(ctx->d_best_pos, ctx->d_pos, bytes, cudaMemcpyDeviceToDevice, ctx->stream);
+	return hk_fdg_gpu_cuda_check(err, "snapshot best positions");
+}
+
+int hk_fdg_gpu_download_best_positions(const struct hk_fdg_gpu_ctx *ctx, fvec3_t *pos_host, int32_t n_beads)
+{
+	if (!ctx || !pos_host) return -1;
+	if (n_beads > ctx->n_beads) return -1;
+	size_t bytes = (size_t)n_beads * sizeof(hk_gpu_vec3_t);
+	cudaError_t err = cudaMemcpy(pos_host, ctx->d_best_pos, bytes, cudaMemcpyDeviceToHost);
+	return hk_fdg_gpu_cuda_check(err, "download best positions");
 }
 
 int hk_fdg_gpu_ensure_capacity(struct hk_fdg_gpu_ctx *ctx, size_t n_pairs)
