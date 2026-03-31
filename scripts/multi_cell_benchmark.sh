@@ -4,7 +4,7 @@ set -euo pipefail
 HICKIT_BIN="${HICKIT_BIN:-/mnt/ssd/zliu/run_charm/hickit_opt/hickit}"
 INPUT_DIR="${INPUT_DIR:-/mnt/ssd/zliu/run_charm/charm_test/charm_test_13/result/impute/pairs}"
 OUTDIR="${OUTDIR:-/mnt/ssd/zliu/run_charm/hickit_opt/multi_cell_runs}"
-JOBS="${JOBS:-6}"
+JOBS="${JOBS:-8}"
 MAX_CELLS="${MAX_CELLS:-$JOBS}"
 USE_MPS="${USE_MPS:-1}"
 MPS_PIPE_DIR="${MPS_PIPE_DIR:-$OUTDIR/mps_pipe}"
