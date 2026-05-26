@@ -1,6 +1,7 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include "hickit.h"
 
 static int check_i32(const char *label, int32_t got, int32_t expected)
@@ -16,6 +17,15 @@ static int check_u8(const char *label, uint8_t got, uint8_t expected)
 {
 	if (got != expected) {
 		fprintf(stderr, "%s: got %u, expected %u\n", label, got, expected);
+		return 1;
+	}
+	return 0;
+}
+
+static int check_true(const char *label, int ok)
+{
+	if (!ok) {
+		fprintf(stderr, "%s: false\n", label);
 		return 1;
 	}
 	return 0;
@@ -259,6 +269,35 @@ static int check_posterior_independent_of_bpair_params(const struct hk_bmap *b)
 	return failed;
 }
 
+static int check_estep_logdist2_breaks_fdg_flat_ties(void)
+{
+	struct hk_fdg_conf conf;
+	fvec3_t coords[4];
+	float log_prior[HK_BLIND_N_STATE];
+	float energy[HK_BLIND_N_STATE], p4[HK_BLIND_N_STATE];
+	float entropy, pmax, margin, rho_output, pU;
+	int failed = 0;
+
+	hk_fdg_conf_init(&conf);
+	hk_blind_init_uniform_log_prior(log_prior);
+	set_coord(coords[0], 0.0f, 0.0f, 0.0f);
+	set_coord(coords[1], 0.0f, 10.0f, 0.0f);
+	set_coord(coords[2], 0.75f, 0.0f, 0.0f);
+	set_coord(coords[3], 1.25f, 0.0f, 0.0f);
+	hk_blind_bpair_posterior_from_coords(&conf, 0, 1, coords, 1.0f, 1.0f, 1.0f,
+										 log_prior, 1.0f, energy, p4,
+										 &entropy, &pmax, &margin, &rho_output, &pU);
+	failed |= check_close("flat tie p00 p01", p4[HK_BLIND_STATE_00], p4[HK_BLIND_STATE_01]);
+	hk_blind_bpair_posterior_from_coords_score_mode(&conf, 0, 1, coords, 1.0f, 1.0f, 1.0f,
+													log_prior, 1.0f,
+													HK_BLIND_ESTEP_SCORE_LOGDIST2,
+													energy, p4, &entropy, &pmax,
+													&margin, &rho_output, &pU);
+	failed |= check_greater("logdist2 nearer state higher", p4[HK_BLIND_STATE_00],
+							p4[HK_BLIND_STATE_01]);
+	return failed;
+}
+
 static int check_raw_order_helper(void)
 {
 	float canonical[HK_BLIND_N_STATE] = {0.1f, 0.2f, 0.3f, 0.4f};
@@ -275,6 +314,14 @@ static int check_raw_order_helper(void)
 	failed |= check_p4("raw order swapped", raw, expected_swapped);
 	hk_blind_p4_to_raw_order(inplace, 1, inplace);
 	failed |= check_p4("raw order swapped inplace", inplace, expected_swapped);
+	failed |= check_i32("state 00 same", hk_blind_raw_state_to_canonical_state(HK_BLIND_STATE_00, 0), HK_BLIND_STATE_00);
+	failed |= check_i32("state 01 same", hk_blind_raw_state_to_canonical_state(HK_BLIND_STATE_01, 0), HK_BLIND_STATE_01);
+	failed |= check_i32("state 10 same", hk_blind_raw_state_to_canonical_state(HK_BLIND_STATE_10, 0), HK_BLIND_STATE_10);
+	failed |= check_i32("state 11 same", hk_blind_raw_state_to_canonical_state(HK_BLIND_STATE_11, 0), HK_BLIND_STATE_11);
+	failed |= check_i32("state 00 swapped", hk_blind_raw_state_to_canonical_state(HK_BLIND_STATE_00, 1), HK_BLIND_STATE_00);
+	failed |= check_i32("state 01 swapped", hk_blind_raw_state_to_canonical_state(HK_BLIND_STATE_01, 1), HK_BLIND_STATE_10);
+	failed |= check_i32("state 10 swapped", hk_blind_raw_state_to_canonical_state(HK_BLIND_STATE_10, 1), HK_BLIND_STATE_01);
+	failed |= check_i32("state 11 swapped", hk_blind_raw_state_to_canonical_state(HK_BLIND_STATE_11, 1), HK_BLIND_STATE_11);
 	return failed;
 }
 
@@ -301,6 +348,88 @@ static int check_raw2binned_inheritance(const struct hk_bmap *b)
 	failed |= check_p4("inherit raw0", raw_p4, expected_same);
 	hk_blind_p4_to_raw_order(set->bpairs[set->raw2binned[1].bpair_id].p4, set->raw2binned[1].swapped, raw_p4);
 	failed |= check_p4("inherit raw1", raw_p4, expected_swapped);
+
+	hk_blind_bpair_set_destroy(set);
+	return failed;
+}
+
+static int check_raw_phase_locks_record_raw_state(const struct hk_bmap *b)
+{
+	struct hk_blind_pair raw[2];
+	struct hk_pair pairs[2];
+	struct hk_blind_bpair_set *set;
+	int failed = 0;
+
+	memset(pairs, 0, sizeof(pairs));
+	raw[0] = make_blind_pair(0, 0, 0, 1000000);
+	raw[1] = make_blind_pair(0, 1000000, 0, 0);
+	pairs[0].chr = (uint64_t)0 << 32 | 0u;
+	pairs[0].pos = (uint64_t)0 << 32 | 1000000u;
+	pairs[0].phase[0] = 0;
+	pairs[0].phase[1] = 1;
+	pairs[1].chr = (uint64_t)0 << 32 | 0u;
+	pairs[1].pos = (uint64_t)1000000 << 32 | 0u;
+	pairs[1].phase[0] = 0;
+	pairs[1].phase[1] = 1;
+
+	set = hk_blind_bpair_set_build(b, 2, raw);
+	failed |= check_true("raw lock set exists", set != 0);
+	if (set == 0)
+		return 1;
+	failed |= check_i32("raw lock init0", set->raw_locked_state[0], -1);
+	failed |= check_i32("raw lock init1", set->raw_locked_state[1], -1);
+	failed |= check_i32("apply raw locks for raw states",
+						hk_blind_bpair_set_apply_raw_phase_locks(set, pairs, 2, 100,
+																 17, &set->phase_lock_diag), 0);
+	failed |= check_i32("raw lock forward 01 canonical", set->raw_locked_state[0],
+						HK_BLIND_STATE_01);
+	failed |= check_i32("raw lock swapped 01 canonical", set->raw_locked_state[1],
+						HK_BLIND_STATE_10);
+
+	hk_blind_bpair_set_destroy(set);
+	return failed;
+}
+
+static int check_imputed_p4_top_locks_record_raw_state(const struct hk_bmap *b)
+{
+	struct hk_blind_pair raw[3];
+	struct hk_pair pairs[3];
+	struct hk_blind_bpair_set *set;
+	int failed = 0;
+
+	memset(pairs, 0, sizeof(pairs));
+	raw[0] = make_blind_pair(0, 0, 0, 1000000);
+	raw[1] = make_blind_pair(0, 1000000, 0, 0);
+	raw[2] = make_blind_pair(0, 2000000, 0, 3000000);
+
+	pairs[0]._.p4[HK_BLIND_STATE_00] = 0.01f;
+	pairs[0]._.p4[HK_BLIND_STATE_01] = 0.80f;
+	pairs[0]._.p4[HK_BLIND_STATE_10] = 0.10f;
+	pairs[0]._.p4[HK_BLIND_STATE_11] = 0.09f;
+	pairs[1]._.p4[HK_BLIND_STATE_00] = 0.01f;
+	pairs[1]._.p4[HK_BLIND_STATE_01] = 0.80f;
+	pairs[1]._.p4[HK_BLIND_STATE_10] = 0.10f;
+	pairs[1]._.p4[HK_BLIND_STATE_11] = 0.09f;
+	pairs[2]._.p4[HK_BLIND_STATE_00] = 0.30f;
+	pairs[2]._.p4[HK_BLIND_STATE_01] = 0.30f;
+	pairs[2]._.p4[HK_BLIND_STATE_10] = 0.20f;
+	pairs[2]._.p4[HK_BLIND_STATE_11] = 0.20f;
+
+	set = hk_blind_bpair_set_build(b, 3, raw);
+	failed |= check_true("imputed p4 lock set exists", set != 0);
+	if (set == 0)
+		return 1;
+	failed |= check_i32("apply imputed p4 top locks",
+						hk_blind_bpair_set_apply_imputed_p4_top_locks(set, pairs, 3, 100,
+																	 17, 0.75f,
+																	 &set->phase_lock_diag), 0);
+	failed |= check_i32("imputed p4 lock forward 01 canonical", set->raw_locked_state[0],
+						HK_BLIND_STATE_01);
+	failed |= check_i32("imputed p4 lock swapped 01 canonical", set->raw_locked_state[1],
+						HK_BLIND_STATE_10);
+	failed |= check_i32("imputed p4 lock low confidence skip", set->raw_locked_state[2],
+						HK_BLIND_RAW_LOCKED_STATE_SKIP);
+	failed |= check_i32("imputed p4 top selected raw", (int32_t)set->phase_lock_diag.n_locked_raw, 2);
 
 	hk_blind_bpair_set_destroy(set);
 	return failed;
@@ -338,6 +467,166 @@ static int check_same_bin_posterior_is_unknown(const struct hk_bmap *b)
 	hk_blind_bpair_set_update_posterior_from_coords_params(set, &conf, coords, 1.0f, log_prior, 1.0f);
 	failed |= check_close("same-bin params p00 unknown", set->bpairs[0].p4[HK_BLIND_STATE_00], 0.25f);
 	failed |= check_close("same-bin params pU unknown", set->bpairs[0].pU, 1.0f);
+	hk_blind_bpair_set_destroy(set);
+	return failed;
+}
+
+static int check_phase_lock_skips_posterior_update(const struct hk_bmap *b)
+{
+	struct hk_blind_pair raw[2];
+	struct hk_pair pairs[2];
+	struct hk_blind_bpair_set *set;
+	struct hk_fdg_conf conf;
+	struct hk_blind_phase_lock_diag diag;
+	fvec3_t coords[12];
+	float log_prior[HK_BLIND_N_STATE];
+	int failed = 0;
+
+	raw[0] = make_blind_pair(0, 2000000, 0, 5000000);
+	raw[1] = make_blind_pair(0, 5000000, 0, 2000000);
+	memset(pairs, 0, sizeof(pairs));
+	pairs[0].phase[0] = 0;
+	pairs[0].phase[1] = 1;
+	pairs[1].phase[0] = -1;
+	pairs[1].phase[1] = -1;
+	set = hk_blind_bpair_set_build(b, 2, raw);
+	hk_fdg_conf_init(&conf);
+	hk_blind_init_uniform_log_prior(log_prior);
+	init_far_coords(coords, 12);
+	set_coord(coords[hk_diploid_bid(2, HK_DIPLOID_COPY0)], 100.0f, 0.0f, 0.0f);
+	set_coord(coords[hk_diploid_bid(2, HK_DIPLOID_COPY1)], 0.0f, 0.0f, 0.0f);
+	set_coord(coords[hk_diploid_bid(5, HK_DIPLOID_COPY0)], 1.0f, 0.0f, 0.0f);
+	set_coord(coords[hk_diploid_bid(5, HK_DIPLOID_COPY1)], 200.0f, 0.0f, 0.0f);
+
+	failed |= check_i32("phase lock apply", hk_blind_bpair_set_apply_raw_phase_locks(set, pairs, 2, 100, 17, &diag), 0);
+	failed |= check_i32("phase lock bpair", diag.n_locked_bpair, 1);
+	failed |= check_i32("phase lock raw", (int32_t)diag.n_locked_raw, 1);
+	failed |= check_i32("phase lock state", set->bpairs[0].locked_state, HK_BLIND_STATE_01);
+	hk_blind_bpair_set_update_posterior_from_coords(set, &conf, coords, 1.0f, 1.0f, 2.0f, log_prior, 1.0f);
+	failed |= check_close("locked p00", set->bpairs[0].p4[HK_BLIND_STATE_00], 0.0f);
+	failed |= check_close("locked p01", set->bpairs[0].p4[HK_BLIND_STATE_01], 1.0f);
+	failed |= check_close("locked p10", set->bpairs[0].p4[HK_BLIND_STATE_10], 0.0f);
+	failed |= check_close("locked p11", set->bpairs[0].p4[HK_BLIND_STATE_11], 0.0f);
+	failed |= check_close("locked pU", set->bpairs[0].pU, 0.0f);
+	failed |= check_true("locked real log norm refreshed", fabsf(set->bpairs[0].real_log_norm) > 1e-5f);
+	hk_blind_bpair_set_destroy(set);
+	return failed;
+}
+
+static int check_raw_locks_follow_chr_flips(const struct hk_bmap *b)
+{
+	struct hk_blind_pair raw[2];
+	struct hk_pair pairs[2];
+	struct hk_blind_bpair_set *set;
+	uint8_t chr_flipped[1] = { 1 };
+	int failed = 0;
+
+	raw[0] = make_blind_pair(0, 2000000, 0, 5000000);
+	raw[1] = make_blind_pair(0, 5000000, 0, 2000000);
+	memset(pairs, 0, sizeof(pairs));
+	pairs[0].phase[0] = 0;
+	pairs[0].phase[1] = 1;
+	pairs[1].phase[0] = 1;
+	pairs[1].phase[1] = 0;
+	set = hk_blind_bpair_set_build(b, 2, raw);
+	failed |= check_true("raw lock flip set exists", set != 0);
+	if (set == 0)
+		return 1;
+	failed |= check_i32("raw lock flip apply",
+						hk_blind_bpair_set_apply_raw_phase_locks(set, pairs, 2, 100,
+																 17, &set->phase_lock_diag), 0);
+	failed |= check_i32("raw lock flip forward before", set->raw_locked_state[0],
+						HK_BLIND_STATE_01);
+	failed |= check_i32("raw lock flip swapped before", set->raw_locked_state[1],
+						HK_BLIND_STATE_01);
+	failed |= check_i32("raw lock apply chr flips",
+						hk_blind_bpair_set_apply_chr_flips(set, b, chr_flipped, 1), 0);
+	failed |= check_i32("raw lock flip forward after", set->raw_locked_state[0],
+						HK_BLIND_STATE_10);
+	failed |= check_i32("raw lock flip swapped after", set->raw_locked_state[1],
+						HK_BLIND_STATE_10);
+	failed |= check_i32("bpair locked state after flip", set->bpairs[0].locked_state,
+						HK_BLIND_STATE_10);
+
+	hk_blind_bpair_set_destroy(set);
+	return failed;
+}
+
+static int check_fixed_p4_locks_follow_chr_flips(const struct hk_bmap *b)
+{
+	struct hk_blind_pair raw[1];
+	struct hk_pair pairs[1];
+	struct hk_blind_bpair_set *set;
+	uint8_t chr_flipped[1] = { 1 };
+	int failed = 0;
+
+	raw[0] = make_blind_pair(0, 2000000, 0, 5000000);
+	memset(pairs, 0, sizeof(pairs));
+	pairs[0]._.p4[HK_BLIND_STATE_00] = 0.01f;
+	pairs[0]._.p4[HK_BLIND_STATE_01] = 0.80f;
+	pairs[0]._.p4[HK_BLIND_STATE_10] = 0.10f;
+	pairs[0]._.p4[HK_BLIND_STATE_11] = 0.09f;
+
+	set = hk_blind_bpair_set_build(b, 1, raw);
+	failed |= check_true("fixed p4 flip set exists", set != 0);
+	if (set == 0)
+		return 1;
+	failed |= check_i32("fixed p4 lock apply",
+						hk_blind_bpair_set_apply_imputed_p4_top_locks(set, pairs, 1, 100,
+																	 17, 0.75f,
+																	 &set->phase_lock_diag), 0);
+	failed |= check_i32("fixed p4 raw state before", set->raw_locked_state[0],
+						HK_BLIND_STATE_01);
+	failed |= check_i32("fixed p4 bpair state before", set->bpairs[0].locked_state,
+						HK_BLIND_STATE_01);
+	failed |= check_close("fixed p4 p01 before", set->bpairs[0].p4[HK_BLIND_STATE_01], 1.0f);
+	failed |= check_i32("fixed p4 apply chr flips",
+						hk_blind_bpair_set_apply_chr_flips(set, b, chr_flipped, 1), 0);
+	failed |= check_i32("fixed p4 raw state after", set->raw_locked_state[0],
+						HK_BLIND_STATE_10);
+	failed |= check_i32("fixed p4 bpair state after", set->bpairs[0].locked_state,
+						HK_BLIND_STATE_10);
+	failed |= check_close("fixed p4 p10 after", set->bpairs[0].p4[HK_BLIND_STATE_10], 1.0f);
+
+	hk_blind_bpair_set_destroy(set);
+	return failed;
+}
+
+static int check_fixed_p4_refreshes_real_log_norm(const struct hk_bmap *b)
+{
+	struct hk_blind_pair raw[1];
+	struct hk_pair pairs[1];
+	struct hk_blind_bpair_set *set;
+	struct hk_fdg_conf conf;
+	fvec3_t coords[12];
+	float log_prior[HK_BLIND_N_STATE];
+	int failed = 0;
+
+	raw[0] = make_blind_pair(0, 2000000, 0, 5000000);
+	memset(pairs, 0, sizeof(pairs));
+	pairs[0]._.p4[HK_BLIND_STATE_00] = 0.05f;
+	pairs[0]._.p4[HK_BLIND_STATE_01] = 0.80f;
+	pairs[0]._.p4[HK_BLIND_STATE_10] = 0.10f;
+	pairs[0]._.p4[HK_BLIND_STATE_11] = 0.05f;
+	set = hk_blind_bpair_set_build(b, 1, raw);
+	failed |= check_true("fixed p4 log norm set exists", set != 0);
+	if (set == 0)
+		return 1;
+	failed |= check_i32("fixed p4 log norm lock apply",
+						hk_blind_bpair_set_apply_imputed_p4_top_locks(set, pairs, 1, 100,
+																	 17, 0.75f,
+																	 &set->phase_lock_diag), 0);
+	set->bpairs[0].real_log_norm = 0.0f;
+	hk_fdg_conf_init(&conf);
+	hk_blind_init_uniform_log_prior(log_prior);
+	init_far_coords(coords, 12);
+	set_coord(coords[hk_diploid_bid(2, HK_DIPLOID_COPY0)], 100.0f, 0.0f, 0.0f);
+	set_coord(coords[hk_diploid_bid(2, HK_DIPLOID_COPY1)], 0.0f, 0.0f, 0.0f);
+	set_coord(coords[hk_diploid_bid(5, HK_DIPLOID_COPY0)], 1.0f, 0.0f, 0.0f);
+	set_coord(coords[hk_diploid_bid(5, HK_DIPLOID_COPY1)], 200.0f, 0.0f, 0.0f);
+	hk_blind_bpair_set_update_posterior_from_coords_params(set, &conf, coords, 1.0f, log_prior, 1.0f);
+	failed |= check_close("fixed p4 remains p01", set->bpairs[0].p4[HK_BLIND_STATE_01], 1.0f);
+	failed |= check_true("fixed p4 real log norm refreshed", fabsf(set->bpairs[0].real_log_norm) > 1e-5f);
 	hk_blind_bpair_set_destroy(set);
 	return failed;
 }
@@ -389,6 +678,56 @@ static int check_phase_like_columns_still_ignored(const struct hk_map *m, const 
 	return failed;
 }
 
+static int check_raw_split_filtered_all_keeps_uniform_weak_contacts(const struct hk_bmap *b)
+{
+	struct hk_blind_pair raw[2];
+	struct hk_blind_bpair_set *set;
+	struct hk_blind_wedge_list wedges;
+	int failed = 0, i;
+
+	raw[0] = make_blind_pair(0, 2000000, 0, 5000000);
+	raw[1] = make_blind_pair(0, 3000000, 0, 6000000);
+	set = hk_blind_bpair_set_build(b, 2, raw);
+	failed |= check_true("filtered-all set exists", set != 0);
+	if (set == 0)
+		return 1;
+	for (i = 0; i < set->n_bpairs; ++i) {
+		int s;
+		for (s = 0; s < HK_BLIND_N_STATE; ++s)
+			set->bpairs[i].p4[s] = 1.0f / (float)HK_BLIND_N_STATE;
+	}
+
+	hk_blind_wedge_list_init(&wedges);
+	failed |= check_i32("filtered-all build",
+						hk_blind_wedge_list_build_mstep_graph(&wedges, b, set,
+															  1.0f, HK_BLIND_RHO_TRAIN_CONSTANT,
+															  HK_BLIND_RHO_TRAIN_DEFAULT_FLOOR,
+															  HK_BLIND_D_SCALE_RAW_COUNT, 1e-6f,
+															  1.0f, 1.0f,
+															  HK_BLIND_STATE_WEIGHT_POSTERIOR,
+															  HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL,
+															  0.0f, 0.0f, 1.0f,
+															  HK_BLIND_RAW_SPLIT_CONF_ENTROPY_LINEAR,
+															  0.0f, 1.0f, 1.0f, 0.0f), 0);
+	failed |= check_i32("filtered-all candidate split pairs",
+						(int32_t)wedges.n_split_candidate_pairs, 8);
+	failed |= check_i32("filtered-all selected weak states",
+						(int32_t)wedges.n_split_selected_raw, 8);
+	failed |= check_i32("filtered-all state00 weak count",
+						(int32_t)wedges.n_split_state_raw_count[HK_BLIND_STATE_00], 2);
+	failed |= check_i32("filtered-all state01 weak count",
+						(int32_t)wedges.n_split_state_raw_count[HK_BLIND_STATE_01], 2);
+	failed |= check_i32("filtered-all state10 weak count",
+						(int32_t)wedges.n_split_state_raw_count[HK_BLIND_STATE_10], 2);
+	failed |= check_i32("filtered-all state11 weak count",
+						(int32_t)wedges.n_split_state_raw_count[HK_BLIND_STATE_11], 2);
+	failed |= check_i32("filtered-all same-bin skip",
+						(int32_t)wedges.n_split_same_bin_skip_raw, 0);
+	hk_blind_wedge_list_destroy(&wedges);
+	hk_blind_bpair_set_destroy(set);
+	return failed;
+}
+
 int main(void)
 {
 	struct hk_map *m;
@@ -410,10 +749,18 @@ int main(void)
 
 	failed |= check_bpair_set_update(b);
 	failed |= check_posterior_independent_of_bpair_params(b);
+	failed |= check_estep_logdist2_breaks_fdg_flat_ties();
 	failed |= check_raw_order_helper();
 	failed |= check_raw2binned_inheritance(b);
+	failed |= check_raw_phase_locks_record_raw_state(b);
+	failed |= check_imputed_p4_top_locks_record_raw_state(b);
 	failed |= check_same_bin_posterior_is_unknown(b);
+	failed |= check_phase_lock_skips_posterior_update(b);
+	failed |= check_raw_locks_follow_chr_flips(b);
+	failed |= check_fixed_p4_locks_follow_chr_flips(b);
+	failed |= check_fixed_p4_refreshes_real_log_norm(b);
 	failed |= check_phase_like_columns_still_ignored(m, b);
+	failed |= check_raw_split_filtered_all_keeps_uniform_weak_contacts(b);
 
 	hk_bmap_destroy(b);
 	hk_map_destroy(m);

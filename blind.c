@@ -95,6 +95,35 @@ static void hk_blind_bpair_posterior_from_coords_score_mode_with_log_norm(const 
 																		  float *rho_output, float *pU,
 																		  float *real_log_norm);
 
+static void hk_blind_bpair_update_real_log_norm_from_coords(const struct hk_fdg_conf *conf,
+															struct hk_blind_bpair *p,
+															const fvec3_t *coords, float unit,
+															float d_scale, float k,
+															const float log_prior[HK_BLIND_N_STATE],
+															float temperature, int estep_score_mode)
+{
+	float energy[HK_BLIND_N_STATE], p4[HK_BLIND_N_STATE];
+	float entropy, pmax, margin, rho_output, pU;
+	assert(conf);
+	assert(p);
+	assert(coords);
+	assert(log_prior);
+	assert(isfinite(unit));
+	assert(unit > 0.0f);
+	assert(isfinite(d_scale));
+	assert(d_scale > 0.0f);
+	assert(isfinite(k));
+	assert(k >= 0.0f);
+	assert(isfinite(temperature));
+	assert(temperature > 0.0f);
+	assert(hk_blind_estep_score_mode_valid(estep_score_mode));
+	hk_blind_bpair_posterior_from_coords_score_mode_with_log_norm(
+		conf, p->key.bid[0], p->key.bid[1], coords, unit, d_scale, k,
+		log_prior, temperature, estep_score_mode, energy, p4,
+		&entropy, &pmax, &margin, &rho_output, &pU, &p->real_log_norm);
+	assert(isfinite(p->real_log_norm));
+}
+
 static void hk_blind_raw_outlier_diag_init(struct hk_blind_raw_outlier_diag *diag)
 {
 	assert(diag);
@@ -898,21 +927,29 @@ void hk_blind_bpair_set_update_posterior_from_coords(struct hk_blind_bpair_set *
 	assert(log_prior);
 	assert(temperature > 0.0f);
 
-	for (i = 0; i < set->n_bpairs; ++i) {
-		struct hk_blind_bpair *p = &set->bpairs[i];
-		if (p->lock_mode == HK_BLIND_LOCK_FIXED_P4)
-			continue;
-		if (hk_blind_bpair_is_same_bin(p)) {
-			if (p->lock_mode == HK_BLIND_LOCK_HARD_STATE && p->locked_state >= 0)
-				hk_blind_bpair_set_locked_posterior(p, p->locked_state);
+		for (i = 0; i < set->n_bpairs; ++i) {
+			struct hk_blind_bpair *p = &set->bpairs[i];
+			if (p->lock_mode == HK_BLIND_LOCK_FIXED_P4) {
+				if (!hk_blind_bpair_is_same_bin(p))
+					hk_blind_bpair_update_real_log_norm_from_coords(
+						conf, p, coords, unit, d_scale, k, log_prior,
+						temperature, HK_BLIND_ESTEP_SCORE_FDG_FLAT);
+				continue;
+			}
+			if (hk_blind_bpair_is_same_bin(p)) {
+				if (p->lock_mode == HK_BLIND_LOCK_HARD_STATE && p->locked_state >= 0)
+					hk_blind_bpair_set_locked_posterior(p, p->locked_state);
 			else
 				hk_blind_bpair_set_unknown_posterior(p);
 			continue;
-		}
-		if (p->lock_mode == HK_BLIND_LOCK_HARD_STATE && p->locked_state >= 0) {
-			hk_blind_bpair_set_locked_posterior(p, p->locked_state);
-			continue;
-		}
+			}
+			if (p->lock_mode == HK_BLIND_LOCK_HARD_STATE && p->locked_state >= 0) {
+				hk_blind_bpair_set_locked_posterior(p, p->locked_state);
+				hk_blind_bpair_update_real_log_norm_from_coords(
+					conf, p, coords, unit, d_scale, k, log_prior,
+					temperature, HK_BLIND_ESTEP_SCORE_FDG_FLAT);
+				continue;
+			}
 		hk_blind_bpair_posterior_from_coords_score_mode_with_log_norm(
 			conf, p->key.bid[0], p->key.bid[1], coords,
 			unit, d_scale, k, log_prior, temperature,
@@ -956,19 +993,29 @@ void hk_blind_bpair_set_update_posterior_from_coords_params_score_mode(struct hk
 		assert(p->base_d_scale > 0.0f);
 		assert(isfinite(p->base_k));
 		assert(p->base_k >= 0.0f);
-		if (p->lock_mode == HK_BLIND_LOCK_FIXED_P4)
-			continue;
-		if (hk_blind_bpair_is_same_bin(p)) {
-			if (p->lock_mode == HK_BLIND_LOCK_HARD_STATE && p->locked_state >= 0)
-				hk_blind_bpair_set_locked_posterior(p, p->locked_state);
+			if (p->lock_mode == HK_BLIND_LOCK_FIXED_P4) {
+				if (!hk_blind_bpair_is_same_bin(p))
+					hk_blind_bpair_update_real_log_norm_from_coords(
+						conf, p, coords, unit, p->base_d_scale, p->base_k,
+						log_prior? log_prior : p->log_prior, temperature,
+						estep_score_mode);
+				continue;
+			}
+			if (hk_blind_bpair_is_same_bin(p)) {
+				if (p->lock_mode == HK_BLIND_LOCK_HARD_STATE && p->locked_state >= 0)
+					hk_blind_bpair_set_locked_posterior(p, p->locked_state);
 			else
 				hk_blind_bpair_set_unknown_posterior(p);
 			continue;
-		}
-		if (p->lock_mode == HK_BLIND_LOCK_HARD_STATE && p->locked_state >= 0) {
-			hk_blind_bpair_set_locked_posterior(p, p->locked_state);
-			continue;
-		}
+			}
+			if (p->lock_mode == HK_BLIND_LOCK_HARD_STATE && p->locked_state >= 0) {
+				hk_blind_bpair_set_locked_posterior(p, p->locked_state);
+				hk_blind_bpair_update_real_log_norm_from_coords(
+					conf, p, coords, unit, p->base_d_scale, p->base_k,
+					log_prior? log_prior : p->log_prior, temperature,
+					estep_score_mode);
+				continue;
+			}
 		if (log_prior == 0) {
 			for (s = 0; s < HK_BLIND_N_STATE; ++s)
 				assert(isfinite(p->log_prior[s]));
@@ -6027,6 +6074,8 @@ int hk_blind_wedge_list_build_mstep_graph(struct hk_blind_wedge_list *out,
 										  float raw_split_trans_confidence_power,
 										  float raw_split_state_p_min)
 {
+	int raw_outlier_enable =
+		mstep_graph_mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_OUTLIER;
 	return hk_blind_wedge_list_build_mstep_graph_ex(
 		out, bmap, set, rho_train, rho_train_mode, rho_train_floor,
 		d_scale_mode, d_scale_eps_count, contact_k_multiplier_cis,
@@ -6034,12 +6083,13 @@ int hk_blind_wedge_list_build_mstep_graph(struct hk_blind_wedge_list *out,
 		trans_margin_min, trans_pmax_min, trans_posterior_power_gamma,
 		raw_split_confidence_mode, raw_split_confidence_floor,
 		raw_split_trans_scale, raw_split_trans_confidence_power,
-		raw_split_state_p_min, 1.0f, 0,
+		raw_split_state_p_min, 1.0f, raw_outlier_enable,
 		HK_BLIND_RAW_OUTLIER_DEFAULT_BETA_CIS,
 		HK_BLIND_RAW_OUTLIER_DEFAULT_BETA_TRANS,
 		HK_BLIND_RAW_OUTLIER_DEFAULT_PRIOR_CIS,
 		HK_BLIND_RAW_OUTLIER_DEFAULT_PRIOR_TRANS,
-		0.0f, 1.0f);
+		raw_outlier_enable? HK_BLIND_RAW_SOFT_DEFAULT_MIN_Q : 0.0f,
+		1.0f);
 }
 
 static int hk_blind_wedge_cmp(const void *a_, const void *b_)

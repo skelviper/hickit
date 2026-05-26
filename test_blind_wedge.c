@@ -2409,6 +2409,21 @@ static int check_weighted_filter_uses_confidence_before_bmap(void)
 			failed |= check_true("raw expected outlier good qU low",
 								 outlier.raw_outlier_diag.max_qU < 1e-4f);
 			hk_blind_wedge_list_destroy(&outlier);
+			hk_blind_wedge_list_init(&outlier);
+			ret = hk_blind_wedge_list_build_mstep_graph(
+				&outlier, &bmap, set, 1.0f, HK_BLIND_RHO_TRAIN_CONSTANT,
+				0.0f, HK_BLIND_D_SCALE_RAW_COUNT, 1e-6f, 1.0f, 1.0f,
+				HK_BLIND_STATE_WEIGHT_POSTERIOR,
+				HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_OUTLIER,
+				0.0f, 0.0f, 1.0f, HK_BLIND_RAW_SPLIT_CONF_FLOOR_ENTROPY,
+				1.0f, 1.0f, 1.0f, 0.0f);
+			failed |= check_i32("raw expected outlier wrapper ret", ret, 0);
+			failed |= check_i32("raw expected outlier wrapper seen",
+								(int32_t)outlier.raw_outlier_diag.n_seen, 8);
+			failed |= check_true("raw expected outlier wrapper enabled U",
+								 outlier.raw_outlier_diag.real_mass_all > 7.99 &&
+								 outlier.raw_outlier_diag.real_mass_all < 8.0);
+			hk_blind_wedge_list_destroy(&outlier);
 			for (i = 0; i < set->n_bpairs; ++i)
 				set->bpairs[i].real_log_norm = -10.0f;
 			hk_blind_wedge_list_init(&outlier);
