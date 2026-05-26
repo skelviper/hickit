@@ -23,6 +23,11 @@
 #define HK_BLIND_STATE_11 3
 #define HK_BLIND_STATE_MASK(state) ((uint8_t)(1u << (state)))
 #define HK_BLIND_RHO_TRAIN_DEFAULT_FLOOR 0.5f
+#define HK_BLIND_LOCK_NONE 0
+#define HK_BLIND_LOCK_HARD_STATE 1
+#define HK_BLIND_LOCK_FIXED_P4 2
+#define HK_BLIND_RAW_LOCKED_STATE_NONE (-1)
+#define HK_BLIND_RAW_LOCKED_STATE_SKIP (-2)
 
 enum hk_blind_repulsion_mode {
 	HK_BLIND_REPULSION_NONE = 0,
@@ -54,8 +59,61 @@ enum hk_blind_d_scale_mode {
 
 enum hk_blind_state_weight_mode {
 	HK_BLIND_STATE_WEIGHT_POSTERIOR = 0,
-	HK_BLIND_STATE_WEIGHT_TOP_IF_CONFIDENT = 1,
-	HK_BLIND_STATE_WEIGHT_POWER_SHARPEN = 2
+	HK_BLIND_STATE_WEIGHT_BINARY_SUPPORT = 1,
+	HK_BLIND_STATE_WEIGHT_TOP_ONLY = 2
+};
+
+enum hk_blind_mstep_graph_mode {
+	HK_BLIND_MSTEP_GRAPH_BPAIR = 0,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_TOP = 1,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT = 2,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_TOP1 = 3,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_TOP2 = 4,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_TOP1 = 5,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_TOP2 = 6,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP1 = 7,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP2 = 8,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1 = 9,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_SAMPLE1 = 10,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI = 11,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL = 12,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1 = 13,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1_RENORM = 14,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF = 15,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF = 16,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF_WEIGHTED = 17,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER = 18,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_FULL = 19,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KWEIGHT = 20,
+	HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDWEIGHT = 21,
+		HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDHALF = 22,
+		HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1_CONF_KWEIGHT = 23,
+			HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_COUNT = 24,
+			HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_LOCKED_ONLY = 25,
+			HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT = 26,
+			HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_CIS = 27,
+			HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_ALL = 28,
+			HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_ORACLE_ALL = 29,
+			HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_ALL = 30,
+			HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_OUTLIER = 31
+		};
+
+#define HK_BLIND_RAW_OUTLIER_DEFAULT_BETA_CIS 2.0f
+#define HK_BLIND_RAW_OUTLIER_DEFAULT_BETA_TRANS 1.0f
+#define HK_BLIND_RAW_OUTLIER_DEFAULT_PRIOR_CIS 1.0f
+#define HK_BLIND_RAW_OUTLIER_DEFAULT_PRIOR_TRANS 1.0f
+#define HK_BLIND_RAW_SOFT_DEFAULT_MIN_Q 1.0e-4f
+
+enum hk_blind_raw_split_confidence_mode {
+	HK_BLIND_RAW_SPLIT_CONF_ENTROPY_LINEAR = 0,
+	HK_BLIND_RAW_SPLIT_CONF_PMAX_MARGIN = 1,
+	HK_BLIND_RAW_SPLIT_CONF_FLOOR_ENTROPY = 2
+};
+
+enum hk_blind_estep_score_mode {
+	HK_BLIND_ESTEP_SCORE_FDG_FLAT = 0,
+	HK_BLIND_ESTEP_SCORE_LOGDIST2 = 1,
+	HK_BLIND_ESTEP_SCORE_DIST2 = 2
 };
 
 enum hk_blind_prior_mode {
@@ -142,6 +200,7 @@ struct hk_blind_pair {
 	int32_t chr[2];
 	int32_t pos[2];
 	int8_t strand[2];
+	float oracle_p4[HK_BLIND_N_STATE];
 };
 
 struct hk_blind_bpair_key {
@@ -156,9 +215,13 @@ struct hk_blind_raw2binned {
 struct hk_blind_bpair {
 	struct hk_blind_bpair_key key;
 	int32_t n_raw;
+	int32_t n_locked_raw;
 	float base_d_scale;
 	float base_k;
 	int8_t contact_class;
+	int8_t lock_mode;
+	int8_t locked_state;
+	uint8_t lock_conflict;
 	int32_t density_child_count[2];
 	float density_exposure;
 	float log_prior[HK_BLIND_N_STATE];
@@ -168,13 +231,63 @@ struct hk_blind_bpair {
 	float margin;
 	float rho_output;
 	float pU;
+	float real_log_norm;
+};
+
+struct hk_blind_raw_outlier_diag {
+	int64_t n_seen;
+	int64_t n_locked;
+	int64_t n_unlocked;
+	int64_t n_cis;
+	int64_t n_trans;
+	int64_t n_bad_log_norm;
+	int64_t n_all_real_truncated;
+	double real_mass_all;
+	double outlier_mass_all;
+	double emitted_real_mass_all;
+	double truncated_real_mass_all;
+	double real_mass_cis;
+	double outlier_mass_cis;
+	double emitted_real_mass_cis;
+	double truncated_real_mass_cis;
+	double real_mass_trans;
+	double outlier_mass_trans;
+	double emitted_real_mass_trans;
+	double truncated_real_mass_trans;
+	float min_qU;
+	float max_qU;
+};
+
+struct hk_blind_phase_lock_diag {
+	int enabled;
+	int32_t sample_size_percent;
+	uint64_t seed;
+	int64_t n_raw_total;
+	int64_t n_sampled_raw;
+	int64_t n_full_phase_raw;
+	int64_t n_partial_phase_raw;
+	int64_t n_unphased_raw;
+	int64_t n_sampled_full_phase_raw;
+	int64_t n_sampled_partial_phase_raw;
+	int64_t n_sampled_unphased_raw;
+	int64_t n_locked_raw;
+	int64_t n_conflict_raw;
+	int64_t n_same_bin_locked_raw;
+	int32_t n_locked_bpair;
+	int32_t n_conflict_bpair;
+	int32_t n_same_bin_locked_bpair;
+	int32_t state_bpair_count[HK_BLIND_N_STATE];
+	int64_t state_raw_count[HK_BLIND_N_STATE];
 };
 
 struct hk_blind_bpair_set {
 	struct hk_blind_bpair *bpairs;
 	int32_t n_bpairs;
 	struct hk_blind_raw2binned *raw2binned;
+	struct hk_blind_pair *raw;
+	int8_t *raw_locked_state;
 	int32_t n_raw;
+	struct hk_blind_phase_lock_diag phase_lock_diag;
 	int same_bin_filter_enabled;
 	int64_t n_raw_same_bin_excluded;
 	int32_t n_bpair_same_bin_excluded;
@@ -197,6 +310,16 @@ struct hk_blind_wedge_list {
 	int32_t n_edges, m_edges;
 	int64_t n_input_bpair;
 	int64_t n_expanded_edges;
+	int64_t n_split_candidate_pairs;
+	int64_t n_split_filter1_pairs;
+	int64_t n_split_filter2_pairs;
+	int64_t n_split_bmap_pairs;
+	int64_t n_split_selected_raw;
+	int64_t n_split_gate_skip_raw;
+	int64_t n_split_same_bin_skip_raw;
+	int64_t n_split_locked_skip_raw;
+	int64_t n_split_state_raw_count[HK_BLIND_N_STATE];
+	struct hk_blind_raw_outlier_diag raw_outlier_diag;
 	int64_t n_skipped_self_edges;
 	int64_t n_skipped_same_bin_bpairs;
 	int64_t n_edges_before_aggregation;
@@ -287,6 +410,17 @@ struct hk_blind_iter_diag {
 	int32_t sep_force_nonfinite;
 	int32_t n_wedges;
 	int32_t n_wedges_before_aggregation;
+	int64_t n_expanded_edges;
+	int64_t n_split_candidate_pairs;
+	int64_t n_split_filter1_pairs;
+	int64_t n_split_filter2_pairs;
+	int64_t n_split_bmap_pairs;
+	int64_t n_split_selected_raw;
+	int64_t n_split_gate_skip_raw;
+	int64_t n_split_same_bin_skip_raw;
+	int64_t n_split_locked_skip_raw;
+	int64_t n_split_state_raw_count[HK_BLIND_N_STATE];
+	struct hk_blind_raw_outlier_diag raw_outlier_diag;
 	int64_t n_skipped_self_edges;
 	int64_t n_skipped_same_bin_bpairs;
 	double sum_wedge_k;
@@ -310,11 +444,13 @@ struct hk_blind_step_diag {
 	float force_l1;
 	float backbone_force_l1;
 	float repulsion_force_l1;
+	float sep_force_l1;
 	float anchor_force_l1;
 	int32_t n_force_nonfinite;
 	int32_t n_contact_nonfinite;
 	int32_t n_backbone_nonfinite;
 	int32_t n_repulsion_nonfinite;
+	int32_t n_sep_nonfinite;
 	int32_t n_anchor_nonfinite;
 	int64_t n_backbone_edges;
 	int64_t n_repulsion_pairs_considered;
@@ -383,11 +519,17 @@ struct hk_blind_relax_diag {
 	float final_backbone_force_l1;
 	float max_repulsion_force_l1;
 	float final_repulsion_force_l1;
+	float max_sep_force_l1;
+	float final_sep_force_l1;
 	float max_anchor_force_l1;
 	float final_anchor_force_l1;
+	int64_t final_n_repulsion_pairs_considered;
+	int64_t final_n_repulsion_pairs_blocked;
+	int64_t final_n_repulsion_pairs_active;
 	int32_t n_nonfinite_step;
 	int32_t n_backbone_nonfinite_step;
 	int32_t n_repulsion_nonfinite_step;
+	int32_t n_sep_nonfinite_step;
 	int32_t n_anchor_nonfinite_step;
 	int32_t n_coord_nonfinite;
 	int32_t repulsion_mode;
@@ -402,19 +544,37 @@ struct hk_blind_single_iter_conf {
 	float rho_train_floor;
 	float min_sep_unit;
 	float lambda_sep;
+	float chr_sep_unit;
+	float lambda_chr_sep;
 	float relax_step;
 	int32_t relax_steps;
 	int enable_repulsion;
 	int repulsion_mode;
+	float repulsion_block_k_min;
 	int rho_train_mode;
 	int d_scale_mode;
 	float d_scale_eps_count;
 	float contact_k_multiplier_cis;
 	float contact_k_multiplier_trans;
+	float trans_d_scale_multiplier;
 	int state_weight_mode;
+	int mstep_graph_mode;
 	float trans_margin_min;
 	float trans_pmax_min;
 	float trans_posterior_power_gamma;
+	int raw_split_confidence_mode;
+	float raw_split_confidence_floor;
+	float raw_split_trans_scale;
+	float raw_split_trans_confidence_power;
+	float raw_split_state_p_min;
+	float raw_split_posterior_power_gamma;
+	int raw_outlier_enable;
+	float raw_outlier_beta_cis;
+	float raw_outlier_beta_trans;
+	float raw_outlier_prior_cis;
+	float raw_outlier_prior_trans;
+	float raw_soft_min_q;
+	int estep_score_mode;
 };
 
 struct hk_blind_single_iter_diag {
@@ -424,6 +584,17 @@ struct hk_blind_single_iter_diag {
 	int32_t n_chr_flipped;
 	int32_t n_wedges;
 	int32_t n_wedges_before_aggregation;
+	int64_t n_expanded_edges;
+	int64_t n_split_candidate_pairs;
+	int64_t n_split_filter1_pairs;
+	int64_t n_split_filter2_pairs;
+	int64_t n_split_bmap_pairs;
+	int64_t n_split_selected_raw;
+	int64_t n_split_gate_skip_raw;
+	int64_t n_split_same_bin_skip_raw;
+	int64_t n_split_locked_skip_raw;
+	int64_t n_split_state_raw_count[HK_BLIND_N_STATE];
+	struct hk_blind_raw_outlier_diag raw_outlier_diag;
 	int64_t n_skipped_self_edges;
 	int64_t n_skipped_same_bin_bpairs;
 	double sum_wedge_k;
@@ -468,9 +639,23 @@ struct hk_blind_iter_loop_diag {
 	float final_mean_rho_train_bpair;
 	float final_min_rho_train_bpair;
 	float final_max_rho_train_bpair;
+	int64_t final_n_expanded_edges;
+	int64_t final_n_split_candidate_pairs;
+	int64_t final_n_split_filter1_pairs;
+	int64_t final_n_split_filter2_pairs;
+	int64_t final_n_split_bmap_pairs;
+	int64_t final_n_split_selected_raw;
+	int64_t final_n_split_gate_skip_raw;
+	int64_t final_n_split_same_bin_skip_raw;
+	int64_t final_n_split_locked_skip_raw;
+	int64_t final_n_split_state_raw_count[HK_BLIND_N_STATE];
+	struct hk_blind_raw_outlier_diag final_raw_outlier_diag;
 	int64_t final_n_skipped_same_bin_bpairs;
 	float final_repulsion_energy;
 	float final_repulsion_force_l1;
+	int64_t final_n_repulsion_pairs_considered;
+	int64_t final_n_repulsion_pairs_blocked;
+	int64_t final_n_repulsion_pairs_active;
 	float final_anchor_energy;
 	float final_anchor_force_l1;
 	int32_t n_repulsion_nonfinite_step;
@@ -484,9 +669,9 @@ struct hk_blind_iter_loop_diag {
 	float posterior_refresh_mean_pU_after;
 };
 
-// Blind input intentionally copies no phase-like labels.
 static inline void hk_blind_pair_from_pair(struct hk_blind_pair *dst, const struct hk_pair *src)
 {
+	int s;
 	assert(dst);
 	assert(src);
 	dst->chr[0] = (int32_t)(src->chr >> 32);
@@ -495,6 +680,8 @@ static inline void hk_blind_pair_from_pair(struct hk_blind_pair *dst, const stru
 	dst->pos[1] = (int32_t)src->pos;
 	dst->strand[0] = src->strand[0];
 	dst->strand[1] = src->strand[1];
+	for (s = 0; s < HK_BLIND_N_STATE; ++s)
+		dst->oracle_p4[s] = src->_.p4[s];
 }
 
 struct hk_map {
@@ -599,6 +786,9 @@ const char *hk_blind_prior_mode_name(int mode);
 const char *hk_blind_rho_train_mode_name(int mode);
 const char *hk_blind_d_scale_mode_name(int mode);
 const char *hk_blind_state_weight_mode_name(int mode);
+const char *hk_blind_mstep_graph_mode_name(int mode);
+const char *hk_blind_raw_split_confidence_mode_name(int mode);
+const char *hk_blind_estep_score_mode_name(int mode);
 const char *hk_blind_base_k_mode_name(int mode);
 const char *hk_blind_contact_class_name(int contact_class);
 int hk_blind_init_mode_valid(int mode);
@@ -606,6 +796,9 @@ int hk_blind_prior_mode_valid(int mode);
 int hk_blind_rho_train_mode_valid(int mode);
 int hk_blind_d_scale_mode_valid(int mode);
 int hk_blind_state_weight_mode_valid(int mode);
+int hk_blind_mstep_graph_mode_valid(int mode);
+int hk_blind_raw_split_confidence_mode_valid(int mode);
+int hk_blind_estep_score_mode_valid(int mode);
 int hk_blind_base_k_mode_valid(int mode);
 int hk_blind_contact_class_valid(int contact_class);
 struct hk_blind_bpair_set *hk_blind_bpair_set_build(const struct hk_bmap *m, int32_t n_raw, const struct hk_blind_pair *raw);
@@ -619,6 +812,16 @@ int hk_blind_bpair_set_apply_base_k_mode(const struct hk_bmap *bmap, struct hk_b
 int hk_blind_bpair_set_apply_neighbor_median_base_k(const struct hk_bmap *bmap, struct hk_blind_bpair_set *set);
 void hk_blind_bpair_set_base_k_stats(const struct hk_blind_bpair_set *set, struct hk_blind_base_k_stats *stats);
 void hk_blind_heldout_diag_init(struct hk_blind_heldout_diag *diag);
+void hk_blind_phase_lock_diag_init(struct hk_blind_phase_lock_diag *diag);
+int hk_blind_bpair_set_apply_raw_phase_locks(struct hk_blind_bpair_set *set, const struct hk_pair *pairs,
+											 int32_t n_raw, int sample_size_percent, uint64_t seed,
+											 struct hk_blind_phase_lock_diag *diag);
+int hk_blind_bpair_set_apply_raw_phase_state_freq_locks(struct hk_blind_bpair_set *set, const struct hk_pair *pairs,
+														int32_t n_raw, int sample_size_percent, uint64_t seed,
+														struct hk_blind_phase_lock_diag *diag);
+int hk_blind_bpair_set_apply_imputed_p4_top_locks(struct hk_blind_bpair_set *set, const struct hk_pair *pairs,
+												 int32_t n_raw, int sample_size_percent, uint64_t seed,
+												 float phase_threshold, struct hk_blind_phase_lock_diag *diag);
 int hk_blind_eval_heldout_bpair_set(const struct hk_bmap *bmap, const struct hk_blind_bpair_set *set,
 									const struct hk_fdg_conf *conf, const fvec3_t *coords,
 									float unit, float temperature,
@@ -629,12 +832,23 @@ void hk_blind_bpair_posterior_from_coords(const struct hk_fdg_conf *conf, int32_
 										  float unit, float d_scale, float k, const float log_prior[HK_BLIND_N_STATE], float temperature,
 										  float energy_out[HK_BLIND_N_STATE], float p4[HK_BLIND_N_STATE],
 										  float *entropy, float *pmax, float *margin, float *rho_output, float *pU);
-void hk_blind_bpair_set_update_posterior_from_coords(struct hk_blind_bpair_set *set, const struct hk_fdg_conf *conf,
+void hk_blind_bpair_posterior_from_coords_score_mode(const struct hk_fdg_conf *conf, int32_t bid0, int32_t bid1,
 													 const fvec3_t *coords, float unit, float d_scale, float k,
-													 const float log_prior[HK_BLIND_N_STATE], float temperature);
+													 const float log_prior[HK_BLIND_N_STATE], float temperature,
+													 int estep_score_mode, float energy_out[HK_BLIND_N_STATE],
+													 float p4[HK_BLIND_N_STATE], float *entropy, float *pmax,
+													 float *margin, float *rho_output, float *pU);
+void hk_blind_bpair_set_update_posterior_from_coords(struct hk_blind_bpair_set *set, const struct hk_fdg_conf *conf,
+													const fvec3_t *coords, float unit, float d_scale, float k,
+													const float log_prior[HK_BLIND_N_STATE], float temperature);
 void hk_blind_bpair_set_update_posterior_from_coords_params(struct hk_blind_bpair_set *set, const struct hk_fdg_conf *conf,
 															const fvec3_t *coords, float unit,
 															const float log_prior[HK_BLIND_N_STATE], float temperature);
+void hk_blind_bpair_set_update_posterior_from_coords_params_score_mode(struct hk_blind_bpair_set *set,
+																	   const struct hk_fdg_conf *conf,
+																	   const fvec3_t *coords, float unit,
+																	   const float log_prior[HK_BLIND_N_STATE],
+																	   float temperature, int estep_score_mode);
 // eps and noise_scale are raw coordinate units; later callers should derive them from bd_unit.
 int hk_blind_init_diploid_coords_from_haploid(const struct hk_bmap *bmap, const fvec3_t *haploid_x, int32_t n_haploid,
 											 fvec3_t *diploid_x, float eps, float noise_scale, uint64_t seed);
@@ -645,9 +859,12 @@ int hk_blind_init_haploid_scaffold_from_bmap_fdg(struct hk_bmap *bmap, const str
 												 fvec3_t *haploid_x, uint64_t seed);
 float hk_blind_homolog_sep_energy(const fvec3_t x0, const fvec3_t x1, float unit, float min_sep_unit, float lambda_sep);
 float hk_blind_homolog_sep_energy_force(const fvec3_t x0, const fvec3_t x1, float unit, float min_sep_unit, float lambda_sep,
-										fvec3_t f0, fvec3_t f1);
+										 fvec3_t f0, fvec3_t f1);
 float hk_blind_homolog_sep_accumulate_force(int32_t n_haploid, const fvec3_t *coords, fvec3_t *force,
 											float unit, float min_sep_unit, float lambda_sep);
+float hk_blind_homolog_sep_accumulate_force_ex(int32_t n_haploid, const fvec3_t *coords, fvec3_t *force,
+											  float unit, float min_sep_unit, float lambda_sep,
+											  float *force_l1, int32_t *n_nonfinite);
 void hk_blind_homolog_sep_stats_init(struct hk_blind_homolog_sep_stats *stats);
 int hk_blind_homolog_sep_compute_stats(int32_t n_haploid, const fvec3_t *coords, float collapse_threshold,
 									   struct hk_blind_homolog_sep_stats *stats);
@@ -663,6 +880,7 @@ void hk_blind_p4_apply_endpoint_flips(const float in_p4[HK_BLIND_N_STATE], int f
 // Applies gauge flips to canonical binned p4; raw endpoint order is handled later by hk_blind_p4_to_raw_order().
 int hk_blind_bpair_set_apply_chr_flips(struct hk_blind_bpair_set *set, const struct hk_bmap *bmap,
 									   const uint8_t *chr_flipped, int32_t n_chr);
+int hk_blind_raw_state_to_canonical_state(int raw_state, uint8_t swapped);
 void hk_blind_p4_to_raw_order(const float canonical_p4[HK_BLIND_N_STATE], uint8_t swapped, float raw_p4[HK_BLIND_N_STATE]);
 void hk_blind_bpair_expand_weighted_edges(const struct hk_blind_bpair *bp, float base_k, float base_d_scale, float rho_train,
 										  struct hk_blind_wedge out_edges[HK_BLIND_N_STATE]);
@@ -767,6 +985,53 @@ int hk_blind_wedge_list_build_from_bpair_set_params_state_weight(struct hk_blind
 																 float trans_margin_min,
 																 float trans_pmax_min,
 																 float trans_posterior_power_gamma);
+int hk_blind_wedge_list_build_mstep_graph(struct hk_blind_wedge_list *out,
+										  const struct hk_bmap *bmap,
+										  const struct hk_blind_bpair_set *set,
+										  float rho_train, int rho_train_mode,
+										  float rho_train_floor, int d_scale_mode,
+										  float d_scale_eps_count,
+										  float contact_k_multiplier_cis,
+										  float contact_k_multiplier_trans,
+										  int state_weight_mode,
+										  int mstep_graph_mode,
+										  float trans_margin_min,
+										  float trans_pmax_min,
+										  float trans_posterior_power_gamma,
+										  int raw_split_confidence_mode,
+										  float raw_split_confidence_floor,
+										  float raw_split_trans_scale,
+										  float raw_split_trans_confidence_power,
+										  float raw_split_state_p_min);
+int hk_blind_wedge_list_build_mstep_graph_ex(struct hk_blind_wedge_list *out,
+											 const struct hk_bmap *bmap,
+											 const struct hk_blind_bpair_set *set,
+											 float rho_train, int rho_train_mode,
+											 float rho_train_floor, int d_scale_mode,
+											 float d_scale_eps_count,
+											 float contact_k_multiplier_cis,
+											 float contact_k_multiplier_trans,
+											 int state_weight_mode,
+											 int mstep_graph_mode,
+											 float trans_margin_min,
+											 float trans_pmax_min,
+											 float trans_posterior_power_gamma,
+											 int raw_split_confidence_mode,
+											 float raw_split_confidence_floor,
+											 float raw_split_trans_scale,
+											 float raw_split_trans_confidence_power,
+											 float raw_split_state_p_min,
+										  float raw_split_posterior_power_gamma,
+										  int raw_outlier_enable,
+										  float raw_outlier_beta_cis,
+										  float raw_outlier_beta_trans,
+										  float raw_outlier_prior_cis,
+										  float raw_outlier_prior_trans,
+										  float raw_soft_min_q,
+										  float temperature);
+void hk_blind_wedge_list_apply_trans_d_scale_multiplier(const struct hk_bmap *bmap,
+														struct hk_blind_wedge_list *list,
+														float trans_d_scale_multiplier);
 int hk_blind_wedge_list_aggregate_exact(struct hk_blind_wedge_list *list);
 void hk_blind_iter_diag_init(struct hk_blind_iter_diag *diag);
 void hk_blind_iter_diag_validate_bpair_set(const struct hk_blind_bpair_set *set, struct hk_blind_iter_diag *diag);
@@ -937,8 +1202,6 @@ void hk_v3d_opt_init(struct hk_v3d_opt *opt);
 void hk_v3d_prep(int *argc, char *argv[]);
 void hk_v3d_view(struct hk_bmap *m, const struct hk_v3d_opt *opt, int color_seed, const char *hl);
 void hk_fdg_normalize(struct hk_bmap *m);
-int hk_blind_p9016_full_cpu_main(int argc, char **argv);
-int hk_blind_p9016_cli_main(int argc, char *argv[]);
 
 #ifdef __cplusplus
 }

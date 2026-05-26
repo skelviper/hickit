@@ -124,6 +124,81 @@ static int check_no_forbidden_strings(const char *label, const char *s)
 	return failed;
 }
 
+static int tsv_col_index(const char *header, const char *name)
+{
+	char *copy, *tok;
+	int idx = 0;
+	copy = strdup(header);
+	if (copy == 0)
+		return -1;
+	for (tok = strtok(copy, "\t\n"); tok; tok = strtok(0, "\t\n"), ++idx) {
+		if (strcmp(tok, name) == 0) {
+			free(copy);
+			return idx;
+		}
+	}
+	free(copy);
+	return -1;
+}
+
+static int tsv_field_at(const char *line, int target_col, char *out, size_t out_size)
+{
+	const char *p, *start;
+	int col = 0;
+	size_t len;
+	assert(out);
+	assert(out_size > 0);
+	out[0] = 0;
+	if (line == 0 || target_col < 0)
+		return -1;
+	p = line;
+	while (col < target_col) {
+		p = strchr(p, '\t');
+		if (p == 0)
+			return -1;
+		++p;
+		++col;
+	}
+	start = p;
+	while (*p && *p != '\t' && *p != '\n')
+		++p;
+	len = (size_t)(p - start);
+	if (len >= out_size)
+		len = out_size - 1;
+	memcpy(out, start, len);
+	out[len] = 0;
+	return 0;
+}
+
+static int tsv_get_ll(const char *header, const char *line, const char *name, long long *out)
+{
+	char buf[128];
+	int col = tsv_col_index(header, name);
+	if (col < 0 || tsv_field_at(line, col, buf, sizeof(buf)) != 0)
+		return -1;
+	*out = strtoll(buf, 0, 10);
+	return 0;
+}
+
+static int tsv_get_double(const char *header, const char *line, const char *name, double *out)
+{
+	char buf[128];
+	int col = tsv_col_index(header, name);
+	if (col < 0 || tsv_field_at(line, col, buf, sizeof(buf)) != 0)
+		return -1;
+	*out = strtod(buf, 0);
+	return 0;
+}
+
+static int tsv_get_int(const char *header, const char *line, const char *name, int *out)
+{
+	long long v;
+	if (tsv_get_ll(header, line, name, &v) != 0)
+		return -1;
+	*out = (int)v;
+	return 0;
+}
+
 static void set_bmap(struct hk_bmap *bmap, struct hk_sdict *dict, char **names, int32_t *len,
 					 struct hk_bead *beads)
 {
@@ -149,9 +224,13 @@ static void set_bpair(struct hk_blind_bpair *bp, int32_t bid0, int32_t bid1, int
 	bp->key.bid[0] = bid0;
 	bp->key.bid[1] = bid1;
 	bp->n_raw = n_raw;
+	bp->n_locked_raw = 0;
 	bp->base_d_scale = powf((float)n_raw, -1.0f / 3.0f);
 	bp->base_k = 1.0f;
 	bp->contact_class = bid0 == 0 && bid1 == 2? HK_BLIND_CONTACT_TRANS : HK_BLIND_CONTACT_CIS;
+	bp->lock_mode = HK_BLIND_LOCK_NONE;
+	bp->locked_state = -1;
+	bp->lock_conflict = 0;
 	bp->p4[HK_BLIND_STATE_00] = p00;
 	bp->p4[HK_BLIND_STATE_01] = p01;
 	bp->p4[HK_BLIND_STATE_10] = p10;
@@ -259,7 +338,7 @@ static int test_posterior_writer(void)
 	failed |= check_true("posterior header base_k", strstr(text, "base_k") != 0);
 	failed |= check_true("posterior header rho", strstr(text, "rho_output") != 0);
 	failed |= check_true("posterior header contact class", strstr(text, "contact_class") != 0);
-	failed |= check_true("posterior trans contact class", strstr(text, "\ttrans\n") != 0);
+	failed |= check_true("posterior trans contact class", strstr(text, "\ttrans\t") != 0);
 	failed |= check_i32("posterior row count", count_lines(text) - 1, set.n_bpairs);
 	failed |= check_no_forbidden_strings("posterior", text);
 	line = strchr(text, '\n');
@@ -601,7 +680,7 @@ static int test_loop_diag_writer(void)
 {
 	struct hk_blind_iter_loop_diag diag;
 	FILE *fp;
-	char *text = 0, *line;
+	char *text = 0, *line, *header;
 	int n_iter, n_completed, total_chr_flipped, n_bad_iter, n_relax_bad, n_coord_bad;
 	double initial_entropy, final_entropy, initial_pU, final_pU;
 	double initial_temperature, final_temperature, initial_rho, final_rho;
@@ -665,19 +744,41 @@ static int test_loop_diag_writer(void)
 	line = strchr(text, '\n');
 	failed |= check_true("diag data line", line != 0);
 	if (line) {
+		*line = 0;
+		header = text;
 		++line;
-		failed |= check_i32("diag parsed",
-							sscanf(line, "%d\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t"
-								   "%d\t%d\t%d\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t"
-								   "%lld\t%lf\t%lf\t%d\t%d\t%d\t%lf\t%lf\t%lf\t%lf\t%lf",
-								   &n_iter, &n_completed, &initial_entropy, &final_entropy,
-								   &initial_pU, &final_pU, &initial_temperature, &final_temperature,
-								   &initial_rho, &final_rho, &total_chr_flipped, &n_bad_iter,
-								   &n_relax_bad, &n_coord_bad, &mean_sep, &min_sep, &max_sep, &sum_k,
-								   &mean_rho_train, &min_rho_train, &max_rho_train, &skipped_same_bin,
-								   &rep_energy, &rep_force, &n_rep_bad, &rep_mode, &refreshed,
-								   &refresh_temp, &refresh_kl, &refresh_switch, &refresh_pU_before,
-								   &refresh_pU_after), 32);
+		failed |= check_i32("diag n_iter parse", tsv_get_int(header, line, "n_iter", &n_iter), 0);
+		failed |= check_i32("diag n_completed parse", tsv_get_int(header, line, "n_completed", &n_completed), 0);
+		failed |= check_i32("diag initial entropy parse", tsv_get_double(header, line, "initial_mean_entropy", &initial_entropy), 0);
+		failed |= check_i32("diag final entropy parse", tsv_get_double(header, line, "final_mean_entropy", &final_entropy), 0);
+		failed |= check_i32("diag initial pU parse", tsv_get_double(header, line, "initial_mean_pU", &initial_pU), 0);
+		failed |= check_i32("diag final pU parse", tsv_get_double(header, line, "final_mean_pU", &final_pU), 0);
+		failed |= check_i32("diag initial temp parse", tsv_get_double(header, line, "initial_temperature", &initial_temperature), 0);
+		failed |= check_i32("diag final temp parse", tsv_get_double(header, line, "final_temperature", &final_temperature), 0);
+		failed |= check_i32("diag initial rho parse", tsv_get_double(header, line, "initial_rho_train", &initial_rho), 0);
+		failed |= check_i32("diag final rho parse", tsv_get_double(header, line, "final_rho_train", &final_rho), 0);
+		failed |= check_i32("diag flips parse", tsv_get_int(header, line, "total_chr_flipped", &total_chr_flipped), 0);
+		failed |= check_i32("diag bad iter parse", tsv_get_int(header, line, "n_bad_iter", &n_bad_iter), 0);
+		failed |= check_i32("diag relax bad parse", tsv_get_int(header, line, "n_relax_nonfinite_iter", &n_relax_bad), 0);
+		failed |= check_i32("diag coord bad parse", tsv_get_int(header, line, "n_coord_nonfinite", &n_coord_bad), 0);
+		failed |= check_i32("diag mean sep parse", tsv_get_double(header, line, "final_mean_sep", &mean_sep), 0);
+		failed |= check_i32("diag min sep parse", tsv_get_double(header, line, "final_min_sep", &min_sep), 0);
+		failed |= check_i32("diag max sep parse", tsv_get_double(header, line, "final_max_sep", &max_sep), 0);
+		failed |= check_i32("diag sum k parse", tsv_get_double(header, line, "final_sum_wedge_k", &sum_k), 0);
+		failed |= check_i32("diag mean rho train parse", tsv_get_double(header, line, "final_mean_rho_train_bpair", &mean_rho_train), 0);
+		failed |= check_i32("diag min rho train parse", tsv_get_double(header, line, "final_min_rho_train_bpair", &min_rho_train), 0);
+		failed |= check_i32("diag max rho train parse", tsv_get_double(header, line, "final_max_rho_train_bpair", &max_rho_train), 0);
+		failed |= check_i32("diag skipped same-bin parse", tsv_get_ll(header, line, "final_n_skipped_same_bin_bpairs", &skipped_same_bin), 0);
+		failed |= check_i32("diag rep energy parse", tsv_get_double(header, line, "final_repulsion_energy", &rep_energy), 0);
+		failed |= check_i32("diag rep force parse", tsv_get_double(header, line, "final_repulsion_force_l1", &rep_force), 0);
+		failed |= check_i32("diag rep bad parse", tsv_get_int(header, line, "n_repulsion_nonfinite_step", &n_rep_bad), 0);
+		failed |= check_i32("diag rep mode parse", tsv_get_int(header, line, "repulsion_mode", &rep_mode), 0);
+		failed |= check_i32("diag refreshed parse", tsv_get_int(header, line, "posterior_refreshed_after_final_relax", &refreshed), 0);
+		failed |= check_i32("diag refresh temp parse", tsv_get_double(header, line, "posterior_refresh_temperature", &refresh_temp), 0);
+		failed |= check_i32("diag refresh kl parse", tsv_get_double(header, line, "posterior_refresh_mean_kl", &refresh_kl), 0);
+		failed |= check_i32("diag refresh switch parse", tsv_get_double(header, line, "posterior_refresh_top_state_switch_frac", &refresh_switch), 0);
+		failed |= check_i32("diag refresh before parse", tsv_get_double(header, line, "posterior_refresh_mean_pU_before", &refresh_pU_before), 0);
+		failed |= check_i32("diag refresh after parse", tsv_get_double(header, line, "posterior_refresh_mean_pU_after", &refresh_pU_after), 0);
 		failed |= check_i32("diag n_iter", n_iter, 3);
 		failed |= check_i32("diag n_completed", n_completed, 3);
 		failed |= check_i32("diag n_bad_iter", n_bad_iter, 0);

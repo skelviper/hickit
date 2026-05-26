@@ -10,6 +10,7 @@
 #define HK_AUDIT_LINE_MAX 16384
 #define HK_AUDIT_EXAMPLE_MAX 5
 #define HK_AUDIT_TOL 1e-4
+#define HK_AUDIT_MAX_FIELDS 256
 
 enum manifest_key {
 	MK_SAMPLE = 0,
@@ -95,6 +96,7 @@ enum manifest_key {
 	MK_N_RAW_TRANS,
 	MK_N_BPAIR_CIS,
 	MK_N_BPAIR_TRANS,
+	MK_USES_PHASE_LABELS,
 	MK_N_KEYS
 };
 
@@ -129,6 +131,7 @@ struct manifest_info {
 	int64_t n_raw_trans;
 	int64_t n_bpair_cis;
 	int64_t n_bpair_trans;
+	int64_t uses_phase_labels;
 	int64_t init_split_params_used;
 	int64_t posterior_refreshed_after_final_relax;
 	int64_t n_bad_iter;
@@ -373,6 +376,7 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "n_raw_trans") == 0) return MK_N_RAW_TRANS;
 	if (strcmp(key, "n_bpair_cis") == 0) return MK_N_BPAIR_CIS;
 	if (strcmp(key, "n_bpair_trans") == 0) return MK_N_BPAIR_TRANS;
+	if (strcmp(key, "uses_phase_labels") == 0) return MK_USES_PHASE_LABELS;
 	if (strcmp(key, "init_eps_effective") == 0) return MK_INIT_EPS_EFFECTIVE;
 	if (strcmp(key, "init_noise_scale_effective") == 0) return MK_INIT_NOISE_SCALE_EFFECTIVE;
 	if (strcmp(key, "init_seed") == 0) return MK_INIT_SEED;
@@ -422,6 +426,67 @@ static int parse_double_value(const char *s, double *out)
 	return 0;
 }
 
+static int split_tsv_line(char *line, char **fields, int max_fields)
+{
+	int n = 0;
+	char *p = line;
+	assert(fields);
+	assert(max_fields > 0);
+	while (n < max_fields && p) {
+		char *tab = strchr(p, '\t');
+		fields[n++] = p;
+		if (tab == 0)
+			break;
+		*tab = 0;
+		p = tab + 1;
+	}
+	return n;
+}
+
+static const char *tsv_get_value(char **header_fields, char **value_fields, int n_header, int n_value,
+								 const char *name)
+{
+	int i;
+	assert(header_fields);
+	assert(value_fields);
+	assert(name);
+	for (i = 0; i < n_header && i < n_value; ++i)
+		if (strcmp(header_fields[i], name) == 0)
+			return value_fields[i];
+	return 0;
+}
+
+static int tsv_get_i32(char **header_fields, char **value_fields, int n_header, int n_value,
+					   const char *name, int *out)
+{
+	int64_t v;
+	const char *s = tsv_get_value(header_fields, value_fields, n_header, n_value, name);
+	if (s == 0 || parse_i64_value(s, &v) != 0 || v < INT32_MIN || v > INT32_MAX)
+		return -1;
+	*out = (int)v;
+	return 0;
+}
+
+static int tsv_get_i64(char **header_fields, char **value_fields, int n_header, int n_value,
+					   const char *name, long long *out)
+{
+	int64_t v;
+	const char *s = tsv_get_value(header_fields, value_fields, n_header, n_value, name);
+	if (s == 0 || parse_i64_value(s, &v) != 0)
+		return -1;
+	*out = (long long)v;
+	return 0;
+}
+
+static int tsv_get_double(char **header_fields, char **value_fields, int n_header, int n_value,
+						  const char *name, double *out)
+{
+	const char *s = tsv_get_value(header_fields, value_fields, n_header, n_value, name);
+	if (s == 0 || parse_double_value(s, out) != 0)
+		return -1;
+	return 0;
+}
+
 static int manifest_set_value(struct manifest_info *info, const char *key, const char *value)
 {
 	int idx = manifest_key_index(key);
@@ -461,6 +526,7 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_N_RAW_TRANS: return parse_i64_value(value, &info->n_raw_trans);
 	case MK_N_BPAIR_CIS: return parse_i64_value(value, &info->n_bpair_cis);
 	case MK_N_BPAIR_TRANS: return parse_i64_value(value, &info->n_bpair_trans);
+	case MK_USES_PHASE_LABELS: return parse_i64_value(value, &info->uses_phase_labels);
 	case MK_INIT_SPLIT_PARAMS_USED: return parse_i64_value(value, &info->init_split_params_used);
 	case MK_POSTERIOR_REFRESHED_AFTER_FINAL_RELAX: return parse_i64_value(value, &info->posterior_refreshed_after_final_relax);
 	case MK_N_BAD_ITER: return parse_i64_value(value, &info->n_bad_iter);
@@ -587,12 +653,8 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest runner identity fields are empty");
 		failed = 1;
 	}
-	if (strcmp(info->runner_family, "full_cpu") != 0 &&
-		strcmp(info->runner_family, "full_cpu_matrix") != 0 &&
-		strcmp(info->runner_family, "blind_p9016_cli") != 0 &&
-		strcmp(info->runner_family, "test_fixture") != 0 &&
-		strcmp(info->runner_family, "candidate_outputs") != 0 &&
-		strcmp(info->runner_family, "full_cpu_sweep") != 0) {
+	if (strcmp(info->runner_family, "p9016_minimal") != 0 &&
+		strcmp(info->runner_family, "test_fixture") != 0) {
 		add_example(audit, "manifest runner_family is not recognized");
 		failed = 1;
 	}
@@ -818,8 +880,9 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest repulsion_mode is not N2/CELL");
 		failed = 1;
 	}
-	if (strcmp(info->repulsion_blocking_mode, "current_edge_blocking") != 0) {
-		add_example(audit, "manifest repulsion_blocking_mode is not current_edge_blocking");
+	if (strcmp(info->repulsion_blocking_mode, "current_edge_blocking") != 0 &&
+		strcmp(info->repulsion_blocking_mode, "contact_k_threshold") != 0) {
+		add_example(audit, "manifest repulsion_blocking_mode is not recognized");
 		failed = 1;
 	}
 	if (info->write_raw_posterior == 1 && !info->has_output_raw_posterior) {
@@ -959,9 +1022,10 @@ static int audit_bpair_file(const char *path, const struct manifest_info *info, 
 		}
 		if (bid1 == bid2) {
 			++audit->same_bin_rows;
-			if (!check_close(p00, 0.25) || !check_close(p01, 0.25) ||
+			if (info->uses_phase_labels == 0 &&
+				(!check_close(p00, 0.25) || !check_close(p01, 0.25) ||
 				!check_close(p10, 0.25) || !check_close(p11, 0.25) ||
-				!check_close(pU, 1.0) || !check_close(rho, 0.0)) {
+				 !check_close(pU, 1.0) || !check_close(rho, 0.0))) {
 				add_example_fmt(audit, "bpair", row, "same-bin posterior not uniform unknown", pU);
 				mark_bad_row(audit, &row_bad);
 			}
@@ -1097,7 +1161,11 @@ static int audit_loop_diag_file(const char *path, const struct manifest_info *in
 		"repulsion_mode", "posterior_refreshed_after_final_relax", "posterior_refresh_temperature"
 	};
 	FILE *fp = fopen(path, "r");
-	char line[HK_AUDIT_LINE_MAX];
+	char header_line[HK_AUDIT_LINE_MAX];
+	char value_line[HK_AUDIT_LINE_MAX];
+	char *header_fields[HK_AUDIT_MAX_FIELDS];
+	char *value_fields[HK_AUDIT_MAX_FIELDS];
+	int n_header, n_value;
 	int failed = 0;
 	int row_bad = 0;
 	int n_iter, n_completed, total_chr_flipped, n_bad_iter, n_relax_bad, n_coord_bad;
@@ -1107,6 +1175,7 @@ static int audit_loop_diag_file(const char *path, const struct manifest_info *in
 	double mean_sep, min_sep, max_sep, sum_k;
 	double mean_rho_train, min_rho_train, max_rho_train;
 	long long n_skipped_same_bin;
+	long long n_rep_considered, n_rep_blocked, n_rep_active;
 	double rep_energy, rep_force;
 	int n_rep_bad, rep_mode, posterior_refreshed;
 	double refresh_temperature, refresh_kl, refresh_switch_frac, refresh_pu_before, refresh_pu_after;
@@ -1117,39 +1186,67 @@ static int audit_loop_diag_file(const char *path, const struct manifest_info *in
 		audit->bad_rows++;
 		return 1;
 	}
-	if (fgets(line, sizeof(line), fp) == 0) {
+	if (fgets(header_line, sizeof(header_line), fp) == 0) {
 		add_example(audit, "loop diag missing header");
 		audit->bad_rows++;
 		fclose(fp);
 		return 1;
 	}
-	scan_forbidden_line(audit, "loop_diag", 0, line);
-	failed |= check_header_tokens(audit, "loop_diag", line, header_tokens, (int)(sizeof(header_tokens) / sizeof(header_tokens[0])));
-	if (fgets(line, sizeof(line), fp) == 0) {
+	scan_forbidden_line(audit, "loop_diag", 0, header_line);
+	failed |= check_header_tokens(audit, "loop_diag", header_line, header_tokens, (int)(sizeof(header_tokens) / sizeof(header_tokens[0])));
+	if (fgets(value_line, sizeof(value_line), fp) == 0) {
 		add_example(audit, "loop diag missing data row");
 		audit->bad_rows++;
 		fclose(fp);
 		return 1;
 	}
-	scan_forbidden_line(audit, "loop_diag", 1, line);
+	scan_forbidden_line(audit, "loop_diag", 1, value_line);
 	audit->rows = 1;
-	if (sscanf(line, "%d\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t"
-			   "%d\t%d\t%d\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lld\t"
-			   "%lf\t%lf\t%d\t%d\t%d\t%lf\t%lf\t%lf\t%lf\t%lf",
-			   &n_iter, &n_completed, &initial_entropy, &final_entropy,
-			   &initial_pU, &final_pU, &initial_temperature, &final_temperature,
-			   &initial_rho, &final_rho, &total_chr_flipped, &n_bad_iter,
-			   &n_relax_bad, &n_coord_bad, &mean_sep, &min_sep, &max_sep, &sum_k,
-			   &mean_rho_train, &min_rho_train, &max_rho_train, &n_skipped_same_bin,
-			   &rep_energy, &rep_force, &n_rep_bad, &rep_mode, &posterior_refreshed,
-			   &refresh_temperature, &refresh_kl, &refresh_switch_frac,
-			   &refresh_pu_before, &refresh_pu_after) != 32) {
+	trim_line(header_line);
+	trim_line(value_line);
+	n_header = split_tsv_line(header_line, header_fields, HK_AUDIT_MAX_FIELDS);
+	n_value = split_tsv_line(value_line, value_fields, HK_AUDIT_MAX_FIELDS);
+	if (tsv_get_i32(header_fields, value_fields, n_header, n_value, "n_iter", &n_iter) != 0 ||
+		tsv_get_i32(header_fields, value_fields, n_header, n_value, "n_completed", &n_completed) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "initial_mean_entropy", &initial_entropy) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_mean_entropy", &final_entropy) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "initial_mean_pU", &initial_pU) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_mean_pU", &final_pU) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "initial_temperature", &initial_temperature) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_temperature", &final_temperature) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "initial_rho_train", &initial_rho) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_rho_train", &final_rho) != 0 ||
+		tsv_get_i32(header_fields, value_fields, n_header, n_value, "total_chr_flipped", &total_chr_flipped) != 0 ||
+		tsv_get_i32(header_fields, value_fields, n_header, n_value, "n_bad_iter", &n_bad_iter) != 0 ||
+		tsv_get_i32(header_fields, value_fields, n_header, n_value, "n_relax_nonfinite_iter", &n_relax_bad) != 0 ||
+		tsv_get_i32(header_fields, value_fields, n_header, n_value, "n_coord_nonfinite", &n_coord_bad) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_mean_sep", &mean_sep) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_min_sep", &min_sep) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_max_sep", &max_sep) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_sum_wedge_k", &sum_k) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_mean_rho_train_bpair", &mean_rho_train) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_min_rho_train_bpair", &min_rho_train) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_max_rho_train_bpair", &max_rho_train) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "final_n_skipped_same_bin_bpairs", &n_skipped_same_bin) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_repulsion_energy", &rep_energy) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_repulsion_force_l1", &rep_force) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "final_n_repulsion_pairs_considered", &n_rep_considered) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "final_n_repulsion_pairs_blocked", &n_rep_blocked) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "final_n_repulsion_pairs_active", &n_rep_active) != 0 ||
+		tsv_get_i32(header_fields, value_fields, n_header, n_value, "n_repulsion_nonfinite_step", &n_rep_bad) != 0 ||
+		tsv_get_i32(header_fields, value_fields, n_header, n_value, "repulsion_mode", &rep_mode) != 0 ||
+		tsv_get_i32(header_fields, value_fields, n_header, n_value, "posterior_refreshed_after_final_relax", &posterior_refreshed) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "posterior_refresh_temperature", &refresh_temperature) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "posterior_refresh_mean_kl", &refresh_kl) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "posterior_refresh_top_state_switch_frac", &refresh_switch_frac) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "posterior_refresh_mean_pU_before", &refresh_pu_before) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "posterior_refresh_mean_pU_after", &refresh_pu_after) != 0) {
 		add_example(audit, "loop diag parse failed");
 		++audit->bad_rows;
 		fclose(fp);
 		return 1;
 	}
-	if (fgets(line, sizeof(line), fp) != 0) {
+	if (fgets(value_line, sizeof(value_line), fp) != 0) {
 		add_example(audit, "loop diag has more than one data row");
 		++audit->bad_rows;
 		failed = 1;
@@ -1198,6 +1295,11 @@ static int audit_loop_diag_file(const char *path, const struct manifest_info *in
 	}
 	if (!isfinite(rep_energy) || rep_energy < 0.0 || !isfinite(rep_force) || rep_force < 0.0) {
 		add_example(audit, "loop diag bad repulsion summary value");
+		mark_bad_row(audit, &row_bad);
+	}
+	if (n_rep_considered < 0 || n_rep_blocked < 0 || n_rep_active < 0 ||
+		n_rep_blocked > n_rep_considered || n_rep_active > n_rep_considered) {
+		add_example(audit, "loop diag bad repulsion pair counters");
 		mark_bad_row(audit, &row_bad);
 	}
 	if (!isfinite(mean_rho_train) || !isfinite(min_rho_train) || !isfinite(max_rho_train) ||
@@ -1322,9 +1424,10 @@ static int audit_raw_file(const char *path, const struct manifest_info *info, st
 		}
 		if (bid1_can == bid2_can) {
 			++audit->same_bin_rows;
-			if (!check_close(p00, 0.25) || !check_close(p01, 0.25) ||
+			if (info->uses_phase_labels == 0 &&
+				(!check_close(p00, 0.25) || !check_close(p01, 0.25) ||
 				!check_close(p10, 0.25) || !check_close(p11, 0.25) ||
-				!check_close(pU, 1.0) || !check_close(rho, 0.0)) {
+				 !check_close(pU, 1.0) || !check_close(rho, 0.0))) {
 				add_example_fmt(audit, "raw", row, "same-bin posterior not uniform unknown", pU);
 				mark_bad_row(audit, &row_bad);
 			}

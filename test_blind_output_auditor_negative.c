@@ -304,11 +304,13 @@ static int write_loop_diag_file(const char *path)
 				"final_max_sep\tfinal_sum_wedge_k\tfinal_mean_rho_train_bpair\t"
 				"final_min_rho_train_bpair\tfinal_max_rho_train_bpair\t"
 				"final_n_skipped_same_bin_bpairs\tfinal_repulsion_energy\t"
-				"final_repulsion_force_l1\tn_repulsion_nonfinite_step\trepulsion_mode\t"
+				"final_repulsion_force_l1\tfinal_n_repulsion_pairs_considered\t"
+				"final_n_repulsion_pairs_blocked\tfinal_n_repulsion_pairs_active\t"
+				"n_repulsion_nonfinite_step\trepulsion_mode\t"
 				"posterior_refreshed_after_final_relax\tposterior_refresh_temperature\t"
 				"posterior_refresh_mean_kl\tposterior_refresh_top_state_switch_frac\t"
 				"posterior_refresh_mean_pU_before\tposterior_refresh_mean_pU_after\n"
-				"3\t3\t1.1\t1.0\t0.25\t0.2\t2\t1\t1\t1\t0\t0\t0\t0\t1.0\t0.5\t1.5\t3.5\t1\t1\t1\t0\t0.75\t1.25\t0\t2\t1\t1\t0\t0\t0.2\t0.2\n") < 0) {
+				"3\t3\t1.1\t1.0\t0.25\t0.2\t2\t1\t1\t1\t0\t0\t0\t0\t1.0\t0.5\t1.5\t3.5\t1\t1\t1\t0\t0.75\t1.25\t0\t0\t0\t0\t2\t1\t1\t0\t0\t0.2\t0.2\n") < 0) {
 		fclose(fp);
 		return -1;
 	}
