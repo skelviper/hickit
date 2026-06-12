@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include "hickit.h"
 
-#define HK_P9016_DEFAULT_PAIRS "../pairs/P9016.pairs.gz"
+#define HK_P9016_DEFAULT_PAIRS "/shared/zliu/CHARM/CHARM_mesc/data/pairs/P9016.pairs.gz"
 #define HK_P9016_DEFAULT_BIN_SIZE_BP 1000000
 #define HK_P9016_DEFAULT_N_ITER 100
 #define HK_P9016_DEFAULT_RELAX_STEPS 100
@@ -212,6 +212,62 @@ static int env_flag_enabled(const char *name)
 	return s && s[0] && strcmp(s, "0") != 0 && strcmp(s, "false") != 0 && strcmp(s, "FALSE") != 0;
 }
 
+static int env_is_set(const char *name)
+{
+	const char *s = getenv(name);
+	return s && s[0];
+}
+
+static int reject_env_if_set(const char *name)
+{
+	if (!env_is_set(name))
+		return 0;
+	fprintf(stderr, "%s is not supported in the cleaned P9016 softall baseline\n", name);
+	return 1;
+}
+
+static int softall_baseline_env_guard(void)
+{
+	static const char *blocked[] = {
+		"HK_BLIND_P9016_HARD_PC_KIND",
+		"HK_BLIND_P9016_HARD_PC_SEED",
+		"HK_BLIND_P9016_TRANS_PMAX_MIN",
+		"HK_BLIND_P9016_TRANS_MARGIN_MIN",
+		"HK_BLIND_P9016_TRANS_POSTERIOR_POWER_GAMMA",
+		"HK_BLIND_P9016_IMPUTED_P4_THRESHOLD",
+		"HK_BLIND_P9016_RAW_SPLIT_CONFIDENCE_MODE",
+		"HK_BLIND_P9016_RAW_SPLIT_CONFIDENCE_FLOOR",
+		"HK_BLIND_P9016_RAW_SPLIT_TRANS_SCALE",
+		"HK_BLIND_P9016_RAW_SPLIT_TRANS_CONFIDENCE_POWER",
+		"HK_BLIND_P9016_RAW_SPLIT_STATE_P_MIN",
+		"HK_BLIND_P9016_RAW_SPLIT_POSTERIOR_POWER_GAMMA",
+		"HK_BLIND_P9016_RAW_SPLIT_SAMPLE_SALT",
+		"HK_BLIND_P9016_RAW_OUTLIER_ENABLE",
+		"HK_BLIND_RAW_OUTLIER_ENABLE",
+		"HK_BLIND_P9016_RAW_OUTLIER_BETA_CIS",
+		"HK_BLIND_P9016_RAW_OUTLIER_BETA_TRANS",
+		"HK_BLIND_P9016_RAW_OUTLIER_PRIOR_CIS",
+		"HK_BLIND_P9016_RAW_OUTLIER_PRIOR_TRANS",
+		"HK_BLIND_P9016_RAW_SOFT_MIN_Q",
+		"HK_BLIND_P9016_MIN_SEP_UNIT",
+		"HK_BLIND_P9016_LAMBDA_SEP",
+		"HK_BLIND_P9016_CHR_SEP_UNIT",
+		"HK_BLIND_P9016_LAMBDA_CHR_SEP",
+		"HK_BLIND_P9016_CONTACT_K_MULTIPLIER_CIS",
+		"HK_BLIND_P9016_CONTACT_K_MULTIPLIER_TRANS",
+		"HK_BLIND_P9016_TRANS_D_SCALE_MULTIPLIER",
+		"HK_BLIND_P9016_TEMPERATURE_START",
+		"HK_BLIND_P9016_TEMPERATURE_END",
+		"HK_BLIND_P9016_REPULSION_BLOCK_K_MIN",
+		"HK_BLIND_P9016_STRICT_NO_PRIOR",
+		0
+	};
+	int i, failed = 0;
+	for (i = 0; blocked[i]; ++i)
+		failed |= reject_env_if_set(blocked[i]);
+	return failed? -1 : 0;
+}
+
 static const char *input_contact_source_from_path(const char *path)
 {
 	if (path == 0)
@@ -242,6 +298,10 @@ static int strict_no_prior_source_ok(const char *source, const char *path)
 static int hard_pc_kind_from_env(void)
 {
 	const char *s = getenv("HK_BLIND_P9016_HARD_PC_KIND");
+	if (s && s[0]) {
+		fprintf(stderr, "HK_BLIND_P9016_HARD_PC_KIND is not supported in the cleaned P9016 softall baseline\n");
+		return -1;
+	}
 	if (s == 0 || s[0] == 0 || strcmp(s, "hard_state") == 0 ||
 		strcmp(s, "raw_phase_lock") == 0 || strcmp(s, "majority") == 0)
 		return HK_P9016_HARD_PC_KIND_HARD_STATE;
@@ -270,13 +330,7 @@ static int d_scale_mode_from_env(void)
 	const char *s = getenv("HK_BLIND_P9016_D_SCALE_MODE");
 	if (s == 0 || s[0] == 0 || strcmp(s, "raw") == 0 || strcmp(s, "raw_count") == 0)
 		return HK_BLIND_D_SCALE_RAW_COUNT;
-	if (strcmp(s, "expected") == 0 || strcmp(s, "expected_count") == 0)
-		return HK_BLIND_D_SCALE_EXPECTED_COUNT;
-	if (strcmp(s, "density") == 0 || strcmp(s, "density_normalized_raw_count") == 0)
-		return HK_BLIND_D_SCALE_DENSITY_NORMALIZED_RAW_COUNT;
-	if (strcmp(s, "capped_density") == 0 || strcmp(s, "capped_density_raw_count") == 0)
-		return HK_BLIND_D_SCALE_CAPPED_DENSITY_RAW_COUNT;
-	fprintf(stderr, "invalid HK_BLIND_P9016_D_SCALE_MODE=%s\n", s);
+	fprintf(stderr, "HK_BLIND_P9016_D_SCALE_MODE only supports raw_count in the cleaned P9016 softall baseline\n");
 	return -1;
 }
 
@@ -296,13 +350,7 @@ static int state_weight_mode_from_env(void)
 	const char *s = getenv("HK_BLIND_P9016_STATE_WEIGHT_MODE");
 	if (s == 0 || s[0] == 0 || strcmp(s, "posterior") == 0)
 		return HK_BLIND_STATE_WEIGHT_POSTERIOR;
-	if (strcmp(s, "binary_support") == 0 || strcmp(s, "support") == 0 ||
-		strcmp(s, "selected") == 0)
-		return HK_BLIND_STATE_WEIGHT_BINARY_SUPPORT;
-	if (strcmp(s, "top_only") == 0 || strcmp(s, "hard_top") == 0 ||
-		strcmp(s, "max_state") == 0)
-		return HK_BLIND_STATE_WEIGHT_TOP_ONLY;
-	fprintf(stderr, "invalid HK_BLIND_P9016_STATE_WEIGHT_MODE=%s\n", s);
+	fprintf(stderr, "HK_BLIND_P9016_STATE_WEIGHT_MODE only supports posterior in the cleaned P9016 softall baseline\n");
 	return -1;
 }
 
@@ -464,175 +512,13 @@ static const char *mstep_graph_threshold_config_suffix(int mode, float pmax_min,
 static int mstep_graph_mode_from_env(void)
 {
 	const char *s = getenv("HK_BLIND_P9016_MSTEP_GRAPH_MODE");
-	if (s == 0 || s[0] == 0 || strcmp(s, "bpair") == 0 ||
-		strcmp(s, "bpair_four_state") == 0 || strcmp(s, "four_state") == 0)
-		return HK_BLIND_MSTEP_GRAPH_BPAIR;
-	if (strcmp(s, "raw_split_top") == 0 || strcmp(s, "raw_split") == 0 ||
-		strcmp(s, "split_then_bin") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_TOP;
-	if (strcmp(s, "raw_expected_count") == 0 || strcmp(s, "raw_expected") == 0 ||
-		strcmp(s, "expected_count_raw") == 0 || strcmp(s, "sufficient_stat") == 0 ||
-		strcmp(s, "raw_sufficient_stat") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_COUNT;
-	if (strcmp(s, "raw_expected_soft_all") == 0 ||
+	if (s == 0 || s[0] == 0 ||
+		strcmp(s, "raw_expected_soft_all") == 0 ||
 		strcmp(s, "raw_expected_all") == 0 ||
-		strcmp(s, "soft_all") == 0)
+		strcmp(s, "soft_all") == 0 ||
+		strcmp(s, "softall") == 0)
 		return HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_ALL;
-	if (strcmp(s, "raw_expected_soft_outlier") == 0 ||
-		strcmp(s, "soft_outlier") == 0 ||
-		strcmp(s, "raw_soft_outlier") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_OUTLIER;
-	if (strcmp(s, "raw_expected_locked_only") == 0 ||
-		strcmp(s, "raw_expected_locked") == 0 ||
-		strcmp(s, "locked_only") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_LOCKED_ONLY;
-	if (strcmp(s, "raw_expected_pcut") == 0 ||
-		strcmp(s, "raw_expected_gate") == 0 ||
-		strcmp(s, "expected_pcut") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT;
-	if (strcmp(s, "raw_expected_pcut_oracle_cis") == 0 ||
-		strcmp(s, "raw_expected_pcut_cis_oracle") == 0 ||
-		strcmp(s, "pcut_oracle_cis") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_CIS;
-	if (strcmp(s, "raw_expected_pcut_oracle_all") == 0 ||
-		strcmp(s, "raw_expected_pcut_all_oracle") == 0 ||
-		strcmp(s, "pcut_oracle_all") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_ALL;
-	if (strcmp(s, "raw_expected_oracle_all") == 0 ||
-		strcmp(s, "raw_oracle_all") == 0 ||
-		strcmp(s, "oracle_all") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_ORACLE_ALL;
-	if (strcmp(s, "raw_split_soft") == 0 || strcmp(s, "raw_soft") == 0 ||
-		strcmp(s, "soft_raw_split") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT;
-	if (strcmp(s, "raw_split_soft_top1") == 0 || strcmp(s, "raw_soft_top1") == 0 ||
-		strcmp(s, "soft_raw_split_top1") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_TOP1;
-	if (strcmp(s, "raw_split_soft_top2") == 0 || strcmp(s, "raw_soft_top2") == 0 ||
-		strcmp(s, "soft_raw_split_top2") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_TOP2;
-	if (strcmp(s, "raw_split_soft_filtered_top1") == 0 ||
-		strcmp(s, "raw_soft_filtered_top1") == 0 ||
-		strcmp(s, "soft_filtered_top1") == 0 ||
-		strcmp(s, "filtered_soft_top1") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_TOP1;
-	if (strcmp(s, "raw_split_soft_filtered_top2") == 0 ||
-		strcmp(s, "raw_soft_filtered_top2") == 0 ||
-		strcmp(s, "soft_filtered_top2") == 0 ||
-		strcmp(s, "filtered_soft_top2") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_TOP2;
-	if (strcmp(s, "raw_split_soft_filtered_weighted_top1") == 0 ||
-		strcmp(s, "raw_soft_filtered_weighted_top1") == 0 ||
-		strcmp(s, "soft_filtered_weighted_top1") == 0 ||
-		strcmp(s, "filtered_weighted_top1") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP1;
-	if (strcmp(s, "raw_split_soft_filtered_weighted_top2") == 0 ||
-		strcmp(s, "raw_soft_filtered_weighted_top2") == 0 ||
-		strcmp(s, "soft_filtered_weighted_top2") == 0 ||
-		strcmp(s, "filtered_weighted_top2") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP2;
-	if (strcmp(s, "raw_split_soft_filtered_sample1") == 0 ||
-		strcmp(s, "raw_soft_filtered_sample1") == 0 ||
-		strcmp(s, "soft_filtered_sample1") == 0 ||
-		strcmp(s, "filtered_sample1") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1;
-	if (strcmp(s, "raw_split_soft_filtered_weighted_sample1") == 0 ||
-		strcmp(s, "raw_soft_filtered_weighted_sample1") == 0 ||
-		strcmp(s, "soft_filtered_weighted_sample1") == 0 ||
-		strcmp(s, "filtered_weighted_sample1") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_SAMPLE1;
-	if (strcmp(s, "raw_split_soft_filtered_sample1_conf_kweight") == 0 ||
-		strcmp(s, "raw_soft_filtered_sample1_conf_kweight") == 0 ||
-		strcmp(s, "soft_filtered_sample1_conf_kweight") == 0 ||
-		strcmp(s, "filtered_sample1_conf_kweight") == 0 ||
-		strcmp(s, "sample1_conf_kweight") == 0 ||
-		strcmp(s, "sample1_kweight") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1_CONF_KWEIGHT;
-	if (strcmp(s, "raw_split_soft_filtered_bernoulli") == 0 ||
-		strcmp(s, "raw_soft_filtered_bernoulli") == 0 ||
-		strcmp(s, "soft_filtered_bernoulli") == 0 ||
-		strcmp(s, "filtered_bernoulli") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI;
-	if (strcmp(s, "raw_split_soft_filtered_bernoulli_conf") == 0 ||
-		strcmp(s, "raw_soft_filtered_bernoulli_conf") == 0 ||
-		strcmp(s, "soft_filtered_bernoulli_conf") == 0 ||
-		strcmp(s, "filtered_bernoulli_conf") == 0 ||
-		strcmp(s, "bernoulli_conf") == 0 ||
-		strcmp(s, "posterior_thin_conf") == 0 ||
-		strcmp(s, "filtered_thin_conf") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF;
-	if (strcmp(s, "raw_split_soft_filtered_bernoulli_conf_weighted") == 0 ||
-		strcmp(s, "raw_soft_filtered_bernoulli_conf_weighted") == 0 ||
-		strcmp(s, "soft_filtered_bernoulli_conf_weighted") == 0 ||
-		strcmp(s, "filtered_bernoulli_conf_weighted") == 0 ||
-		strcmp(s, "bernoulli_conf_weighted") == 0 ||
-		strcmp(s, "posterior_thin_conf_weighted") == 0 ||
-		strcmp(s, "filtered_thin_conf_weighted") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF_WEIGHTED;
-	if (strcmp(s, "raw_split_soft_filtered_all") == 0 ||
-		strcmp(s, "raw_soft_filtered_all") == 0 ||
-		strcmp(s, "soft_filtered_all") == 0 ||
-		strcmp(s, "filtered_all") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL;
-	if (strcmp(s, "raw_split_soft_filtered_all_conf") == 0 ||
-		strcmp(s, "raw_soft_filtered_all_conf") == 0 ||
-		strcmp(s, "soft_filtered_all_conf") == 0 ||
-		strcmp(s, "filtered_all_conf") == 0 ||
-		strcmp(s, "filtered_entropy_all") == 0 ||
-		strcmp(s, "filtered_entropy") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF;
-	if (strcmp(s, "raw_split_soft_filtered_all_conf_wfilter") == 0 ||
-		strcmp(s, "raw_soft_filtered_all_conf_wfilter") == 0 ||
-		strcmp(s, "soft_filtered_all_conf_wfilter") == 0 ||
-		strcmp(s, "filtered_all_conf_wfilter") == 0 ||
-		strcmp(s, "weighted_filter_all_conf") == 0 ||
-		strcmp(s, "wfilter_all_conf") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER;
-	if (strcmp(s, "raw_split_soft_filtered_all_conf_wfilter_full") == 0 ||
-		strcmp(s, "raw_soft_filtered_all_conf_wfilter_full") == 0 ||
-		strcmp(s, "soft_filtered_all_conf_wfilter_full") == 0 ||
-		strcmp(s, "filtered_all_conf_wfilter_full") == 0 ||
-		strcmp(s, "weighted_filter_all_conf_full") == 0 ||
-		strcmp(s, "wfilter_all_conf_full") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_FULL;
-	if (strcmp(s, "raw_split_soft_filtered_all_conf_wfilter_kweight") == 0 ||
-		strcmp(s, "raw_soft_filtered_all_conf_wfilter_kweight") == 0 ||
-		strcmp(s, "soft_filtered_all_conf_wfilter_kweight") == 0 ||
-		strcmp(s, "filtered_all_conf_wfilter_kweight") == 0 ||
-		strcmp(s, "weighted_filter_all_conf_kweight") == 0 ||
-		strcmp(s, "wfilter_all_conf_kweight") == 0 ||
-		strcmp(s, "wfilter_kweight") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KWEIGHT;
-	if (strcmp(s, "raw_split_soft_filtered_all_conf_wfilter_kdweight") == 0 ||
-		strcmp(s, "raw_soft_filtered_all_conf_wfilter_kdweight") == 0 ||
-		strcmp(s, "soft_filtered_all_conf_wfilter_kdweight") == 0 ||
-		strcmp(s, "filtered_all_conf_wfilter_kdweight") == 0 ||
-		strcmp(s, "weighted_filter_all_conf_kdweight") == 0 ||
-		strcmp(s, "wfilter_all_conf_kdweight") == 0 ||
-		strcmp(s, "wfilter_kdweight") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDWEIGHT;
-	if (strcmp(s, "raw_split_soft_filtered_all_conf_wfilter_kdhalf") == 0 ||
-		strcmp(s, "raw_soft_filtered_all_conf_wfilter_kdhalf") == 0 ||
-		strcmp(s, "soft_filtered_all_conf_wfilter_kdhalf") == 0 ||
-		strcmp(s, "filtered_all_conf_wfilter_kdhalf") == 0 ||
-		strcmp(s, "weighted_filter_all_conf_kdhalf") == 0 ||
-		strcmp(s, "wfilter_all_conf_kdhalf") == 0 ||
-		strcmp(s, "wfilter_kdhalf") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDHALF;
-	if (strcmp(s, "raw_split_soft_filtered_pcut_top1") == 0 ||
-		strcmp(s, "raw_soft_filtered_pcut_top1") == 0 ||
-		strcmp(s, "soft_filtered_pcut_top1") == 0 ||
-		strcmp(s, "filtered_pcut_top1") == 0 ||
-		strcmp(s, "pcut_top1") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1;
-	if (strcmp(s, "raw_split_soft_filtered_pcut_top1_renorm") == 0 ||
-		strcmp(s, "raw_soft_filtered_pcut_top1_renorm") == 0 ||
-		strcmp(s, "soft_filtered_pcut_top1_renorm") == 0 ||
-		strcmp(s, "filtered_pcut_top1_renorm") == 0 ||
-		strcmp(s, "pcut_top1_renorm") == 0 ||
-		strcmp(s, "pcut_renorm") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1_RENORM;
-	fprintf(stderr, "invalid HK_BLIND_P9016_MSTEP_GRAPH_MODE=%s\n", s);
+	fprintf(stderr, "HK_BLIND_P9016_MSTEP_GRAPH_MODE only supports raw_expected_soft_all in the cleaned P9016 softall baseline\n");
 	return -1;
 }
 
@@ -656,7 +542,7 @@ static const char *mstep_graph_mode_config_suffix(int mode)
 	case HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_ORACLE_ALL:
 		return "_mrawexpectedoall";
 	case HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_ALL:
-		return "_mrawexpectedsoftall";
+		return "";
 	case HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_OUTLIER:
 		return "_mrawexpectedoutlier";
 	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT:
@@ -764,6 +650,8 @@ static int estep_score_mode_from_env(void)
 	if (s == 0 || s[0] == 0 || strcmp(s, "fdg_flat") == 0 ||
 		strcmp(s, "fdg") == 0 || strcmp(s, "flat") == 0)
 		return HK_BLIND_ESTEP_SCORE_FDG_FLAT;
+	fprintf(stderr, "HK_BLIND_P9016_ESTEP_SCORE_MODE only supports fdg_flat in the cleaned P9016 softall baseline\n");
+	return -1;
 	if (strcmp(s, "logdist2") == 0 || strcmp(s, "log_distance2") == 0 ||
 		strcmp(s, "log_distance_squared") == 0)
 		return HK_BLIND_ESTEP_SCORE_LOGDIST2;
@@ -902,11 +790,8 @@ static int env_percent_list_or_default(const char *name, int values[8], int max_
 	assert(values);
 	assert(max_values > 0);
 	if (s == 0 || s[0] == 0) {
-		values[0] = 10;
-		values[1] = 20;
-		values[2] = 50;
-		values[3] = 100;
-		return 4;
+		values[0] = 0;
+		return 1;
 	}
 	snprintf(buf, sizeof(buf), "%s", s);
 	p = strtok(buf, ",");
@@ -2286,6 +2171,8 @@ int main(void)
 
 	if (make_output_root(root_dir, sizeof(root_dir)) != 0)
 		return 1;
+	if (softall_baseline_env_guard() != 0)
+		return 1;
 	minimal_init_config_from_env(&init_conf);
 	hard_pc_seed = env_u64_or_default("HK_BLIND_P9016_HARD_PC_SEED", HK_P9016_HARD_PC_SEED);
 	hard_pc_kind = hard_pc_kind_from_env();
@@ -2386,6 +2273,10 @@ int main(void)
 												  hard_pc_sizes, 8);
 	if (n_hard_pc_sizes < 0)
 		return 1;
+	if (n_hard_pc_sizes != 1 || hard_pc_sizes[0] != 0) {
+		fprintf(stderr, "HK_BLIND_P9016_HARD_PC_SIZES only supports 0 in the cleaned P9016 softall baseline\n");
+		return 1;
+	}
 	if (strict_no_prior_guard) {
 		if (init_conf.mode != HK_BLIND_INIT_RANDOM_DIPLOID) {
 			fprintf(stderr, "strict no-prior requires HK_BLIND_P9016_INIT_MODE=random_diploid\n");
