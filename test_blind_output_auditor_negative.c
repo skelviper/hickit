@@ -100,20 +100,22 @@ static int write_manifest(const char *path, const char *dir, int write_raw,
 						  enum corruption_case kind)
 {
 	FILE *fp = fopen(path, "w");
-	char bpair_path[1024], coords_path[1024], diag_path[1024], raw_path[1024];
+	char bpair_path[1024], coords_path[1024], diag_path[1024], raw_path[1024], force_path[1024];
 	if (fp == 0) return -1;
 	path_join(bpair_path, sizeof(bpair_path), dir, "p9016_full.bpair_posterior.tsv");
 	path_join(coords_path, sizeof(coords_path), dir, "p9016_full.coords.tsv");
 	path_join(diag_path, sizeof(diag_path), dir, "p9016_full.loop_diag.tsv");
 	path_join(raw_path, sizeof(raw_path), dir, "p9016_full.raw_posterior.tsv");
+	path_join(force_path, sizeof(force_path), dir, "p9016_full.force_class_diag.tsv");
 	if (fprintf(fp,
 				"key\tvalue\n"
 				"sample\tP9016\n"
 				"runner_family\ttest_fixture\n"
-				"runner_version\t2026-04-30\n"
-				"default_profile\tp9016_auditor_negative_fixture_v1\n"
-				"input_path\t../pairs/P9016.pairs.gz\n"
-				"output_dir\t%s\n",
+					"runner_version\t2026-04-30\n"
+					"default_profile\tp9016_auditor_negative_fixture_v1\n"
+					"input_path\t../pairs/P9016.pairs.gz\n"
+					"input_contact_source\traw_pairs\n"
+					"output_dir\t%s\n",
 				dir) < 0) goto fail;
 	if (kind == CORRUPT_MANIFEST_NUMERIC) {
 		if (fprintf(fp, "n_raw\tnot_a_number\n") < 0) goto fail;
@@ -122,21 +124,21 @@ static int write_manifest(const char *path, const char *dir, int write_raw,
 	}
 	if (fprintf(fp,
 				"n_bpair\t%d\n"
-				"n_beads\t%d\n"
-				"resolution\t1000000\n"
-				"n_iter\t3\n"
-				"unit\t1\n"
+					"n_beads\t%d\n"
+					"resolution\t1000000\n"
+					"n_iter\t3\n"
+					"bin_size_bp\t1000000\n"
+					"resolution_label\t1Mb\n"
+					"unit\t1\n"
 				"d_scale\t1\n"
 				"base_k_mode\tuniform\n"
 				"base_k_effective\t1\n"
-				"base_k_min\t1\n"
-				"base_k_mean\t1\n"
-				"base_k_max\t1\n"
-				"base_k_n_nonfinite\t0\n"
-				"legacy_base_k_unused\t2\n"
-				"init_mode\tunphased_scaffold_split\n"
-				"init_scale\t1\n"
-				"prior_mode\tuniform\n"
+					"base_k_min\t1\n"
+					"base_k_mean\t1\n"
+					"base_k_max\t1\n"
+					"base_k_n_nonfinite\t0\n"
+					"init_mode\tunphased_scaffold_split\n"
+					"prior_mode\tuniform\n"
 				"prior_eps\t1e-06\n"
 				"prior_inter_density\t0\n"
 				"prior_observed_inter\t0\n"
@@ -147,44 +149,68 @@ static int write_manifest(const char *path, const char *dir, int write_raw,
 				"prior_alpha_median\t0\n"
 				"prior_alpha_max\t0\n"
 				"prior_smoothing_method\tnone\n"
-				"prior_alpha_clamp_min\t1e-06\n"
-				"prior_alpha_clamp_max\t0.5\n"
-				"rho_train_mode\tconstant\n"
-				"d_scale_mode\traw_count\n"
+					"prior_alpha_clamp_min\t1e-06\n"
+					"prior_alpha_clamp_max\t0.5\n"
+					"rho_train_mode\tconstant\n"
+					"rho_train_floor\t0\n"
+					"baseline\tsoftall\n"
+					"training_graph_weighted_filter\t1\n"
+					"training_graph_probability_weighted\t1\n"
+					"training_graph_dscale_probability_weighted\t1\n"
+					"estep_score_mode\tfdg_flat\n"
+					"d_scale_mode\traw_count\n"
 				"d_scale_eps_count\t1e-06\n"
 				"same_bin_filter_enabled\t1\n"
 				"n_raw_same_bin_excluded\t0\n"
-				"n_bpair_same_bin_excluded\t0\n"
-				"raw_posterior_same_bin_policy\tuniform_unknown_rows\n"
-				"min_sep_unit\t0.25\n"
+					"n_bpair_same_bin_excluded\t0\n"
+					"raw_posterior_same_bin_policy\tuniform_unknown_rows\n"
+					"copy_labels_are_gauge_only\t1\n"
+					"uses_phase_labels\t0\n"
+					"uses_charm_or_reference\t0\n"
+					"uses_charm_for_training\t0\n"
+					"min_sep_unit\t0.25\n"
 				"lambda_sep\t0.05\n"
 				"relax_step\t0.001\n"
 				"relax_steps\t5\n"
 				"temperature_start\t2\n"
-				"temperature_end\t1\n"
-				"rho_train_start\t1\n"
-				"rho_train_end\t1\n"
-				"init_eps_effective\t0.5\n"
-				"init_noise_scale_effective\t0\n"
-				"init_split_params_used\t1\n"
-				"init_seed\t17\n"
-				"enable_repulsion\t1\n"
-				"repulsion_mode\t2\n"
-				"repulsion_blocking_mode\tcurrent_edge_blocking\n"
-				"write_raw_posterior\t%d\n"
-				"output_bpair_posterior\t%s\n"
-				"output_coords\t%s\n"
-				"output_loop_diag\t%s\n",
-				HK_NEG_N_BPAIR, HK_NEG_N_BEADS, write_raw,
-				bpair_path, coords_path, diag_path) < 0) goto fail;
+					"temperature_end\t1\n"
+					"rho_train_start\t1\n"
+					"rho_train_end\t1\n"
+					"init_eps_effective\t0.5\n"
+					"init_noise_scale_effective\t0\n"
+					"init_seed\t17\n"
+					"scaffold_source\tunphased_fdg\n"
+					"scaffold_fdg_n_iter\t50\n"
+					"enable_repulsion\t1\n"
+					"repulsion_mode\t2\n"
+					"repulsion_blocking_mode\tcurrent_edge_blocking\n"
+					"repulsion_multiplier\t1\n"
+					"k_rel_rep_effective\t0.05\n"
+					"write_raw_posterior\t%d\n"
+					"output_bpair_posterior\t%s\n"
+					"output_coords\t%s\n"
+					"output_coords_gz\t%s.gz\n"
+					"output_loop_diag\t%s\n"
+					"output_force_class_diag\t%s\n",
+					HK_NEG_N_BPAIR, HK_NEG_N_BEADS, write_raw,
+					bpair_path, coords_path, coords_path, diag_path, force_path) < 0) goto fail;
 	if (write_raw) {
 		if (fprintf(fp, "output_raw_posterior\t%s\n", raw_path) < 0) goto fail;
 	}
 	if (fprintf(fp,
-				"final_mean_entropy\t1.0\n"
-				"final_mean_pU\t0.2\n"
-				"final_sum_wedge_k\t3.5\n"
-				"final_repulsion_energy\t0.75\n"
+					"final_mean_entropy\t1.0\n"
+					"final_mean_pU\t0.2\n"
+					"final_mean_sep\t1\n"
+					"final_min_sep\t0.5\n"
+					"final_max_sep\t1.5\n"
+					"final_sum_wedge_k\t3.5\n"
+					"last_training_sum_wedge_k\t3.5\n"
+					"final_refreshed_sum_wedge_k\t3.5\n"
+					"final_refreshed_n_wedges\t2\n"
+					"final_mean_rho_train_bpair\t1\n"
+					"final_min_rho_train_bpair\t1\n"
+					"final_max_rho_train_bpair\t1\n"
+					"final_repulsion_energy\t0.75\n"
 				"posterior_refreshed_after_final_relax\t1\n"
 				"posterior_refresh_temperature\t1\n"
 				"posterior_refresh_prior_mode\tuniform\n"
@@ -300,17 +326,23 @@ static int write_loop_diag_file(const char *path)
 				"n_iter\tn_completed\tinitial_mean_entropy\tfinal_mean_entropy\t"
 				"initial_mean_pU\tfinal_mean_pU\tinitial_temperature\tfinal_temperature\t"
 				"initial_rho_train\tfinal_rho_train\ttotal_chr_flipped\tn_bad_iter\t"
-				"n_relax_nonfinite_iter\tn_coord_nonfinite\tfinal_mean_sep\tfinal_min_sep\t"
-				"final_max_sep\tfinal_sum_wedge_k\tfinal_mean_rho_train_bpair\t"
-				"final_min_rho_train_bpair\tfinal_max_rho_train_bpair\t"
-				"final_n_skipped_same_bin_bpairs\tfinal_repulsion_energy\t"
-				"final_repulsion_force_l1\tfinal_n_repulsion_pairs_considered\t"
-				"final_n_repulsion_pairs_blocked\tfinal_n_repulsion_pairs_active\t"
-				"n_repulsion_nonfinite_step\trepulsion_mode\t"
-				"posterior_refreshed_after_final_relax\tposterior_refresh_temperature\t"
-				"posterior_refresh_mean_kl\tposterior_refresh_top_state_switch_frac\t"
-				"posterior_refresh_mean_pU_before\tposterior_refresh_mean_pU_after\n"
-				"3\t3\t1.1\t1.0\t0.25\t0.2\t2\t1\t1\t1\t0\t0\t0\t0\t1.0\t0.5\t1.5\t3.5\t1\t1\t1\t0\t0.75\t1.25\t0\t0\t0\t0\t2\t1\t1\t0\t0\t0.2\t0.2\n") < 0) {
+					"n_relax_nonfinite_iter\tn_coord_nonfinite\tfinal_mean_sep\tfinal_min_sep\t"
+					"final_max_sep\tfinal_sum_wedge_k\tfinal_mean_rho_train_bpair\t"
+					"final_min_rho_train_bpair\tfinal_max_rho_train_bpair\t"
+					"final_n_expanded_edges\tfinal_n_softall_candidate_pairs\t"
+					"final_n_softall_filter1_pairs\tfinal_n_softall_filter2_pairs\t"
+					"final_n_softall_bmap_pairs\tfinal_n_softall_selected_raw\t"
+					"final_n_softall_gate_skip_raw\tfinal_n_softall_same_bin_skip_raw\t"
+					"final_n_softall_state00_raw\tfinal_n_softall_state01_raw\t"
+					"final_n_softall_state10_raw\tfinal_n_softall_state11_raw\t"
+					"final_n_skipped_same_bin_bpairs\tfinal_repulsion_energy\t"
+					"final_repulsion_force_l1\tfinal_n_repulsion_pairs_considered\t"
+					"final_n_repulsion_pairs_blocked\tfinal_n_repulsion_pairs_active\t"
+					"n_repulsion_nonfinite_step\trepulsion_mode\t"
+					"posterior_refreshed_after_final_relax\tposterior_refresh_temperature\t"
+					"posterior_refresh_mean_kl\tposterior_refresh_top_state_switch_frac\t"
+					"posterior_refresh_mean_pU_before\tposterior_refresh_mean_pU_after\n"
+					"3\t3\t1.1\t1.0\t0.25\t0.2\t2\t1\t1\t1\t0\t0\t0\t0\t1.0\t0.5\t1.5\t3.5\t1\t1\t1\t2\t8\t8\t8\t8\t8\t0\t0\t2\t2\t2\t2\t0\t0.75\t1.25\t0\t0\t0\t0\t2\t1\t1\t0\t0\t0.2\t0.2\n") < 0) {
 		fclose(fp);
 		return -1;
 	}

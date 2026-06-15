@@ -9,9 +9,9 @@ LIBS     := -lm -lz
 LIBS_GL  :=
 ASAN_FLAG :=
 
-OBJS := sdict.o io.o pair.o count.o phase.o bin.o blind.o fdg.o image.o view3d.o fdg_gpu_stub.o
+OBJS := sdict.o io.o pair.o count.o phase.o bin.o fdg.o image.o view3d.o fdg_gpu_stub.o
 PROG := hickit
-TEST_COMMON_SRCS := sdict.c io.c pair.c count.c phase.c bin.c blind.c fdg.c image.c view3d.c fdg_gpu_stub.c
+BLIND_COMMON_SRCS := sdict.c io.c pair.c count.c phase.c bin.c blind.c fdg.c image.c view3d.c fdg_gpu_stub.c
 ifneq ($(asan),)
 	ASAN_FLAG = -fsanitize=address
 endif
@@ -52,32 +52,32 @@ test: test_diploid_index test_blind_input test_blind_binning test_fdg_energy tes
 	./test_blind_output
 	./test_blind_output_auditor_negative
 
-test_blind_input: test_blind_input.c testdata/p9016_blind_fixture.pairs $(TEST_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_input.c $(TEST_COMMON_SRCS) -o $@ $(LIBS)
+test_blind_input: test_blind_input.c testdata/p9016_blind_fixture.pairs $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
+	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_input.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
 
-test_blind_binning: test_blind_binning.c testdata/p9016_blind_fixture.pairs $(TEST_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_binning.c $(TEST_COMMON_SRCS) -o $@ $(LIBS)
+test_blind_binning: test_blind_binning.c testdata/p9016_blind_fixture.pairs $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
+	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_binning.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
 
 test_diploid_index: test_diploid_index.c hickit.h krng.h
 	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) $< -o $@
 
-test_fdg_energy: test_fdg_energy.c $(TEST_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_fdg_energy.c $(TEST_COMMON_SRCS) -o $@ $(LIBS)
+test_fdg_energy: test_fdg_energy.c $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
+	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_fdg_energy.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
 
-test_blind_posterior: test_blind_posterior.c $(TEST_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_posterior.c $(TEST_COMMON_SRCS) -o $@ $(LIBS)
+test_blind_posterior: test_blind_posterior.c $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
+	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_posterior.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
 
-test_blind_smoke: test_blind_smoke.c testdata/p9016_blind_smoke.pairs $(TEST_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_smoke.c $(TEST_COMMON_SRCS) -o $@ $(LIBS)
+test_blind_smoke: test_blind_smoke.c testdata/p9016_blind_smoke.pairs $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
+	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_smoke.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
 
-test_blind_relax_loop: test_blind_relax_loop.c $(TEST_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_relax_loop.c $(TEST_COMMON_SRCS) -o $@ $(LIBS)
+test_blind_relax_loop: test_blind_relax_loop.c $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
+	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_relax_loop.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
 
-test_blind_output: test_blind_output.c $(TEST_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_output.c $(TEST_COMMON_SRCS) -o $@ $(LIBS)
+test_blind_output: test_blind_output.c $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
+	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_output.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
 
-run_blind_p9016_minimal.bin: run_blind_p9016_minimal.c $(TEST_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) run_blind_p9016_minimal.c $(TEST_COMMON_SRCS) -o $@ $(LIBS)
+run_blind_p9016_minimal.bin: run_blind_p9016_minimal.c $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
+	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) run_blind_p9016_minimal.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
 
 smoke_blind_p9016_minimal: run_blind_p9016_minimal.bin audit_blind_p9016_full_cpu_output.bin testdata/p9016_blind_smoke.pairs
 	rm -rf /tmp/hk_blind_p9016_minimal_audit_smoke
@@ -86,8 +86,6 @@ smoke_blind_p9016_minimal: run_blind_p9016_minimal.bin audit_blind_p9016_full_cp
 	HK_BLIND_P9016_BIN_SIZE_BP=1000000 \
 	HK_BLIND_P9016_MINIMAL_N_ITER=1 \
 	HK_BLIND_P9016_MINIMAL_RELAX_STEPS=1 \
-	HK_BLIND_P9016_MSTEP_GRAPH_MODE=raw_expected_soft_all \
-	HK_BLIND_P9016_HARD_PC_SIZES=0 \
 	./run_blind_p9016_minimal.bin
 	./audit_blind_p9016_full_cpu_output.bin /tmp/hk_blind_p9016_minimal_audit_smoke/minimal_soft_sep_off
 

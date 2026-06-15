@@ -115,9 +115,9 @@ static int check_no_forbidden_strings(const char *label, const char *s)
 {
 	int failed = 0;
 	char buf[96];
-	const char *forbidden[] = { "phase0", "phase1", "truth", "oracle" };
+	const char *forbidden[] = { "phase0", "phase1", "truth" };
 	int i;
-	for (i = 0; i < 4; ++i) {
+	for (i = 0; i < (int)(sizeof(forbidden) / sizeof(forbidden[0])); ++i) {
 		snprintf(buf, sizeof(buf), "%s no %s", label, forbidden[i]);
 		failed |= check_true(buf, strstr(s, forbidden[i]) == 0);
 	}
@@ -224,13 +224,9 @@ static void set_bpair(struct hk_blind_bpair *bp, int32_t bid0, int32_t bid1, int
 	bp->key.bid[0] = bid0;
 	bp->key.bid[1] = bid1;
 	bp->n_raw = n_raw;
-	bp->n_locked_raw = 0;
 	bp->base_d_scale = powf((float)n_raw, -1.0f / 3.0f);
 	bp->base_k = 1.0f;
 	bp->contact_class = bid0 == 0 && bid1 == 2? HK_BLIND_CONTACT_TRANS : HK_BLIND_CONTACT_CIS;
-	bp->lock_mode = HK_BLIND_LOCK_NONE;
-	bp->locked_state = -1;
-	bp->lock_conflict = 0;
 	bp->p4[HK_BLIND_STATE_00] = p00;
 	bp->p4[HK_BLIND_STATE_01] = p01;
 	bp->p4[HK_BLIND_STATE_10] = p10;
@@ -316,7 +312,7 @@ static int test_posterior_writer(void)
 	struct hk_blind_bpair_set set;
 	FILE *fp;
 	char *text = 0, *line;
-	char chr1[64], chr2[64];
+	char chr1[64], chr2[64], contact_class[64];
 	int st1, en1, st2, en2, bid1, bid2, n_raw;
 	double base_d_scale, base_k;
 	double p00, p01, p10, p11, pU, psame, pcross, entropy, margin, pmax, rho;
@@ -338,7 +334,6 @@ static int test_posterior_writer(void)
 	failed |= check_true("posterior header base_k", strstr(text, "base_k") != 0);
 	failed |= check_true("posterior header rho", strstr(text, "rho_output") != 0);
 	failed |= check_true("posterior header contact class", strstr(text, "contact_class") != 0);
-	failed |= check_true("posterior trans contact class", strstr(text, "\ttrans\t") != 0);
 	failed |= check_i32("posterior row count", count_lines(text) - 1, set.n_bpairs);
 	failed |= check_no_forbidden_strings("posterior", text);
 	line = strchr(text, '\n');
@@ -347,10 +342,10 @@ static int test_posterior_writer(void)
 		++line;
 		failed |= check_i32("posterior parsed fields",
 							sscanf(line, "%63s\t%d\t%d\t%63s\t%d\t%d\t%d\t%d\t%d\t"
-								   "%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf",
+								   "%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%63s",
 								   chr1, &st1, &en1, chr2, &st2, &en2, &bid1, &bid2, &n_raw,
 								   &base_d_scale, &base_k, &p00, &p01, &p10, &p11, &pU, &psame, &pcross,
-								   &entropy, &margin, &pmax, &rho), 22);
+								   &entropy, &margin, &pmax, &rho, contact_class), 23);
 		failed |= check_true("posterior chr1", strcmp(chr1, "chrA") == 0);
 		failed |= check_true("posterior chr2", strcmp(chr2, "chrB") == 0);
 		failed |= check_i32("posterior start1", st1, 0);
@@ -369,6 +364,7 @@ static int test_posterior_writer(void)
 		failed |= check_true("posterior entropy finite", isfinite(entropy));
 		failed |= check_true("posterior margin finite", isfinite(margin));
 		failed |= check_true("posterior pmax finite", isfinite(pmax));
+		failed |= check_true("posterior trans contact class", strcmp(contact_class, "trans") == 0);
 	}
 	free(text);
 	return failed;

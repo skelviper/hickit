@@ -135,9 +135,6 @@ int main(int argc, char *argv[])
 	struct hk_v3d_opt v3d_opt;
 	char *v3d_hl = 0;
 
-	if (argc > 1 && strcmp(argv[1], "blind-p9016") == 0)
-		return hk_blind_p9016_cli_main(argc - 1, argv + 1);
-
 	kr_srand_r(&rng, seed);
 	hk_fdg_conf_init(&fdg_opt);
 	hk_v3d_opt_init(&v3d_opt);
@@ -462,7 +459,6 @@ int main(int argc, char *argv[])
 		fprintf(fp, "Examples:\n");
 		fprintf(fp, "  hickit -i raw.pairs.gz -u -o imput.pairs\n");
 		fprintf(fp, "  hickit -i imput.pairs -Sr1m -c1 -r10m -c5 -b4m -b1m -b200k -D5 -b50k -D5 -b20k -O out.3dg\n");
-		fprintf(fp, "  hickit blind-p9016 -i ../pairs/P9016.pairs.gz -o /tmp/p9016 --bd-iter 3 --bd-relax-steps 5\n");
 		return 1;
 	}
 

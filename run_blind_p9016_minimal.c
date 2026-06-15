@@ -14,6 +14,7 @@
 #define HK_P9016_DEFAULT_BIN_SIZE_BP 1000000
 #define HK_P9016_DEFAULT_N_ITER 100
 #define HK_P9016_DEFAULT_RELAX_STEPS 100
+#define HK_P9016_DEFAULT_RELAX_STEP 0.012f
 #define HK_P9016_UNIT 1.0f
 #define HK_P9016_D_SCALE 1.0f
 #define HK_P9016_D_SCALE_EPS_COUNT 1e-6f
@@ -21,76 +22,15 @@
 #define HK_P9016_INIT_EPS 0.5f
 #define HK_P9016_INIT_NOISE_SCALE 0.0f
 #define HK_P9016_INIT_SEED 17ULL
-#define HK_P9016_INIT_SCALE 1.0f
 #define HK_P9016_SCAFFOLD_FDG_N_ITER 50
-#define HK_P9016_DEFAULT_RELAX_STEP 0.012f
-#define HK_P9016_REPULSION_MULTIPLIER 1.0f
 #define HK_P9016_CONFIG_NAME "minimal_soft_sep_off"
-#define HK_P9016_HARD_PC_SEED 17ULL
-#define HK_P9016_HARD_PC_KIND_HARD_STATE 0
-#define HK_P9016_HARD_PC_KIND_STATE_FREQ 1
-#define HK_P9016_HARD_PC_KIND_IMPUTED_P4_TOP 2
-#define HK_P9016_IMPUTED_P4_THRESHOLD 0.75f
-#define HK_P9016_STRICT_RAW_PAIRS_REALPATH "/mnt/shared/zliu/CHARM/CHARM_mesc/data/pairs/P9016.pairs.gz"
-#define HK_P9016_STRICT_SMOKE_PAIRS_REALPATH "/mnt/ssd/zliu/phase3/hickit/testdata/p9016_blind_smoke.pairs"
-
-struct minimal_init_config {
-	int mode;
-	uint64_t seed;
-	float scale;
-	float eps;
-	float noise_scale;
-	int32_t scaffold_fdg_n_iter;
-	char config_name[256];
-};
-
-struct minimal_run_config {
-	struct minimal_init_config init;
-	int hard_pc_sample_size_percent;
-	int hard_pc_kind;
-	int d_scale_mode;
-	int state_weight_mode;
-	int mstep_graph_mode;
-	float trans_pmax_min;
-	float trans_margin_min;
-	float trans_posterior_power_gamma;
-	float imputed_p4_threshold;
-	int raw_split_confidence_mode;
-	float raw_split_confidence_floor;
-	float raw_split_trans_scale;
-	float raw_split_trans_confidence_power;
-	float raw_split_state_p_min;
-	float raw_split_posterior_power_gamma;
-	int raw_outlier_enable;
-	float raw_outlier_beta_cis;
-	float raw_outlier_beta_trans;
-	float raw_outlier_prior_cis;
-	float raw_outlier_prior_trans;
-	float raw_soft_min_q;
-	uint64_t raw_split_sample_salt;
-	uint64_t hard_pc_seed;
-	float min_sep_unit;
-	float lambda_sep;
-	float chr_sep_unit;
-	float lambda_chr_sep;
-	float contact_k_multiplier_cis;
-	float contact_k_multiplier_trans;
-	float trans_d_scale_multiplier;
-	float temperature_start;
-	float temperature_end;
-	float repulsion_block_k_min;
-	int estep_score_mode;
-	int strict_no_prior_guard;
-	char input_contact_source[64];
-	char config_name[256];
-};
+#define HK_P9016_REPULSION_MULTIPLIER 1.0f
 
 struct minimal_result {
 	char output_dir[1024];
 	int32_t n_raw;
 	int32_t n_bpair;
 	int32_t n_beads;
-	struct hk_blind_phase_lock_diag phase_lock_diag;
 	int64_t n_raw_cis;
 	int64_t n_raw_trans;
 	int32_t n_bpair_cis;
@@ -102,23 +42,20 @@ struct minimal_result {
 	float final_min_sep;
 	float final_max_sep;
 	double final_sum_wedge_k;
-	double last_training_sum_wedge_k;
 	double final_refreshed_sum_wedge_k;
 	int64_t final_refreshed_n_wedges;
 	float final_mean_rho_train_bpair;
 	float final_min_rho_train_bpair;
 	float final_max_rho_train_bpair;
 	int64_t final_n_expanded_edges;
-	int64_t final_n_split_candidate_pairs;
-	int64_t final_n_split_filter1_pairs;
-	int64_t final_n_split_filter2_pairs;
-	int64_t final_n_split_bmap_pairs;
-	int64_t final_n_split_selected_raw;
-	int64_t final_n_split_gate_skip_raw;
-	int64_t final_n_split_same_bin_skip_raw;
-	int64_t final_n_split_locked_skip_raw;
-	int64_t final_n_split_state_raw_count[HK_BLIND_N_STATE];
-	struct hk_blind_raw_outlier_diag final_raw_outlier_diag;
+	int64_t final_n_softall_candidate_pairs;
+	int64_t final_n_softall_filter1_pairs;
+	int64_t final_n_softall_filter2_pairs;
+	int64_t final_n_softall_bmap_pairs;
+	int64_t final_n_softall_selected_raw;
+	int64_t final_n_softall_gate_skip_raw;
+	int64_t final_n_softall_same_bin_skip_raw;
+	int64_t final_n_softall_state_raw_count[HK_BLIND_N_STATE];
 	float final_contact_energy;
 	float final_repulsion_energy;
 	float final_backbone_energy;
@@ -173,23 +110,6 @@ static int env_int_or_default(const char *name, int fallback, int min_value)
 	return (int)v;
 }
 
-static uint64_t env_u64_or_default(const char *name, uint64_t fallback)
-{
-	const char *s = getenv(name);
-	char *end = 0;
-	unsigned long long v;
-	if (s == 0 || s[0] == 0)
-		return fallback;
-	errno = 0;
-	v = strtoull(s, &end, 10);
-	if (errno || end == s || *end != 0) {
-		fprintf(stderr, "invalid %s=%s; using %llu\n", name, s,
-				(unsigned long long)fallback);
-		return fallback;
-	}
-	return (uint64_t)v;
-}
-
 static float env_float_or_default(const char *name, float fallback, float min_value)
 {
 	const char *s = getenv(name);
@@ -209,63 +129,8 @@ static float env_float_or_default(const char *name, float fallback, float min_va
 static int env_flag_enabled(const char *name)
 {
 	const char *s = getenv(name);
-	return s && s[0] && strcmp(s, "0") != 0 && strcmp(s, "false") != 0 && strcmp(s, "FALSE") != 0;
-}
-
-static int env_is_set(const char *name)
-{
-	const char *s = getenv(name);
-	return s && s[0];
-}
-
-static int reject_env_if_set(const char *name)
-{
-	if (!env_is_set(name))
-		return 0;
-	fprintf(stderr, "%s is not supported in the cleaned P9016 softall baseline\n", name);
-	return 1;
-}
-
-static int softall_baseline_env_guard(void)
-{
-	static const char *blocked[] = {
-		"HK_BLIND_P9016_HARD_PC_KIND",
-		"HK_BLIND_P9016_HARD_PC_SEED",
-		"HK_BLIND_P9016_TRANS_PMAX_MIN",
-		"HK_BLIND_P9016_TRANS_MARGIN_MIN",
-		"HK_BLIND_P9016_TRANS_POSTERIOR_POWER_GAMMA",
-		"HK_BLIND_P9016_IMPUTED_P4_THRESHOLD",
-		"HK_BLIND_P9016_RAW_SPLIT_CONFIDENCE_MODE",
-		"HK_BLIND_P9016_RAW_SPLIT_CONFIDENCE_FLOOR",
-		"HK_BLIND_P9016_RAW_SPLIT_TRANS_SCALE",
-		"HK_BLIND_P9016_RAW_SPLIT_TRANS_CONFIDENCE_POWER",
-		"HK_BLIND_P9016_RAW_SPLIT_STATE_P_MIN",
-		"HK_BLIND_P9016_RAW_SPLIT_POSTERIOR_POWER_GAMMA",
-		"HK_BLIND_P9016_RAW_SPLIT_SAMPLE_SALT",
-		"HK_BLIND_P9016_RAW_OUTLIER_ENABLE",
-		"HK_BLIND_RAW_OUTLIER_ENABLE",
-		"HK_BLIND_P9016_RAW_OUTLIER_BETA_CIS",
-		"HK_BLIND_P9016_RAW_OUTLIER_BETA_TRANS",
-		"HK_BLIND_P9016_RAW_OUTLIER_PRIOR_CIS",
-		"HK_BLIND_P9016_RAW_OUTLIER_PRIOR_TRANS",
-		"HK_BLIND_P9016_RAW_SOFT_MIN_Q",
-		"HK_BLIND_P9016_MIN_SEP_UNIT",
-		"HK_BLIND_P9016_LAMBDA_SEP",
-		"HK_BLIND_P9016_CHR_SEP_UNIT",
-		"HK_BLIND_P9016_LAMBDA_CHR_SEP",
-		"HK_BLIND_P9016_CONTACT_K_MULTIPLIER_CIS",
-		"HK_BLIND_P9016_CONTACT_K_MULTIPLIER_TRANS",
-		"HK_BLIND_P9016_TRANS_D_SCALE_MULTIPLIER",
-		"HK_BLIND_P9016_TEMPERATURE_START",
-		"HK_BLIND_P9016_TEMPERATURE_END",
-		"HK_BLIND_P9016_REPULSION_BLOCK_K_MIN",
-		"HK_BLIND_P9016_STRICT_NO_PRIOR",
-		0
-	};
-	int i, failed = 0;
-	for (i = 0; blocked[i]; ++i)
-		failed |= reject_env_if_set(blocked[i]);
-	return failed? -1 : 0;
+	return s && s[0] && strcmp(s, "0") != 0 &&
+		strcmp(s, "false") != 0 && strcmp(s, "FALSE") != 0;
 }
 
 static const char *input_contact_source_from_path(const char *path)
@@ -276,542 +141,6 @@ static const char *input_contact_source_from_path(const char *path)
 		strstr(path, "native_hickit"))
 		return "imputed_or_positive_control_pairs";
 	return "raw_pairs";
-}
-
-static int strict_no_prior_pairs_path_ok(const char *path)
-{
-	char resolved[4096];
-	if (path == 0 || path[0] == 0)
-		return 0;
-	if (realpath(path, resolved) == 0)
-		return 0;
-	return strcmp(resolved, HK_P9016_STRICT_RAW_PAIRS_REALPATH) == 0 ||
-		   strcmp(resolved, HK_P9016_STRICT_SMOKE_PAIRS_REALPATH) == 0;
-}
-
-static int strict_no_prior_source_ok(const char *source, const char *path)
-{
-	return source && strcmp(source, "raw_pairs") == 0 &&
-		   strict_no_prior_pairs_path_ok(path);
-}
-
-static int hard_pc_kind_from_env(void)
-{
-	const char *s = getenv("HK_BLIND_P9016_HARD_PC_KIND");
-	if (s && s[0]) {
-		fprintf(stderr, "HK_BLIND_P9016_HARD_PC_KIND is not supported in the cleaned P9016 softall baseline\n");
-		return -1;
-	}
-	if (s == 0 || s[0] == 0 || strcmp(s, "hard_state") == 0 ||
-		strcmp(s, "raw_phase_lock") == 0 || strcmp(s, "majority") == 0)
-		return HK_P9016_HARD_PC_KIND_HARD_STATE;
-	if (strcmp(s, "state_freq") == 0 || strcmp(s, "state_frequency") == 0 ||
-		strcmp(s, "fixed_p4") == 0)
-		return HK_P9016_HARD_PC_KIND_STATE_FREQ;
-	if (strcmp(s, "imputed_p4_top") == 0 || strcmp(s, "pairs_p4_top") == 0 ||
-		strcmp(s, "native_p4_top") == 0)
-		return HK_P9016_HARD_PC_KIND_IMPUTED_P4_TOP;
-	fprintf(stderr, "invalid HK_BLIND_P9016_HARD_PC_KIND=%s\n", s);
-	return -1;
-}
-
-static const char *hard_pc_kind_name(int kind)
-{
-	switch (kind) {
-	case HK_P9016_HARD_PC_KIND_HARD_STATE: return "raw_phase_lock";
-	case HK_P9016_HARD_PC_KIND_STATE_FREQ: return "raw_phase_state_freq";
-	case HK_P9016_HARD_PC_KIND_IMPUTED_P4_TOP: return "imputed_p4_top";
-	default: return "unknown";
-	}
-}
-
-static int d_scale_mode_from_env(void)
-{
-	const char *s = getenv("HK_BLIND_P9016_D_SCALE_MODE");
-	if (s == 0 || s[0] == 0 || strcmp(s, "raw") == 0 || strcmp(s, "raw_count") == 0)
-		return HK_BLIND_D_SCALE_RAW_COUNT;
-	fprintf(stderr, "HK_BLIND_P9016_D_SCALE_MODE only supports raw_count in the cleaned P9016 softall baseline\n");
-	return -1;
-}
-
-static const char *d_scale_mode_config_suffix(int mode)
-{
-	switch (mode) {
-	case HK_BLIND_D_SCALE_RAW_COUNT: return "";
-	case HK_BLIND_D_SCALE_EXPECTED_COUNT: return "_dsexpected";
-	case HK_BLIND_D_SCALE_DENSITY_NORMALIZED_RAW_COUNT: return "_dsdensity";
-	case HK_BLIND_D_SCALE_CAPPED_DENSITY_RAW_COUNT: return "_dscappeddensity";
-	default: return "_dsunknown";
-	}
-}
-
-static int state_weight_mode_from_env(void)
-{
-	const char *s = getenv("HK_BLIND_P9016_STATE_WEIGHT_MODE");
-	if (s == 0 || s[0] == 0 || strcmp(s, "posterior") == 0)
-		return HK_BLIND_STATE_WEIGHT_POSTERIOR;
-	fprintf(stderr, "HK_BLIND_P9016_STATE_WEIGHT_MODE only supports posterior in the cleaned P9016 softall baseline\n");
-	return -1;
-}
-
-static const char *state_weight_mode_config_suffix(int mode, float pmax_min, float margin_min)
-{
-	static char buf[80];
-	switch (mode) {
-	case HK_BLIND_STATE_WEIGHT_POSTERIOR:
-		return "";
-	case HK_BLIND_STATE_WEIGHT_BINARY_SUPPORT:
-		snprintf(buf, sizeof(buf), "_swbinary_p%.3g", pmax_min);
-		return buf;
-	case HK_BLIND_STATE_WEIGHT_TOP_ONLY:
-		snprintf(buf, sizeof(buf), "_swtop_p%.3g_m%.3g", pmax_min, margin_min);
-		return buf;
-	default:
-		return "_swunknown";
-	}
-}
-
-static int mstep_graph_mode_uses_final_phased_prob_weight(int mode);
-static int mstep_graph_mode_uses_stochastic_selection(int mode);
-
-static const char *posterior_gamma_config_suffix(int state_weight_mode, float gamma)
-{
-	static char buf[32];
-	if (state_weight_mode != HK_BLIND_STATE_WEIGHT_POSTERIOR || gamma <= 1.0f)
-		return "";
-	snprintf(buf, sizeof(buf), "_g%.3g", gamma);
-	return buf;
-}
-
-static const char *raw_split_posterior_gamma_config_suffix(int mstep_graph_mode, float gamma)
-{
-	static char buf[32];
-	if (!mstep_graph_mode_uses_final_phased_prob_weight(mstep_graph_mode) || gamma <= 1.0f)
-		return "";
-	snprintf(buf, sizeof(buf), "_rpg%.3g", gamma);
-	return buf;
-}
-
-static const char *raw_split_sample_salt_config_suffix(int mstep_graph_mode, uint64_t sample_salt)
-{
-	static char buf[64];
-	if (!mstep_graph_mode_uses_stochastic_selection(mstep_graph_mode) || sample_salt == 0)
-		return "";
-	snprintf(buf, sizeof(buf), "_ss%llu", (unsigned long long)sample_salt);
-	return buf;
-}
-
-static int mstep_graph_mode_uses_top_threshold_suffix(int mode)
-{
-	return mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_TOP ||
-	   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_TOP1 ||
-	   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_TOP2 ||
-	   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP1 ||
-	   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP2 ||
-	   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1 ||
-	   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1_CONF_KWEIGHT ||
-	   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_SAMPLE1 ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF_WEIGHTED;
-}
-
-static int mstep_graph_mode_uses_stochastic_selection(int mode)
-{
-	return mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1 ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1_CONF_KWEIGHT ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_SAMPLE1 ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF_WEIGHTED;
-}
-
-static int mstep_graph_mode_uses_weighted_filter(int mode)
-{
-	return mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_FULL ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KWEIGHT ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDWEIGHT ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDHALF ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_COUNT ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_LOCKED_ONLY ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_CIS ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_ALL ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_ORACLE_ALL ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_ALL ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_OUTLIER;
-}
-
-static int mstep_graph_mode_uses_final_phased_prob_weight(int mode)
-{
-	return mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP1 ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP2 ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1_CONF_KWEIGHT ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_SAMPLE1 ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF_WEIGHTED ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1 ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1_RENORM ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF ||
-			   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER ||
-				   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KWEIGHT ||
-				   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDWEIGHT ||
-				   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDHALF ||
-				   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_COUNT ||
-				   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_ALL ||
-				   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_OUTLIER ||
-			   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_LOCKED_ONLY ||
-			   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT ||
-			   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_CIS ||
-			   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_ALL ||
-			   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_ORACLE_ALL;
-}
-
-static int mstep_graph_mode_uses_probability_dscale(int mode)
-{
-	return mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP1 ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP2 ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_SAMPLE1 ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF_WEIGHTED ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL ||
-			   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1 ||
-			   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1_RENORM ||
-				   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF ||
-				   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER ||
-				   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDWEIGHT ||
-				   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDHALF ||
-					   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_COUNT ||
-					   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_ALL ||
-					   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_OUTLIER ||
-					   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_LOCKED_ONLY ||
-					   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT ||
-					   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_CIS ||
-					   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_ALL ||
-					   mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_ORACLE_ALL;
-}
-
-static int mstep_graph_mode_has_posterior_squared_risk(int mode)
-{
-	return mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1_CONF_KWEIGHT ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_SAMPLE1 ||
-		   mode == HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF_WEIGHTED;
-}
-
-static const char *mstep_graph_threshold_config_suffix(int mode, float pmax_min,
-													   float margin_min)
-{
-	static char buf[80];
-	if (!mstep_graph_mode_uses_top_threshold_suffix(mode) ||
-		(pmax_min <= 0.0f && margin_min <= 0.0f))
-		return "";
-	snprintf(buf, sizeof(buf), "_p%.3g_m%.3g", pmax_min, margin_min);
-	return buf;
-}
-
-static int mstep_graph_mode_from_env(void)
-{
-	const char *s = getenv("HK_BLIND_P9016_MSTEP_GRAPH_MODE");
-	if (s == 0 || s[0] == 0 ||
-		strcmp(s, "raw_expected_soft_all") == 0 ||
-		strcmp(s, "raw_expected_all") == 0 ||
-		strcmp(s, "soft_all") == 0 ||
-		strcmp(s, "softall") == 0)
-		return HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_ALL;
-	fprintf(stderr, "HK_BLIND_P9016_MSTEP_GRAPH_MODE only supports raw_expected_soft_all in the cleaned P9016 softall baseline\n");
-	return -1;
-}
-
-static const char *mstep_graph_mode_config_suffix(int mode)
-{
-	switch (mode) {
-	case HK_BLIND_MSTEP_GRAPH_BPAIR:
-		return "";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_TOP:
-		return "_mrawsplit";
-	case HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_COUNT:
-		return "_mrawexpected";
-	case HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_LOCKED_ONLY:
-		return "_mrawexpectedlock";
-	case HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT:
-		return "_mrawexpectedpcut";
-	case HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_CIS:
-		return "_mrawexpectedpcutocis";
-	case HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_ALL:
-		return "_mrawexpectedpcutoall";
-	case HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_ORACLE_ALL:
-		return "_mrawexpectedoall";
-	case HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_ALL:
-		return "";
-	case HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_OUTLIER:
-		return "_mrawexpectedoutlier";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT:
-		return "_mrawsoft";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_TOP1:
-		return "_mrawsofttop1";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_TOP2:
-		return "_mrawsofttop2";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_TOP1:
-		return "_mrawsoftfilttop1";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_TOP2:
-		return "_mrawsoftfilttop2";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP1:
-		return "_mrawsoftfiltwtop1";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_TOP2:
-		return "_mrawsoftfiltwtop2";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1:
-		return "_mrawsoftfiltsample1";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1_CONF_KWEIGHT:
-		return "_mrawsoftfiltsample1confk";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_WEIGHTED_SAMPLE1:
-		return "_mrawsoftfiltwsample1";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI:
-		return "_mrawsoftfiltbernoulli";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF:
-		return "_mrawsoftfiltbernoulliconf";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF_WEIGHTED:
-		return "_mrawsoftfiltbernoulliconfw";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL:
-		return "_mrawsoftfiltall";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF:
-		return "_mrawsoftfiltallconf";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER:
-		return "_mrawsoftfiltallconfwf";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_FULL:
-		return "_mrawsoftfiltallconfwffull";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KWEIGHT:
-		return "_mrawsoftfiltallconfwfk";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDWEIGHT:
-		return "_mrawsoftfiltallconfwfkd";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDHALF:
-		return "_mrawsoftfiltallconfwfkdhalf";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1:
-		return "_mrawsoftfiltpcuttop1";
-	case HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1_RENORM:
-		return "_mrawsoftfiltpcuttop1renorm";
-	default:
-		return "_munknown";
-	}
-}
-
-static const char *raw_split_state_p_min_config_suffix(int mstep_graph_mode, float p_min)
-{
-	static char buf[32];
-	if ((mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1 &&
-		 mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_PCUT_TOP1_RENORM &&
-		 mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT &&
-		 mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_CIS &&
-		 mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_ALL &&
-		 mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_ORACLE_ALL) ||
-		p_min <= 0.0f)
-		return "";
-	snprintf(buf, sizeof(buf), "_sp%.3g", p_min);
-	return buf;
-}
-
-static const char *raw_outlier_config_suffix(int mstep_graph_mode, int enable,
-											 float beta_cis, float beta_trans,
-											 float prior_cis, float prior_trans,
-											 float min_q)
-{
-	static char buf[128];
-	if (mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_OUTLIER)
-		return "";
-	if (!enable)
-		return "_uoff";
-	if (beta_cis == HK_BLIND_RAW_OUTLIER_DEFAULT_BETA_CIS &&
-		beta_trans == HK_BLIND_RAW_OUTLIER_DEFAULT_BETA_TRANS &&
-		prior_cis == HK_BLIND_RAW_OUTLIER_DEFAULT_PRIOR_CIS &&
-		prior_trans == HK_BLIND_RAW_OUTLIER_DEFAULT_PRIOR_TRANS &&
-		min_q == HK_BLIND_RAW_SOFT_DEFAULT_MIN_Q)
-		return "_u";
-	snprintf(buf, sizeof(buf), "_u_bc%.3g_bt%.3g_pc%.3g_pt%.3g_mq%.3g",
-			 beta_cis, beta_trans, prior_cis, prior_trans, min_q);
-	return buf;
-}
-
-static int raw_split_confidence_mode_from_env(void)
-{
-	const char *s = getenv("HK_BLIND_P9016_RAW_SPLIT_CONFIDENCE_MODE");
-	if (s == 0 || s[0] == 0 || strcmp(s, "entropy_linear") == 0 ||
-		strcmp(s, "entropy") == 0)
-		return HK_BLIND_RAW_SPLIT_CONF_ENTROPY_LINEAR;
-	if (strcmp(s, "pmax_margin") == 0 || strcmp(s, "pmax") == 0)
-		return HK_BLIND_RAW_SPLIT_CONF_PMAX_MARGIN;
-	if (strcmp(s, "floor_entropy") == 0 || strcmp(s, "entropy_floor") == 0)
-		return HK_BLIND_RAW_SPLIT_CONF_FLOOR_ENTROPY;
-	fprintf(stderr, "invalid HK_BLIND_P9016_RAW_SPLIT_CONFIDENCE_MODE=%s\n", s);
-	return -1;
-}
-
-static int estep_score_mode_from_env(void)
-{
-	const char *s = getenv("HK_BLIND_P9016_ESTEP_SCORE_MODE");
-	if (s == 0 || s[0] == 0 || strcmp(s, "fdg_flat") == 0 ||
-		strcmp(s, "fdg") == 0 || strcmp(s, "flat") == 0)
-		return HK_BLIND_ESTEP_SCORE_FDG_FLAT;
-	fprintf(stderr, "HK_BLIND_P9016_ESTEP_SCORE_MODE only supports fdg_flat in the cleaned P9016 softall baseline\n");
-	return -1;
-	if (strcmp(s, "logdist2") == 0 || strcmp(s, "log_distance2") == 0 ||
-		strcmp(s, "log_distance_squared") == 0)
-		return HK_BLIND_ESTEP_SCORE_LOGDIST2;
-	if (strcmp(s, "dist2") == 0 || strcmp(s, "distance2") == 0 ||
-		strcmp(s, "distance_squared") == 0)
-		return HK_BLIND_ESTEP_SCORE_DIST2;
-	fprintf(stderr, "invalid HK_BLIND_P9016_ESTEP_SCORE_MODE=%s\n", s);
-	return -1;
-}
-
-static const char *raw_split_confidence_config_suffix(int mstep_graph_mode, int confidence_mode,
-													 float confidence_floor)
-{
-	static char buf[80];
-	if (mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_TOP1 &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_TOP2 &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1_CONF_KWEIGHT &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF &&
-				mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF_WEIGHTED &&
-					mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER &&
-					mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_FULL &&
-					mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KWEIGHT &&
-					mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDWEIGHT &&
-					mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDHALF)
-		return "";
-	switch (confidence_mode) {
-	case HK_BLIND_RAW_SPLIT_CONF_ENTROPY_LINEAR:
-		return "_csentropy";
-	case HK_BLIND_RAW_SPLIT_CONF_PMAX_MARGIN:
-		return "_cspmax";
-	case HK_BLIND_RAW_SPLIT_CONF_FLOOR_ENTROPY:
-		snprintf(buf, sizeof(buf), "_csfloor%.3g", confidence_floor);
-		return buf;
-	default:
-		return "_csunknown";
-	}
-}
-
-static const char *raw_split_trans_config_suffix(int mstep_graph_mode, float trans_scale,
-												 float trans_confidence_power)
-{
-	static char buf[80];
-	if (mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_TOP1 &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_TOP2 &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_SAMPLE1_CONF_KWEIGHT &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF &&
-				mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_BERNOULLI_CONF_WEIGHTED &&
-					mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER &&
-					mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_FULL &&
-					mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KWEIGHT &&
-					mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDWEIGHT &&
-					mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDHALF)
-		return "";
-	if (trans_scale == 1.0f && trans_confidence_power == 1.0f)
-		return "";
-	snprintf(buf, sizeof(buf), "_tcs%.3g_tcp%.3g", trans_scale, trans_confidence_power);
-	return buf;
-}
-
-static const char *temperature_config_suffix(float temperature_start, float temperature_end)
-{
-	static char buf[64];
-	if (temperature_start == 1.0f && temperature_end == 1.0f)
-		return "";
-	if (temperature_start == temperature_end)
-		snprintf(buf, sizeof(buf), "_T%.3g", temperature_start);
-	else
-		snprintf(buf, sizeof(buf), "_T%.3gto%.3g", temperature_start, temperature_end);
-	return buf;
-}
-
-static const char *estep_score_config_suffix(int mode)
-{
-	switch (mode) {
-	case HK_BLIND_ESTEP_SCORE_FDG_FLAT:
-		return "";
-	case HK_BLIND_ESTEP_SCORE_LOGDIST2:
-		return "_elogdist2";
-	case HK_BLIND_ESTEP_SCORE_DIST2:
-		return "_edist2";
-	default:
-		return "_eunknown";
-	}
-}
-
-static const char *homolog_sep_config_suffix(float min_sep_unit, float lambda_sep)
-{
-	static char buf[64];
-	if (min_sep_unit <= 0.0f && lambda_sep <= 0.0f)
-		return "";
-	snprintf(buf, sizeof(buf), "_sep%.3g_lam%.3g", min_sep_unit, lambda_sep);
-	return buf;
-}
-
-static const char *chr_sep_config_suffix(float chr_sep_unit, float lambda_chr_sep)
-{
-	static char buf[64];
-	if (chr_sep_unit <= 0.0f && lambda_chr_sep <= 0.0f)
-		return "";
-	snprintf(buf, sizeof(buf), "_chrsep%.3g_chrlam%.3g", chr_sep_unit, lambda_chr_sep);
-	return buf;
-}
-
-static const char *contact_k_multiplier_config_suffix(float cis_multiplier,
-													  float trans_multiplier)
-{
-	static char buf[80];
-	if (cis_multiplier == 1.0f && trans_multiplier == 1.0f)
-		return "";
-	if (cis_multiplier == trans_multiplier)
-		snprintf(buf, sizeof(buf), "_ck%.3g", cis_multiplier);
-	else
-		snprintf(buf, sizeof(buf), "_ckc%.3g_ckt%.3g", cis_multiplier, trans_multiplier);
-	return buf;
-}
-
-static const char *repulsion_block_config_suffix(float k_min)
-{
-	static char buf[64];
-	if (k_min <= 0.0f)
-		return "";
-	snprintf(buf, sizeof(buf), "_rbk%.3g", k_min);
-	return buf;
-}
-
-static int env_percent_list_or_default(const char *name, int values[8], int max_values)
-{
-	const char *s = getenv(name);
-	char buf[256];
-	char *p;
-	int n = 0;
-	assert(values);
-	assert(max_values > 0);
-	if (s == 0 || s[0] == 0) {
-		values[0] = 0;
-		return 1;
-	}
-	snprintf(buf, sizeof(buf), "%s", s);
-	p = strtok(buf, ",");
-	while (p && n < max_values) {
-		char *end = 0;
-		long v;
-		errno = 0;
-		v = strtol(p, &end, 10);
-		if (errno || end == p || *end != 0 || v < 0 || v > 100) {
-			fprintf(stderr, "invalid %s entry=%s; expected integer percent 0..100\n", name, p);
-			return -1;
-		}
-		values[n++] = (int)v;
-		p = strtok(0, ",");
-	}
-	if (p != 0 || n == 0) {
-		fprintf(stderr, "invalid %s=%s; too many or empty entries\n", name, s);
-		return -1;
-	}
-	return n;
 }
 
 static void path_join(char *dst, size_t dst_size, const char *a, const char *b)
@@ -838,218 +167,6 @@ static int mkdir_if_missing(const char *path)
 	return -1;
 }
 
-static const char *resolution_label(int bin_size_bp, char label[32])
-{
-	if (bin_size_bp % 1000000 == 0)
-		snprintf(label, 32, "%dMb", bin_size_bp / 1000000);
-	else if (bin_size_bp % 1000 == 0)
-		snprintf(label, 32, "%dkb", bin_size_bp / 1000);
-	else
-		snprintf(label, 32, "%dbp", bin_size_bp);
-	return label;
-}
-
-static int init_mode_from_env(const char *name, int fallback)
-{
-	const char *s = getenv(name);
-	if (s == 0 || s[0] == 0)
-		return fallback;
-	if (strcmp(s, "unphased_scaffold_split") == 0 ||
-		strcmp(s, "unphased") == 0 ||
-		strcmp(s, "scaffold") == 0)
-		return HK_BLIND_INIT_UNPHASED_SCAFFOLD_SPLIT;
-	if (strcmp(s, "random_diploid") == 0 ||
-		strcmp(s, "random") == 0)
-		return HK_BLIND_INIT_RANDOM_DIPLOID;
-	if (strcmp(s, "random_haploid_split") == 0 ||
-		strcmp(s, "random_haploid") == 0)
-		return HK_BLIND_INIT_RANDOM_HAPLOID_SPLIT;
-	fprintf(stderr, "invalid %s=%s\n", name, s);
-	return -1;
-}
-
-static const char *scaffold_source_for_init_mode(int mode)
-{
-	switch (mode) {
-	case HK_BLIND_INIT_UNPHASED_SCAFFOLD_SPLIT: return "unphased_fdg";
-	case HK_BLIND_INIT_RANDOM_DIPLOID: return "random_diploid";
-	case HK_BLIND_INIT_RANDOM_HAPLOID_SPLIT: return "random_haploid";
-	default: return "unknown";
-	}
-}
-
-static int init_mode_uses_split(int mode)
-{
-	return mode != HK_BLIND_INIT_RANDOM_DIPLOID;
-}
-
-static void minimal_init_config_from_env(struct minimal_init_config *conf)
-{
-	int default_mode = HK_BLIND_INIT_UNPHASED_SCAFFOLD_SPLIT;
-	assert(conf);
-	memset(conf, 0, sizeof(*conf));
-	conf->mode = init_mode_from_env("HK_BLIND_P9016_INIT_MODE", default_mode);
-	conf->seed = env_u64_or_default("HK_BLIND_P9016_INIT_SEED", HK_P9016_INIT_SEED);
-	conf->scale = env_float_or_default("HK_BLIND_P9016_INIT_SCALE", HK_P9016_INIT_SCALE, 0.0f);
-	conf->eps = env_float_or_default("HK_BLIND_P9016_INIT_EPS", HK_P9016_INIT_EPS, 0.0f);
-	conf->noise_scale = env_float_or_default("HK_BLIND_P9016_INIT_NOISE_SCALE",
-											 HK_P9016_INIT_NOISE_SCALE, 0.0f);
-	conf->scaffold_fdg_n_iter = HK_P9016_SCAFFOLD_FDG_N_ITER;
-	if (conf->mode == default_mode &&
-		conf->seed == HK_P9016_INIT_SEED &&
-		conf->eps == HK_P9016_INIT_EPS &&
-		conf->noise_scale == HK_P9016_INIT_NOISE_SCALE) {
-		snprintf(conf->config_name, sizeof(conf->config_name), "%s", HK_P9016_CONFIG_NAME);
-	} else {
-		snprintf(conf->config_name, sizeof(conf->config_name), "%s_%s_seed%llu",
-				 HK_P9016_CONFIG_NAME, hk_blind_init_mode_name(conf->mode),
-				 (unsigned long long)conf->seed);
-	}
-}
-
-static void minimal_run_config_init(struct minimal_run_config *run_conf,
-									const struct minimal_init_config *init_conf,
-									int hard_pc_sample_size_percent, int hard_pc_kind,
-									int d_scale_mode,
-									int state_weight_mode, int mstep_graph_mode,
-									float trans_pmax_min,
-									float trans_margin_min, float trans_posterior_power_gamma,
-									float imputed_p4_threshold,
-										int raw_split_confidence_mode,
-											float raw_split_confidence_floor,
-											float raw_split_trans_scale,
-											float raw_split_trans_confidence_power,
-											float raw_split_state_p_min,
-											float raw_split_posterior_power_gamma,
-											int raw_outlier_enable,
-											float raw_outlier_beta_cis,
-											float raw_outlier_beta_trans,
-											float raw_outlier_prior_cis,
-											float raw_outlier_prior_trans,
-											float raw_soft_min_q,
-											uint64_t raw_split_sample_salt,
-											uint64_t hard_pc_seed, float min_sep_unit,
-											float lambda_sep,
-											float chr_sep_unit, float lambda_chr_sep,
-												float contact_k_multiplier_cis,
-												float contact_k_multiplier_trans,
-												float trans_d_scale_multiplier,
-												float temperature_start, float temperature_end,
-											float repulsion_block_k_min,
-											int estep_score_mode,
-											int strict_no_prior_guard,
-											const char *input_contact_source)
-{
-	char base_name[256];
-	assert(run_conf);
-	assert(init_conf);
-	assert(hard_pc_sample_size_percent >= 0 && hard_pc_sample_size_percent <= 100);
-	memset(run_conf, 0, sizeof(*run_conf));
-	run_conf->init = *init_conf;
-	run_conf->hard_pc_sample_size_percent = hard_pc_sample_size_percent;
-	run_conf->hard_pc_kind = hard_pc_kind;
-	run_conf->d_scale_mode = d_scale_mode;
-	run_conf->state_weight_mode = state_weight_mode;
-	run_conf->mstep_graph_mode = mstep_graph_mode;
-	run_conf->trans_pmax_min = trans_pmax_min;
-	run_conf->trans_margin_min = trans_margin_min;
-	run_conf->trans_posterior_power_gamma = trans_posterior_power_gamma;
-	run_conf->imputed_p4_threshold = imputed_p4_threshold;
-	run_conf->raw_split_confidence_mode = raw_split_confidence_mode;
-	run_conf->raw_split_confidence_floor = raw_split_confidence_floor;
-	run_conf->raw_split_trans_scale = raw_split_trans_scale;
-	run_conf->raw_split_trans_confidence_power = raw_split_trans_confidence_power;
-	run_conf->raw_split_state_p_min = raw_split_state_p_min;
-	run_conf->raw_split_posterior_power_gamma = raw_split_posterior_power_gamma;
-	run_conf->raw_outlier_enable = raw_outlier_enable;
-	run_conf->raw_outlier_beta_cis = raw_outlier_beta_cis;
-	run_conf->raw_outlier_beta_trans = raw_outlier_beta_trans;
-	run_conf->raw_outlier_prior_cis = raw_outlier_prior_cis;
-	run_conf->raw_outlier_prior_trans = raw_outlier_prior_trans;
-	run_conf->raw_soft_min_q = raw_soft_min_q;
-	run_conf->raw_split_sample_salt = raw_split_sample_salt;
-	run_conf->hard_pc_seed = hard_pc_seed;
-	run_conf->min_sep_unit = min_sep_unit;
-	run_conf->lambda_sep = lambda_sep;
-	run_conf->chr_sep_unit = chr_sep_unit;
-	run_conf->lambda_chr_sep = lambda_chr_sep;
-	run_conf->contact_k_multiplier_cis = contact_k_multiplier_cis;
-	run_conf->contact_k_multiplier_trans = contact_k_multiplier_trans;
-	run_conf->trans_d_scale_multiplier = trans_d_scale_multiplier;
-	run_conf->temperature_start = temperature_start;
-	run_conf->temperature_end = temperature_end;
-	run_conf->repulsion_block_k_min = repulsion_block_k_min;
-	run_conf->estep_score_mode = estep_score_mode;
-	run_conf->strict_no_prior_guard = strict_no_prior_guard;
-	snprintf(run_conf->input_contact_source, sizeof(run_conf->input_contact_source),
-			 "%s", input_contact_source? input_contact_source : "unknown");
-	snprintf(base_name, sizeof(base_name), "%.80s", init_conf->config_name);
-	strncat(base_name, d_scale_mode_config_suffix(d_scale_mode),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, state_weight_mode_config_suffix(state_weight_mode, trans_pmax_min,
-													   trans_margin_min),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, posterior_gamma_config_suffix(state_weight_mode, trans_posterior_power_gamma),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, mstep_graph_mode_config_suffix(mstep_graph_mode),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, mstep_graph_threshold_config_suffix(mstep_graph_mode,
-														  trans_pmax_min,
-														  trans_margin_min),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, raw_split_confidence_config_suffix(mstep_graph_mode, raw_split_confidence_mode,
-													 raw_split_confidence_floor),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, raw_split_trans_config_suffix(mstep_graph_mode, raw_split_trans_scale,
-													 raw_split_trans_confidence_power),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, raw_split_state_p_min_config_suffix(mstep_graph_mode,
-														   raw_split_state_p_min),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, raw_split_posterior_gamma_config_suffix(mstep_graph_mode,
-															   raw_split_posterior_power_gamma),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, raw_outlier_config_suffix(mstep_graph_mode, raw_outlier_enable,
-												 raw_outlier_beta_cis, raw_outlier_beta_trans,
-												 raw_outlier_prior_cis, raw_outlier_prior_trans,
-												 raw_soft_min_q),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, raw_split_sample_salt_config_suffix(mstep_graph_mode,
-														   raw_split_sample_salt),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, contact_k_multiplier_config_suffix(contact_k_multiplier_cis,
-														  contact_k_multiplier_trans),
-			sizeof(base_name) - strlen(base_name) - 1);
-	if (trans_d_scale_multiplier != 1.0f) {
-		char buf[64];
-		snprintf(buf, sizeof(buf), "_tds%.3g", trans_d_scale_multiplier);
-		strncat(base_name, buf, sizeof(base_name) - strlen(base_name) - 1);
-	}
-	strncat(base_name, temperature_config_suffix(temperature_start, temperature_end),
-			sizeof(base_name) - strlen(base_name) - 1);
-	strncat(base_name, estep_score_config_suffix(estep_score_mode),
-			sizeof(base_name) - strlen(base_name) - 1);
-		strncat(base_name, repulsion_block_config_suffix(repulsion_block_k_min),
-				sizeof(base_name) - strlen(base_name) - 1);
-		strncat(base_name, chr_sep_config_suffix(chr_sep_unit, lambda_chr_sep),
-				sizeof(base_name) - strlen(base_name) - 1);
-	if (hard_pc_sample_size_percent > 0) {
-		const char *kind_suffix = hard_pc_kind == HK_P9016_HARD_PC_KIND_STATE_FREQ? "_statefreq" :
-			hard_pc_kind == HK_P9016_HARD_PC_KIND_IMPUTED_P4_TOP? "_impp4top" : "";
-		if (min_sep_unit > 0.0f || lambda_sep > 0.0f)
-			snprintf(run_conf->config_name, sizeof(run_conf->config_name),
-					 "%.190s_hardpc%03d%s_sep%.3g_lam%.3g",
-					 base_name, hard_pc_sample_size_percent, kind_suffix,
-					 min_sep_unit, lambda_sep);
-		else
-			snprintf(run_conf->config_name, sizeof(run_conf->config_name), "%.220s_hardpc%03d%s",
-					 base_name, hard_pc_sample_size_percent, kind_suffix);
-		}
-		else
-			snprintf(run_conf->config_name, sizeof(run_conf->config_name), "%.190s%s",
-					 base_name, homolog_sep_config_suffix(min_sep_unit, lambda_sep));
-	}
-
 static int make_output_root(char *root, size_t root_size)
 {
 	const char *requested = getenv("HK_BLIND_P9016_OUTPUT_ROOT");
@@ -1065,6 +182,17 @@ static int make_output_root(char *root, size_t root_size)
 	strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &tmv);
 	snprintf(root, root_size, "/tmp/hk_blind_p9016_minimal_%s_%ld", stamp, (long)getpid());
 	return mkdir_if_missing(root);
+}
+
+static const char *resolution_label(int bin_size_bp, char label[32])
+{
+	if (bin_size_bp % 1000000 == 0)
+		snprintf(label, 32, "%dMb", bin_size_bp / 1000000);
+	else if (bin_size_bp % 1000 == 0)
+		snprintf(label, 32, "%dkb", bin_size_bp / 1000);
+	else
+		snprintf(label, 32, "%dbp", bin_size_bp);
+	return label;
 }
 
 static int write_bmap_summary(const char *path, const struct hk_bmap *bmap)
@@ -1120,109 +248,50 @@ fail:
 	return -1;
 }
 
-static int init_minimal_coords(struct hk_bmap *bmap, const struct minimal_init_config *init_conf,
-							   fvec3_t *haploid, fvec3_t *diploid)
+static int init_minimal_coords(struct hk_bmap *bmap, fvec3_t *haploid, fvec3_t *diploid)
 {
 	struct hk_fdg_conf scaffold_conf;
-	int ret;
-	assert(init_conf);
-	assert(hk_blind_init_mode_valid(init_conf->mode));
-	if (init_conf->mode == HK_BLIND_INIT_RANDOM_DIPLOID)
-		return hk_blind_init_random_diploid_coords(bmap, diploid,
-												   init_conf->scale,
-												   init_conf->seed);
+	assert(bmap);
 	assert(haploid);
-	if (init_conf->mode == HK_BLIND_INIT_RANDOM_HAPLOID_SPLIT) {
-		ret = hk_blind_init_random_haploid_scaffold(bmap, haploid,
-													init_conf->scale,
-													init_conf->seed);
-		if (ret != 0) return ret;
-		return hk_blind_init_diploid_coords_from_haploid(bmap, haploid, bmap->n_beads,
-														 diploid, init_conf->eps,
-														 init_conf->noise_scale,
-														 init_conf->seed);
-	}
+	assert(diploid);
 	hk_fdg_conf_init(&scaffold_conf);
 	scaffold_conf.backend = HK_FDG_BACKEND_CPU;
-	scaffold_conf.n_iter = init_conf->scaffold_fdg_n_iter;
+	scaffold_conf.n_iter = HK_P9016_SCAFFOLD_FDG_N_ITER;
 	if (hk_blind_init_haploid_scaffold_from_bmap_fdg(bmap, &scaffold_conf, haploid,
-													 init_conf->seed) != 0)
+													 HK_P9016_INIT_SEED) != 0)
 		return -1;
 	return hk_blind_init_diploid_coords_from_haploid(bmap, haploid, bmap->n_beads,
-													 diploid, init_conf->eps,
-													 init_conf->noise_scale,
-													 init_conf->seed);
+													 diploid, HK_P9016_INIT_EPS,
+													 HK_P9016_INIT_NOISE_SCALE,
+													 HK_P9016_INIT_SEED);
 }
 
-static void set_minimal_schedule(struct hk_blind_iter_schedule_conf *conf, int n_iter, int relax_steps,
-								 float relax_step, float min_sep_unit, float lambda_sep,
-								 float chr_sep_unit, float lambda_chr_sep,
-								 float contact_k_multiplier_cis,
-								 float contact_k_multiplier_trans,
-								 float trans_d_scale_multiplier,
-								 int d_scale_mode, int state_weight_mode,
-								 int mstep_graph_mode,
-								 float trans_pmax_min, float trans_margin_min,
-								 float trans_posterior_power_gamma,
-								 int raw_split_confidence_mode,
-								 float raw_split_confidence_floor,
-									 float raw_split_trans_scale,
-									 float raw_split_trans_confidence_power,
-									 float raw_split_state_p_min,
-									 float raw_split_posterior_power_gamma,
-									 int raw_outlier_enable,
-									 float raw_outlier_beta_cis,
-									 float raw_outlier_beta_trans,
-									 float raw_outlier_prior_cis,
-									 float raw_outlier_prior_trans,
-									 float raw_soft_min_q,
-									 float temperature_start, float temperature_end,
-									 float repulsion_block_k_min,
-									 int estep_score_mode)
+static void set_minimal_schedule(struct hk_blind_iter_schedule_conf *conf, int n_iter,
+								 int relax_steps, float relax_step)
 {
 	memset(conf, 0, sizeof(*conf));
 	conf->n_iter = n_iter;
 	conf->base_conf.unit = HK_P9016_UNIT;
 	conf->base_conf.d_scale = HK_P9016_D_SCALE;
 	conf->base_conf.base_k = 1.0f;
-	conf->base_conf.temperature = temperature_start;
+	conf->base_conf.temperature = 1.0f;
 	conf->base_conf.rho_train = 1.0f;
 	conf->base_conf.rho_train_floor = 0.0f;
-	conf->base_conf.min_sep_unit = min_sep_unit;
-	conf->base_conf.lambda_sep = lambda_sep;
-	conf->base_conf.chr_sep_unit = chr_sep_unit;
-	conf->base_conf.lambda_chr_sep = lambda_chr_sep;
+	conf->base_conf.min_sep_unit = 0.0f;
+	conf->base_conf.lambda_sep = 0.0f;
+	conf->base_conf.chr_sep_unit = 0.0f;
+	conf->base_conf.lambda_chr_sep = 0.0f;
 	conf->base_conf.relax_step = relax_step;
 	conf->base_conf.relax_steps = relax_steps;
 	conf->base_conf.enable_repulsion = 1;
 	conf->base_conf.repulsion_mode = HK_BLIND_REPULSION_CELL;
-	conf->base_conf.repulsion_block_k_min = repulsion_block_k_min;
+	conf->base_conf.repulsion_block_k_min = 0.0f;
 	conf->base_conf.rho_train_mode = HK_BLIND_RHO_TRAIN_CONSTANT;
-	conf->base_conf.d_scale_mode = d_scale_mode;
+	conf->base_conf.d_scale_mode = HK_BLIND_D_SCALE_RAW_COUNT;
 	conf->base_conf.d_scale_eps_count = HK_P9016_D_SCALE_EPS_COUNT;
-	conf->base_conf.contact_k_multiplier_cis = contact_k_multiplier_cis;
-	conf->base_conf.contact_k_multiplier_trans = contact_k_multiplier_trans;
-	conf->base_conf.trans_d_scale_multiplier = trans_d_scale_multiplier;
-	conf->base_conf.state_weight_mode = state_weight_mode;
-	conf->base_conf.mstep_graph_mode = mstep_graph_mode;
-	conf->base_conf.trans_margin_min = trans_margin_min;
-	conf->base_conf.trans_pmax_min = trans_pmax_min;
-	conf->base_conf.trans_posterior_power_gamma = trans_posterior_power_gamma;
-	conf->base_conf.raw_split_confidence_mode = raw_split_confidence_mode;
-	conf->base_conf.raw_split_confidence_floor = raw_split_confidence_floor;
-	conf->base_conf.raw_split_trans_scale = raw_split_trans_scale;
-	conf->base_conf.raw_split_trans_confidence_power = raw_split_trans_confidence_power;
-	conf->base_conf.raw_split_state_p_min = raw_split_state_p_min;
-	conf->base_conf.raw_split_posterior_power_gamma = raw_split_posterior_power_gamma;
-	conf->base_conf.raw_outlier_enable = raw_outlier_enable;
-	conf->base_conf.raw_outlier_beta_cis = raw_outlier_beta_cis;
-	conf->base_conf.raw_outlier_beta_trans = raw_outlier_beta_trans;
-	conf->base_conf.raw_outlier_prior_cis = raw_outlier_prior_cis;
-	conf->base_conf.raw_outlier_prior_trans = raw_outlier_prior_trans;
-	conf->base_conf.raw_soft_min_q = raw_soft_min_q;
-	conf->base_conf.estep_score_mode = estep_score_mode;
-	conf->temperature_start = temperature_start;
-	conf->temperature_end = temperature_end;
+	conf->base_conf.estep_score_mode = HK_BLIND_ESTEP_SCORE_FDG_FLAT;
+	conf->temperature_start = 1.0f;
+	conf->temperature_end = 1.0f;
 	conf->rho_train_start = 1.0f;
 	conf->rho_train_end = 1.0f;
 }
@@ -1296,39 +365,14 @@ static int write_force_class_diag(const char *force_path, const struct hk_fdg_co
 								  const struct hk_bmap *bmap, const struct hk_blind_bpair_set *set,
 								  const fvec3_t *coords,
 								  const struct hk_blind_relax_diag *relax_diag,
-								  const struct minimal_run_config *run_conf,
 								  struct hk_blind_contact_class_diag *diag_out)
 {
 	struct hk_blind_wedge_list wedges;
 	struct hk_blind_contact_class_diag diag;
 	FILE *fp;
 	int ret;
-	if (run_conf == 0)
-		return -1;
 	hk_blind_wedge_list_init(&wedges);
-	ret = hk_blind_wedge_list_build_mstep_graph_ex(
-		&wedges, bmap, set, 1.0f, HK_BLIND_RHO_TRAIN_CONSTANT, 0.0f,
-		run_conf->d_scale_mode, HK_P9016_D_SCALE_EPS_COUNT,
-		run_conf->contact_k_multiplier_cis, run_conf->contact_k_multiplier_trans,
-		run_conf->state_weight_mode,
-		run_conf->mstep_graph_mode, run_conf->trans_margin_min,
-		run_conf->trans_pmax_min, run_conf->trans_posterior_power_gamma,
-		run_conf->raw_split_confidence_mode,
-		run_conf->raw_split_confidence_floor,
-		run_conf->raw_split_trans_scale,
-		run_conf->raw_split_trans_confidence_power,
-		run_conf->raw_split_state_p_min,
-		run_conf->raw_split_posterior_power_gamma,
-		run_conf->raw_outlier_enable,
-		run_conf->raw_outlier_beta_cis,
-		run_conf->raw_outlier_beta_trans,
-		run_conf->raw_outlier_prior_cis,
-		run_conf->raw_outlier_prior_trans,
-		run_conf->raw_soft_min_q,
-		run_conf->temperature_end);
-	if (ret == 0)
-		hk_blind_wedge_list_apply_trans_d_scale_multiplier(bmap, &wedges,
-														   run_conf->trans_d_scale_multiplier);
+	ret = hk_blind_wedge_list_build_softall(&wedges, bmap, set);
 	if (ret == 0)
 		ret = hk_blind_wedge_list_aggregate_exact(&wedges);
 	if (ret == 0)
@@ -1345,9 +389,9 @@ static int write_force_class_diag(const char *force_path, const struct hk_fdg_co
 	if (fprintf(fp,
 				"class\tn_wedges\tsum_wedge_k\tcontact_energy\tcontact_force_l1\t"
 				"backbone_force_l1\trepulsion_force_l1\thomolog_sep_force_l1\tn_nonfinite\n"
-					"cis\t%lld\t%.17g\t%.9g\t%.9g\t0\t0\t0\t%d\n"
-					"trans\t%lld\t%.17g\t%.9g\t%.9g\t0\t0\t0\t%d\n"
-					"total\t%lld\t%.17g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%d\n",
+				"cis\t%lld\t%.17g\t%.9g\t%.9g\t0\t0\t0\t%d\n"
+				"trans\t%lld\t%.17g\t%.9g\t%.9g\t0\t0\t0\t%d\n"
+				"total\t%lld\t%.17g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%d\n",
 				(long long)diag.n_wedges_cis, diag.sum_wedge_k_cis,
 				diag.contact_energy_cis, diag.contact_force_l1_cis, diag.n_nonfinite,
 				(long long)diag.n_wedges_trans, diag.sum_wedge_k_trans,
@@ -1355,11 +399,11 @@ static int write_force_class_diag(const char *force_path, const struct hk_fdg_co
 				(long long)(diag.n_wedges_cis + diag.n_wedges_trans),
 				diag.sum_wedge_k_cis + diag.sum_wedge_k_trans,
 				diag.contact_energy_cis + diag.contact_energy_trans,
-					diag.contact_force_l1_cis + diag.contact_force_l1_trans,
-					relax_diag? relax_diag->final_backbone_force_l1 : 0.0f,
-					relax_diag? relax_diag->final_repulsion_force_l1 : 0.0f,
-					relax_diag? relax_diag->final_sep_force_l1 : 0.0f,
-					diag.n_nonfinite) < 0) {
+				diag.contact_force_l1_cis + diag.contact_force_l1_trans,
+				relax_diag? relax_diag->final_backbone_force_l1 : 0.0f,
+				relax_diag? relax_diag->final_repulsion_force_l1 : 0.0f,
+				relax_diag? relax_diag->final_sep_force_l1 : 0.0f,
+				diag.n_nonfinite) < 0) {
 		fclose(fp);
 		return -1;
 	}
@@ -1371,8 +415,7 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 						  const char *coords_gz_path, const char *diag_path,
 						  const char *force_diag_path, const char *raw_path,
 						  int bin_size_bp, int n_iter, int relax_steps, int write_raw,
-						  float relax_step,
-						  const struct minimal_run_config *run_conf,
+						  float relax_step, const char *input_contact_source,
 						  const struct hk_bmap *bmap, const struct hk_blind_bpair_set *set,
 						  const struct hk_blind_base_k_stats *base_k_stats,
 						  const struct hk_blind_iter_loop_diag *loop_diag,
@@ -1381,37 +424,16 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 {
 	FILE *fp = fopen(manifest_path, "w");
 	const char *status;
-	const struct hk_blind_phase_lock_diag *lock_diag;
-	const char *init_mode_name;
-	const char *scaffold_source;
-	double final_refreshed_sum_wedge_k = 0.0;
-	int64_t final_refreshed_n_wedges = 0;
-	float init_scale_effective;
-	float init_eps_effective;
-	float init_noise_effective;
-	int init_split_params_used;
-	int32_t scaffold_fdg_n_iter;
+	double final_refreshed_sum_wedge_k;
+	int64_t final_refreshed_n_wedges;
 	char label[32];
 	if (fp == 0) return -1;
-	assert(run_conf);
 	assert(final_graph_diag);
-	lock_diag = &set->phase_lock_diag;
 	final_refreshed_sum_wedge_k = final_graph_diag->sum_wedge_k_cis +
 		final_graph_diag->sum_wedge_k_trans;
 	final_refreshed_n_wedges = final_graph_diag->n_wedges_cis +
 		final_graph_diag->n_wedges_trans;
 	resolution_label(bin_size_bp, label);
-	{
-		const struct minimal_init_config *init_conf = &run_conf->init;
-	init_mode_name = hk_blind_init_mode_name(init_conf->mode);
-	scaffold_source = scaffold_source_for_init_mode(init_conf->mode);
-	init_scale_effective = init_conf->mode == HK_BLIND_INIT_UNPHASED_SCAFFOLD_SPLIT? 0.0f : init_conf->scale;
-	init_eps_effective = init_mode_uses_split(init_conf->mode)? init_conf->eps : 0.0f;
-	init_noise_effective = init_mode_uses_split(init_conf->mode)? init_conf->noise_scale : 0.0f;
-	init_split_params_used = init_mode_uses_split(init_conf->mode)? 1 : 0;
-	scaffold_fdg_n_iter = init_conf->mode == HK_BLIND_INIT_UNPHASED_SCAFFOLD_SPLIT?
-		init_conf->scaffold_fdg_n_iter : 0;
-	}
 	status = (loop_diag->n_bad_iter == 0 &&
 			  loop_diag->n_relax_nonfinite_iter == 0 &&
 			  loop_diag->n_coord_nonfinite == 0)? "OK" : "WARN";
@@ -1419,24 +441,18 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"key\tvalue\n"
 				"sample\tP9016\n"
 				"runner_family\tp9016_minimal\n"
-				"runner_version\t2026-05-17\n"
-				"default_profile\tp9016_minimal_soft_sep_off_v1\n"
+				"runner_version\t2026-06-15\n"
+				"default_profile\tp9016_softall_minimal_v2\n"
 				"input_path\t%s\n"
 				"input_contact_source\t%s\n"
-				"strict_no_prior_guard\t%d\n"
 				"output_dir\t%s\n"
 				"n_raw\t%d\n"
 				"n_bpair\t%d\n"
 				"n_beads\t%d\n"
 				"resolution\t%d\n"
+				"n_iter\t%d\n"
 				"bin_size_bp\t%d\n"
 				"resolution_label\t%s\n"
-				"bmap_merge_mode\tskip_merge_uniform\n"
-				"hk_bmap_gen_skip_merge_arg\t1\n"
-				"n_haploid_beads\t%d\n"
-				"n_diploid_beads\t%d\n"
-				"scan_config\t%s\n"
-				"n_iter\t%d\n"
 				"unit\t%.9g\n"
 				"d_scale\t%.9g\n"
 				"base_k_mode\tneighbor_median\n"
@@ -1445,14 +461,11 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"base_k_mean\t%.9g\n"
 				"base_k_max\t%.9g\n"
 				"base_k_n_nonfinite\t%d\n"
-				"legacy_base_k_unused\t1\n"
-				"init_mode\t%s\n"
-				"init_scale\t%.9g\n"
+				"init_mode\tunphased_scaffold_split\n"
 				"init_eps_effective\t%.9g\n"
 				"init_noise_scale_effective\t%.9g\n"
-				"init_split_params_used\t%d\n"
 				"init_seed\t%llu\n"
-				"scaffold_source\t%s\n"
+				"scaffold_source\tunphased_fdg\n"
 				"scaffold_fdg_n_iter\t%d\n"
 				"prior_mode\tuniform\n"
 				"prior_eps\t%.9g\n"
@@ -1469,73 +482,13 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"prior_alpha_clamp_max\t0.5\n"
 				"rho_train_mode\tconstant\n"
 				"rho_train_floor\t0\n"
-				"contact_k_multiplier_cis\t%.9g\n"
-				"contact_k_multiplier_trans\t%.9g\n"
-				"trans_d_scale_multiplier\t%.9g\n"
-				"state_weight_mode\t%s\n"
-				"mstep_graph_mode\t%s\n"
-				"mstep_uses_stochastic_selection\t%d\n"
-				"mstep_uses_weighted_filter\t%d\n"
-				"mstep_final_force_probability_weighted\t%d\n"
-				"mstep_dscale_probability_weighted\t%d\n"
-				"mstep_posterior_squared_risk\t%d\n"
-				"estep_score_mode\t%s\n"
-				"trans_margin_min\t%.9g\n"
-				"trans_pmax_min\t%.9g\n"
-				"trans_posterior_power_gamma\t%.9g\n"
-				"imputed_p4_threshold\t%.9g\n"
-				"raw_split_confidence_mode\t%s\n"
-				"raw_split_confidence_floor\t%.9g\n"
-				"raw_split_trans_scale\t%.9g\n"
-				"raw_split_trans_confidence_power\t%.9g\n"
-				"raw_split_state_p_min\t%.9g\n"
-				"raw_split_posterior_power_gamma\t%.9g\n"
-				"raw_outlier_enable\t%d\n"
-				"raw_outlier_beta_cis\t%.9g\n"
-				"raw_outlier_beta_trans\t%.9g\n"
-				"raw_outlier_prior_cis\t%.9g\n"
-				"raw_outlier_prior_trans\t%.9g\n"
-				"raw_soft_min_q\t%.9g\n"
-				"raw_split_sample_salt\t%llu\n"
-				"trans_ambiguous_action\tnone\n"
-				"d_scale_mode\t%s\n"
+				"baseline\tsoftall\n"
+				"training_graph_weighted_filter\t1\n"
+				"training_graph_probability_weighted\t1\n"
+				"training_graph_dscale_probability_weighted\t1\n"
+				"estep_score_mode\tfdg_flat\n"
+				"d_scale_mode\traw_count\n"
 				"d_scale_eps_count\t%.9g\n"
-				"count_exposure_mode\tnone\n"
-				"count_cap\t%.9g\n"
-				"count_exponent\t%.9g\n"
-				"coarse_to_fine_map_available\t0\n"
-				"lift_from_4mb_available\t0\n"
-				"inherited_copy_labels_are_gauge_only\t%d\n"
-				"copy_labels_are_gauge_only\t%d\n"
-				"uses_phase_labels\t%d\n"
-				"hard_positive_control_enabled\t%d\n"
-				"hard_positive_control_kind\t%s\n"
-				"hard_positive_control_sample_size_requested\t%d\n"
-				"hard_positive_control_sample_seed\t%llu\n"
-				"hard_positive_control_sample_universe\tall_raw_contacts\n"
-				"hard_positive_control_sampled_raw\t%lld\n"
-				"hard_positive_control_full_phase_raw\t%lld\n"
-				"hard_positive_control_partial_phase_raw\t%lld\n"
-				"hard_positive_control_unphased_raw\t%lld\n"
-				"hard_positive_control_sampled_full_phase_raw\t%lld\n"
-				"hard_positive_control_sampled_partial_phase_raw\t%lld\n"
-				"hard_positive_control_sampled_unphased_raw\t%lld\n"
-				"hard_positive_control_locked_raw\t%lld\n"
-				"hard_positive_control_locked_bpair\t%d\n"
-				"hard_positive_control_conflict_raw\t%lld\n"
-				"hard_positive_control_conflict_bpair\t%d\n"
-				"hard_positive_control_same_bin_locked_raw\t%lld\n"
-				"hard_positive_control_same_bin_locked_bpair\t%d\n"
-				"hard_positive_control_locked_state_00_bpair\t%d\n"
-				"hard_positive_control_locked_state_01_bpair\t%d\n"
-				"hard_positive_control_locked_state_10_bpair\t%d\n"
-				"hard_positive_control_locked_state_11_bpair\t%d\n"
-				"hard_positive_control_locked_state_00_raw\t%lld\n"
-				"hard_positive_control_locked_state_01_raw\t%lld\n"
-				"hard_positive_control_locked_state_10_raw\t%lld\n"
-				"hard_positive_control_locked_state_11_raw\t%lld\n"
-				"uses_charm_or_reference\t0\n"
-				"uses_charm_for_training\t0\n"
 				"same_bin_filter_enabled\t%d\n"
 				"n_raw_same_bin_excluded\t%lld\n"
 				"n_bpair_same_bin_excluded\t%d\n"
@@ -1544,110 +497,44 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"n_bpair_cis\t%d\n"
 				"n_bpair_trans\t%d\n"
 				"raw_posterior_same_bin_policy\tuniform_unknown_rows\n"
-				"min_sep_unit\t%.9g\n"
-				"lambda_sep\t%.9g\n"
-				"chr_sep_unit\t%.9g\n"
-				"lambda_chr_sep\t%.9g\n"
+				"copy_labels_are_gauge_only\t1\n"
+				"uses_phase_labels\t0\n"
+				"uses_charm_or_reference\t0\n"
+				"uses_charm_for_training\t0\n"
+				"min_sep_unit\t0\n"
+				"lambda_sep\t0\n"
 				"relax_step\t%.9g\n"
-					"relax_steps\t%d\n"
-					"enable_repulsion\t1\n"
-					"repulsion_mode\t%d\n"
-					"repulsion_blocking_mode\t%s\n"
-					"repulsion_block_k_min\t%.9g\n"
-					"repulsion_multiplier\t%.9g\n"
-					"k_rel_rep_effective\t%.9g\n"
-					"temperature_start\t%.9g\n"
-					"temperature_end\t%.9g\n"
-					"rho_train_start\t1\n"
-					"rho_train_end\t1\n"
+				"relax_steps\t%d\n"
+				"temperature_start\t1\n"
+				"temperature_end\t1\n"
+				"rho_train_start\t1\n"
+				"rho_train_end\t1\n"
+				"enable_repulsion\t1\n"
+				"repulsion_mode\t%d\n"
+				"repulsion_blocking_mode\tcurrent_edge_blocking\n"
+				"repulsion_multiplier\t%.9g\n"
+				"k_rel_rep_effective\t%.9g\n"
 				"write_raw_posterior\t%d\n"
 				"output_bpair_posterior\t%s\n"
 				"output_coords\t%s\n"
 				"output_coords_gz\t%s\n"
 				"output_loop_diag\t%s\n"
 				"output_force_class_diag\t%s\n",
-				pairs_path, run_conf->input_contact_source,
-				run_conf->strict_no_prior_guard,
-				out_dir, set->n_raw, set->n_bpairs, bmap->n_beads,
-				bin_size_bp, bin_size_bp, label, bmap->n_beads,
-				bmap->n_beads * HK_DIPLOID_N_COPY, run_conf->config_name,
-				n_iter, HK_P9016_UNIT,
-				HK_P9016_D_SCALE, base_k_stats->mean, base_k_stats->min,
-				base_k_stats->mean, base_k_stats->max, base_k_stats->n_nonfinite,
-				init_mode_name, init_scale_effective,
-				init_eps_effective, init_noise_effective, init_split_params_used,
-				(unsigned long long)run_conf->init.seed, scaffold_source, scaffold_fdg_n_iter,
+				pairs_path, input_contact_source, out_dir,
+				set->n_raw, set->n_bpairs, bmap->n_beads,
+				bin_size_bp, n_iter, bin_size_bp, label, HK_P9016_UNIT, HK_P9016_D_SCALE,
+				base_k_stats->mean, base_k_stats->min, base_k_stats->mean,
+				base_k_stats->max, base_k_stats->n_nonfinite,
+				HK_P9016_INIT_EPS, HK_P9016_INIT_NOISE_SCALE,
+				(unsigned long long)HK_P9016_INIT_SEED, HK_P9016_SCAFFOLD_FDG_N_ITER,
 				HK_P9016_D_SCALE_EPS_COUNT, HK_P9016_D_SCALE_EPS_COUNT,
-				run_conf->contact_k_multiplier_cis,
-				run_conf->contact_k_multiplier_trans,
-				run_conf->trans_d_scale_multiplier,
-				hk_blind_state_weight_mode_name(run_conf->state_weight_mode),
-				hk_blind_mstep_graph_mode_name(run_conf->mstep_graph_mode),
-				mstep_graph_mode_uses_stochastic_selection(run_conf->mstep_graph_mode),
-				mstep_graph_mode_uses_weighted_filter(run_conf->mstep_graph_mode),
-				mstep_graph_mode_uses_final_phased_prob_weight(run_conf->mstep_graph_mode),
-				mstep_graph_mode_uses_probability_dscale(run_conf->mstep_graph_mode),
-				mstep_graph_mode_has_posterior_squared_risk(run_conf->mstep_graph_mode),
-				hk_blind_estep_score_mode_name(run_conf->estep_score_mode),
-				run_conf->trans_margin_min, run_conf->trans_pmax_min,
-				run_conf->trans_posterior_power_gamma,
-				run_conf->imputed_p4_threshold,
-				hk_blind_raw_split_confidence_mode_name(run_conf->raw_split_confidence_mode),
-				run_conf->raw_split_confidence_floor,
-				run_conf->raw_split_trans_scale,
-				run_conf->raw_split_trans_confidence_power,
-				run_conf->raw_split_state_p_min,
-				run_conf->raw_split_posterior_power_gamma,
-				run_conf->raw_outlier_enable,
-				run_conf->raw_outlier_beta_cis,
-				run_conf->raw_outlier_beta_trans,
-				run_conf->raw_outlier_prior_cis,
-				run_conf->raw_outlier_prior_trans,
-				run_conf->raw_soft_min_q,
-				(unsigned long long)run_conf->raw_split_sample_salt,
-				hk_blind_d_scale_mode_name(run_conf->d_scale_mode),
-				HK_P9016_D_SCALE_EPS_COUNT, HK_BLIND_D_SCALE_DEFAULT_COUNT_CAP,
-				1.0f / 3.0f,
-				run_conf->hard_pc_sample_size_percent > 0? 0 : 1,
-				run_conf->hard_pc_sample_size_percent > 0? 0 : 1,
-				run_conf->hard_pc_sample_size_percent > 0? 1 : 0,
-				run_conf->hard_pc_sample_size_percent > 0? 1 : 0,
-				run_conf->hard_pc_sample_size_percent > 0? hard_pc_kind_name(run_conf->hard_pc_kind) : "none",
-				run_conf->hard_pc_sample_size_percent,
-				(unsigned long long)run_conf->hard_pc_seed,
-				(long long)lock_diag->n_sampled_raw,
-				(long long)lock_diag->n_full_phase_raw,
-				(long long)lock_diag->n_partial_phase_raw,
-				(long long)lock_diag->n_unphased_raw,
-				(long long)lock_diag->n_sampled_full_phase_raw,
-				(long long)lock_diag->n_sampled_partial_phase_raw,
-				(long long)lock_diag->n_sampled_unphased_raw,
-				(long long)lock_diag->n_locked_raw,
-				lock_diag->n_locked_bpair,
-				(long long)lock_diag->n_conflict_raw,
-				lock_diag->n_conflict_bpair,
-				(long long)lock_diag->n_same_bin_locked_raw,
-				lock_diag->n_same_bin_locked_bpair,
-				lock_diag->state_bpair_count[HK_BLIND_STATE_00],
-				lock_diag->state_bpair_count[HK_BLIND_STATE_01],
-				lock_diag->state_bpair_count[HK_BLIND_STATE_10],
-				lock_diag->state_bpair_count[HK_BLIND_STATE_11],
-				(long long)lock_diag->state_raw_count[HK_BLIND_STATE_00],
-				(long long)lock_diag->state_raw_count[HK_BLIND_STATE_01],
-				(long long)lock_diag->state_raw_count[HK_BLIND_STATE_10],
-				(long long)lock_diag->state_raw_count[HK_BLIND_STATE_11],
-				set->same_bin_filter_enabled,
+				HK_P9016_D_SCALE_EPS_COUNT, set->same_bin_filter_enabled,
 				(long long)set->n_raw_same_bin_excluded,
 				set->n_bpair_same_bin_excluded, (long long)set->n_raw_cis,
-						(long long)set->n_raw_trans, set->n_bpair_cis, set->n_bpair_trans,
-							run_conf->min_sep_unit, run_conf->lambda_sep,
-							run_conf->chr_sep_unit, run_conf->lambda_chr_sep,
-							relax_step, relax_steps, HK_BLIND_REPULSION_CELL,
-						run_conf->repulsion_block_k_min > 0.0f? "contact_k_threshold" : "current_edge_blocking",
-						run_conf->repulsion_block_k_min,
-						HK_P9016_REPULSION_MULTIPLIER, k_rel_rep_effective,
-					run_conf->temperature_start, run_conf->temperature_end, write_raw,
-					posterior_path, coords_path, coords_gz_path, diag_path, force_diag_path) < 0) {
+				(long long)set->n_raw_trans, set->n_bpair_cis, set->n_bpair_trans,
+				relax_step, relax_steps, HK_BLIND_REPULSION_CELL,
+				HK_P9016_REPULSION_MULTIPLIER, k_rel_rep_effective, write_raw,
+				posterior_path, coords_path, coords_gz_path, diag_path, force_diag_path) < 0) {
 		fclose(fp);
 		return -1;
 	}
@@ -1676,23 +563,13 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"posterior_refresh_top_state_switch_frac\t%.9g\n"
 				"posterior_refresh_mean_pU_before\t%.9g\n"
 				"posterior_refresh_mean_pU_after\t%.9g\n"
-				"final_raw_outlier_n_seen\t%lld\n"
-				"final_raw_outlier_n_locked\t%lld\n"
-				"final_raw_outlier_n_unlocked\t%lld\n"
-				"final_raw_outlier_n_cis\t%lld\n"
-				"final_raw_outlier_n_trans\t%lld\n"
-				"final_raw_outlier_real_mass_all\t%.17g\n"
-				"final_raw_outlier_outlier_mass_all\t%.17g\n"
-				"final_raw_outlier_emitted_real_mass_all\t%.17g\n"
-				"final_raw_outlier_truncated_real_mass_all\t%.17g\n"
 				"n_bad_iter\t%d\n"
 				"n_relax_nonfinite_iter\t%d\n"
 				"n_coord_nonfinite\t%d\n",
 				status, loop_diag->final_mean_entropy, loop_diag->final_mean_pU,
 				loop_diag->final_mean_sep, loop_diag->final_min_sep,
 				loop_diag->final_max_sep, loop_diag->final_sum_wedge_k,
-				loop_diag->final_sum_wedge_k,
-				final_refreshed_sum_wedge_k,
+				loop_diag->final_sum_wedge_k, final_refreshed_sum_wedge_k,
 				(long long)final_refreshed_n_wedges,
 				loop_diag->final_mean_rho_train_bpair,
 				loop_diag->final_min_rho_train_bpair,
@@ -1703,15 +580,6 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				loop_diag->posterior_refresh_top_state_switch_frac,
 				loop_diag->posterior_refresh_mean_pU_before,
 				loop_diag->posterior_refresh_mean_pU_after,
-				(long long)loop_diag->final_raw_outlier_diag.n_seen,
-				(long long)loop_diag->final_raw_outlier_diag.n_locked,
-				(long long)loop_diag->final_raw_outlier_diag.n_unlocked,
-				(long long)loop_diag->final_raw_outlier_diag.n_cis,
-				(long long)loop_diag->final_raw_outlier_diag.n_trans,
-				loop_diag->final_raw_outlier_diag.real_mass_all,
-				loop_diag->final_raw_outlier_diag.outlier_mass_all,
-				loop_diag->final_raw_outlier_diag.emitted_real_mass_all,
-				loop_diag->final_raw_outlier_diag.truncated_real_mass_all,
 				loop_diag->n_bad_iter, loop_diag->n_relax_nonfinite_iter,
 				loop_diag->n_coord_nonfinite) < 0) {
 		fclose(fp);
@@ -1723,186 +591,73 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 static int write_summary_header(FILE *fp)
 {
 	return fprintf(fp,
-				   "config_name\toutput_dir\tinit_mode\tprior_mode\trho_train_mode\t"
-				   "input_contact_source\tstrict_no_prior_guard\t"
-				   "rho_train_floor\tcontact_k_multiplier_cis\tcontact_k_multiplier_trans\t"
-				   "trans_d_scale_multiplier\t"
-				   "state_weight_mode\tmstep_graph_mode\testep_score_mode\t"
-				   "mstep_uses_stochastic_selection\tmstep_uses_weighted_filter\t"
-				   "mstep_final_force_probability_weighted\t"
-				   "mstep_dscale_probability_weighted\t"
-				   "mstep_posterior_squared_risk\t"
-				   "trans_margin_min\ttrans_pmax_min\t"
-				   "trans_posterior_power_gamma\timputed_p4_threshold\t"
-						   "raw_split_confidence_mode\traw_split_confidence_floor\t"
-						   "raw_split_trans_scale\traw_split_trans_confidence_power\t"
-						   "raw_split_state_p_min\traw_split_posterior_power_gamma\t"
-						   "raw_outlier_enable\traw_outlier_beta_cis\traw_outlier_beta_trans\t"
-						   "raw_outlier_prior_cis\traw_outlier_prior_trans\traw_soft_min_q\t"
-						   "raw_split_sample_salt\t"
-					   "enable_repulsion\td_scale_mode\tn_iter\t"
-				   "relax_steps\tinit_seed\trelax_step\tscan_config\trepulsion_multiplier\t"
-				   "k_rel_rep_effective\trepulsion_block_k_min\ttemperature_start\ttemperature_end\t"
-				   "rho_train_start\trho_train_end\tn_raw\tn_bpair\tn_beads\tn_raw_cis\t"
-				   "n_raw_trans\tn_bpair_cis\tn_bpair_trans\tfinal_mean_entropy\t"
-				   "final_mean_pU\tfinal_mean_sep\tfinal_min_sep\tfinal_max_sep\t"
-				   "final_sum_wedge_k\tlast_training_sum_wedge_k\t"
-					   "final_refreshed_sum_wedge_k\tfinal_refreshed_n_wedges\t"
-					   "final_mean_rho_train_bpair\t"
-					   "final_min_rho_train_bpair\tfinal_max_rho_train_bpair\t"
-						   "final_n_expanded_edges\tfinal_n_split_candidate_pairs\t"
-						   "final_n_split_filter1_pairs\tfinal_n_split_filter2_pairs\t"
-						   "final_n_split_bmap_pairs\t"
-						   "final_n_split_selected_raw\tfinal_n_split_gate_skip_raw\t"
-						   "final_n_split_same_bin_skip_raw\tfinal_n_split_locked_skip_raw\t"
-						   "final_n_split_state00_raw\tfinal_n_split_state01_raw\t"
-						   "final_n_split_state10_raw\tfinal_n_split_state11_raw\t"
-						   "final_raw_outlier_n_seen\tfinal_raw_outlier_n_locked\t"
-						   "final_raw_outlier_n_unlocked\tfinal_raw_outlier_n_cis\t"
-						   "final_raw_outlier_n_trans\tfinal_raw_outlier_n_bad_log_norm\t"
-						   "final_raw_outlier_n_all_real_truncated\t"
-						   "final_raw_outlier_real_mass_all\tfinal_raw_outlier_outlier_mass_all\t"
-						   "final_raw_outlier_emitted_real_mass_all\t"
-						   "final_raw_outlier_truncated_real_mass_all\t"
-						   "final_raw_outlier_real_mass_cis\tfinal_raw_outlier_outlier_mass_cis\t"
-						   "final_raw_outlier_real_mass_trans\tfinal_raw_outlier_outlier_mass_trans\t"
-							   "final_contact_energy\tfinal_repulsion_energy\tfinal_backbone_energy\t"
-							   "final_n_repulsion_pairs_considered\t"
-							   "final_n_repulsion_pairs_blocked\tfinal_n_repulsion_pairs_active\t"
-					   "n_same_bin_excluded\tposterior_refreshed_after_final_relax\tn_bad_iter\t"
-				   "n_relax_nonfinite_iter\tn_coord_nonfinite\trepulsion_mode\t"
-				   "audit_status\twrite_raw_posterior\thard_pc_sample_size\t"
-				   "hard_pc_seed\thard_pc_sampled_raw\thard_pc_locked_raw\t"
-				   "hard_pc_locked_bpair\thard_pc_conflict_bpair\t"
-				   "hard_pc_same_bin_locked_bpair\thard_pc_kind\t"
-				   "min_sep_unit\tlambda_sep\tchr_sep_unit\tlambda_chr_sep\n") < 0? -1 : 0;
+				   "config_name\toutput_dir\tinput_contact_source\tbaseline\t"
+				   "init_mode\tn_iter\trelax_steps\trelax_step\tn_raw\tn_bpair\tn_beads\t"
+				   "n_raw_cis\tn_raw_trans\tn_bpair_cis\tn_bpair_trans\t"
+				   "final_mean_entropy\tfinal_mean_pU\tfinal_mean_sep\tfinal_min_sep\t"
+				   "final_max_sep\tfinal_sum_wedge_k\tfinal_refreshed_sum_wedge_k\t"
+				   "final_refreshed_n_wedges\tfinal_mean_rho_train_bpair\t"
+				   "final_min_rho_train_bpair\tfinal_max_rho_train_bpair\t"
+				   "final_n_expanded_edges\tfinal_n_softall_candidate_pairs\t"
+				   "final_n_softall_bmap_pairs\tfinal_n_softall_selected_raw\t"
+				   "final_n_softall_same_bin_skip_raw\t"
+				   "final_n_softall_state00_raw\tfinal_n_softall_state01_raw\t"
+				   "final_n_softall_state10_raw\tfinal_n_softall_state11_raw\t"
+				   "final_contact_energy\tfinal_repulsion_energy\tfinal_backbone_energy\t"
+				   "final_n_repulsion_pairs_considered\tfinal_n_repulsion_pairs_blocked\t"
+				   "final_n_repulsion_pairs_active\tn_same_bin_excluded\t"
+				   "posterior_refreshed_after_final_relax\tn_bad_iter\t"
+				   "n_relax_nonfinite_iter\tn_coord_nonfinite\taudit_status\t"
+				   "write_raw_posterior\n") < 0? -1 : 0;
 }
 
 static int append_summary_row(FILE *fp, const struct minimal_result *result, int n_iter,
-							  int relax_steps, const struct minimal_run_config *run_conf,
-							  float relax_step,
-							  int write_raw)
+							  int relax_steps, float relax_step,
+							  const char *input_contact_source, int write_raw)
 {
-	const struct hk_blind_phase_lock_diag *lock_diag;
-	assert(run_conf);
-	lock_diag = &result->phase_lock_diag;
 	return fprintf(fp,
-				   "%s\t%s\t%s\tuniform\tconstant\t%s\t%d\t0\t%.9g\t%.9g\t%.9g\t"
-					   "%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%.9g\t%.9g\t%.9g\t%.9g\t%s\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%d\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%llu\t1\t%s\t%d\t%d\t%llu\t%.9g\t"
-						   "%s\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t1\t1\t%d\t%d\t%d\t"
-						   "%lld\t%lld\t%d\t%d\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t"
-						   "%.17g\t%.17g\t%.17g\t%lld\t%.9g\t%.9g\t%.9g\t"
-						   "%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t"
-							   "%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t"
-							   "%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t%.17g\t"
-							   "%.9g\t%.9g\t%.9g\t%lld\t%lld\t%lld\t%lld\t%d\t%d\t"
-							   "%d\t%d\t%d\t%s\t%d\t%d\t%llu\t%lld\t%lld\t%d\t%d\t%d\t%s\t%.9g\t%.9g\t%.9g\t%.9g\n",
-				   run_conf->config_name, result->output_dir,
-				   hk_blind_init_mode_name(run_conf->init.mode),
-				   run_conf->input_contact_source,
-				   run_conf->strict_no_prior_guard,
-				   run_conf->contact_k_multiplier_cis,
-				   run_conf->contact_k_multiplier_trans,
-				   run_conf->trans_d_scale_multiplier,
-				   hk_blind_state_weight_mode_name(run_conf->state_weight_mode),
-				   hk_blind_mstep_graph_mode_name(run_conf->mstep_graph_mode),
-				   hk_blind_estep_score_mode_name(run_conf->estep_score_mode),
-					   mstep_graph_mode_uses_stochastic_selection(run_conf->mstep_graph_mode),
-					   mstep_graph_mode_uses_weighted_filter(run_conf->mstep_graph_mode),
-					   mstep_graph_mode_uses_final_phased_prob_weight(run_conf->mstep_graph_mode),
-					   mstep_graph_mode_uses_probability_dscale(run_conf->mstep_graph_mode),
-					   mstep_graph_mode_has_posterior_squared_risk(run_conf->mstep_graph_mode),
-				   run_conf->trans_margin_min, run_conf->trans_pmax_min,
-				   run_conf->trans_posterior_power_gamma,
-				   run_conf->imputed_p4_threshold,
-				   hk_blind_raw_split_confidence_mode_name(run_conf->raw_split_confidence_mode),
-				   run_conf->raw_split_confidence_floor,
-				   run_conf->raw_split_trans_scale,
-				   run_conf->raw_split_trans_confidence_power,
-				   run_conf->raw_split_state_p_min,
-				   run_conf->raw_split_posterior_power_gamma,
-				   run_conf->raw_outlier_enable,
-				   run_conf->raw_outlier_beta_cis,
-				   run_conf->raw_outlier_beta_trans,
-				   run_conf->raw_outlier_prior_cis,
-				   run_conf->raw_outlier_prior_trans,
-				   run_conf->raw_soft_min_q,
-				   (unsigned long long)run_conf->raw_split_sample_salt,
-				   hk_blind_d_scale_mode_name(run_conf->d_scale_mode),
-				   n_iter, relax_steps,
-				   (unsigned long long)run_conf->init.seed, relax_step,
-					   run_conf->config_name,
-					   HK_P9016_REPULSION_MULTIPLIER, result->k_rel_rep_effective,
-					   run_conf->repulsion_block_k_min,
-					   run_conf->temperature_start, run_conf->temperature_end,
+				   "%s\t%s\t%s\tsoftall\tunphased_scaffold_split\t"
+				   "%d\t%d\t%.9g\t%d\t%d\t%d\t%lld\t%lld\t%d\t%d\t"
+				   "%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.17g\t%.17g\t%lld\t"
+				   "%.9g\t%.9g\t%.9g\t%lld\t%lld\t%lld\t%lld\t%lld\t"
+				   "%lld\t%lld\t%lld\t%lld\t%.9g\t%.9g\t%.9g\t%lld\t%lld\t%lld\t"
+				   "%lld\t%d\t%d\t%d\t%d\t%s\t%d\n",
+				   HK_P9016_CONFIG_NAME, result->output_dir, input_contact_source,
+				   n_iter, relax_steps, relax_step,
 				   result->n_raw, result->n_bpair, result->n_beads,
 				   (long long)result->n_raw_cis, (long long)result->n_raw_trans,
 				   result->n_bpair_cis, result->n_bpair_trans,
 				   result->final_mean_entropy, result->final_mean_pU,
 				   result->final_mean_sep, result->final_min_sep, result->final_max_sep,
-				   result->final_sum_wedge_k, result->last_training_sum_wedge_k,
-				   result->final_refreshed_sum_wedge_k,
-					   (long long)result->final_refreshed_n_wedges,
-					   result->final_mean_rho_train_bpair,
-					   result->final_min_rho_train_bpair, result->final_max_rho_train_bpair,
-					   (long long)result->final_n_expanded_edges,
-					   (long long)result->final_n_split_candidate_pairs,
-						   (long long)result->final_n_split_filter1_pairs,
-						   (long long)result->final_n_split_filter2_pairs,
-						   (long long)result->final_n_split_bmap_pairs,
-						   (long long)result->final_n_split_selected_raw,
-						   (long long)result->final_n_split_gate_skip_raw,
-						   (long long)result->final_n_split_same_bin_skip_raw,
-						   (long long)result->final_n_split_locked_skip_raw,
-						   (long long)result->final_n_split_state_raw_count[HK_BLIND_STATE_00],
-						   (long long)result->final_n_split_state_raw_count[HK_BLIND_STATE_01],
-						   (long long)result->final_n_split_state_raw_count[HK_BLIND_STATE_10],
-							   (long long)result->final_n_split_state_raw_count[HK_BLIND_STATE_11],
-							   (long long)result->final_raw_outlier_diag.n_seen,
-							   (long long)result->final_raw_outlier_diag.n_locked,
-							   (long long)result->final_raw_outlier_diag.n_unlocked,
-							   (long long)result->final_raw_outlier_diag.n_cis,
-							   (long long)result->final_raw_outlier_diag.n_trans,
-							   (long long)result->final_raw_outlier_diag.n_bad_log_norm,
-							   (long long)result->final_raw_outlier_diag.n_all_real_truncated,
-							   result->final_raw_outlier_diag.real_mass_all,
-							   result->final_raw_outlier_diag.outlier_mass_all,
-							   result->final_raw_outlier_diag.emitted_real_mass_all,
-							   result->final_raw_outlier_diag.truncated_real_mass_all,
-							   result->final_raw_outlier_diag.real_mass_cis,
-							   result->final_raw_outlier_diag.outlier_mass_cis,
-							   result->final_raw_outlier_diag.real_mass_trans,
-							   result->final_raw_outlier_diag.outlier_mass_trans,
-							   result->final_contact_energy, result->final_repulsion_energy,
-					   result->final_backbone_energy,
-					   (long long)result->final_n_repulsion_pairs_considered,
-					   (long long)result->final_n_repulsion_pairs_blocked,
-					   (long long)result->final_n_repulsion_pairs_active,
-					   (long long)result->n_same_bin_excluded,
-					   result->posterior_refreshed_after_final_relax,
+				   result->final_sum_wedge_k, result->final_refreshed_sum_wedge_k,
+				   (long long)result->final_refreshed_n_wedges,
+				   result->final_mean_rho_train_bpair,
+				   result->final_min_rho_train_bpair, result->final_max_rho_train_bpair,
+				   (long long)result->final_n_expanded_edges,
+				   (long long)result->final_n_softall_candidate_pairs,
+				   (long long)result->final_n_softall_bmap_pairs,
+				   (long long)result->final_n_softall_selected_raw,
+				   (long long)result->final_n_softall_same_bin_skip_raw,
+				   (long long)result->final_n_softall_state_raw_count[HK_BLIND_STATE_00],
+				   (long long)result->final_n_softall_state_raw_count[HK_BLIND_STATE_01],
+				   (long long)result->final_n_softall_state_raw_count[HK_BLIND_STATE_10],
+				   (long long)result->final_n_softall_state_raw_count[HK_BLIND_STATE_11],
+				   result->final_contact_energy, result->final_repulsion_energy,
+				   result->final_backbone_energy,
+				   (long long)result->final_n_repulsion_pairs_considered,
+				   (long long)result->final_n_repulsion_pairs_blocked,
+				   (long long)result->final_n_repulsion_pairs_active,
+				   (long long)result->n_same_bin_excluded,
+				   result->posterior_refreshed_after_final_relax,
 				   result->n_bad_iter, result->n_relax_nonfinite_iter,
-				   result->n_coord_nonfinite, HK_BLIND_REPULSION_CELL,
-				   result->status_ok? "OK" : "WARN", write_raw,
-				   run_conf->hard_pc_sample_size_percent,
-				   (unsigned long long)run_conf->hard_pc_seed,
-				   (long long)lock_diag->n_sampled_raw,
-				   (long long)lock_diag->n_locked_raw,
-				   lock_diag->n_locked_bpair,
-				   lock_diag->n_conflict_bpair,
-				   lock_diag->n_same_bin_locked_bpair,
-					   hard_pc_kind_name(run_conf->hard_pc_kind),
-					   run_conf->min_sep_unit,
-					   run_conf->lambda_sep,
-					   run_conf->chr_sep_unit,
-					   run_conf->lambda_chr_sep) < 0? -1 : 0;
+				   result->n_coord_nonfinite,
+				   result->status_ok? "OK" : "WARN", write_raw) < 0? -1 : 0;
 }
 
 static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *raw,
-							  const struct hk_pair *pairs, int32_t n_raw,
-							  const char *pairs_path, const char *root_dir,
+							  int32_t n_raw, const char *pairs_path, const char *root_dir,
 							  int bin_size_bp, int n_iter, int relax_steps, int write_raw,
-							  float relax_step,
-							  const struct minimal_run_config *run_conf,
+							  float relax_step, const char *input_contact_source,
 							  FILE *summary_fp, struct minimal_result *result)
 {
 	struct hk_blind_bpair_set *set = 0;
@@ -1919,10 +674,9 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 	char force_diag_path[1024], raw_path[1024], manifest_path[1024];
 	int failed = 0;
 
-	assert(run_conf);
 	memset(result, 0, sizeof(*result));
 	hk_blind_contact_class_diag_init(&final_graph_diag);
-	path_join(result->output_dir, sizeof(result->output_dir), root_dir, run_conf->config_name);
+	path_join(result->output_dir, sizeof(result->output_dir), root_dir, HK_P9016_CONFIG_NAME);
 	if (mkdir_if_missing(result->output_dir) != 0)
 		return 1;
 	path_join(posterior_path, sizeof(posterior_path), result->output_dir, "p9016_full.bpair_posterior.tsv");
@@ -1940,25 +694,6 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 	failed |= check_i32("base-k mode", hk_blind_bpair_set_apply_base_k_mode(bmap, set,
 																			 HK_BLIND_BASE_K_NEIGHBOR_MEDIAN), 0);
 	hk_blind_bpair_set_init_uniform_prior(set);
-	if (run_conf->hard_pc_kind == HK_P9016_HARD_PC_KIND_STATE_FREQ)
-		failed |= check_i32("apply state-frequency positive control locks",
-							hk_blind_bpair_set_apply_raw_phase_state_freq_locks(set, pairs, n_raw,
-																				run_conf->hard_pc_sample_size_percent,
-																				run_conf->hard_pc_seed,
-																				&set->phase_lock_diag), 0);
-	else if (run_conf->hard_pc_kind == HK_P9016_HARD_PC_KIND_IMPUTED_P4_TOP)
-		failed |= check_i32("apply imputed-p4-top positive control locks",
-							hk_blind_bpair_set_apply_imputed_p4_top_locks(set, pairs, n_raw,
-																		 run_conf->hard_pc_sample_size_percent,
-																		 run_conf->hard_pc_seed,
-																		 run_conf->imputed_p4_threshold,
-																		 &set->phase_lock_diag), 0);
-	else
-		failed |= check_i32("apply hard positive control locks",
-							hk_blind_bpair_set_apply_raw_phase_locks(set, pairs, n_raw,
-																	 run_conf->hard_pc_sample_size_percent,
-																	 run_conf->hard_pc_seed,
-																	 &set->phase_lock_diag), 0);
 	hk_blind_bpair_set_base_k_stats(set, &base_k_stats);
 	if (failed) goto cleanup;
 
@@ -1969,56 +704,18 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 		failed = 1;
 		goto cleanup;
 	}
-	fprintf(stderr, "minimal P9016: init %s seed=%llu scale=%.9g\n",
-			hk_blind_init_mode_name(run_conf->init.mode),
-			(unsigned long long)run_conf->init.seed, run_conf->init.scale);
-	if (run_conf->hard_pc_sample_size_percent > 0) {
-		fprintf(stderr,
-				"minimal P9016: hard PC sample=%d%% sampled=%lld full=%lld locked_bpair=%d conflict_bpair=%d\n",
-				run_conf->hard_pc_sample_size_percent,
-				(long long)set->phase_lock_diag.n_sampled_raw,
-				(long long)set->phase_lock_diag.n_sampled_full_phase_raw,
-				set->phase_lock_diag.n_locked_bpair,
-				set->phase_lock_diag.n_conflict_bpair);
-	}
-	failed |= check_i32("init coords", init_minimal_coords(bmap, &run_conf->init, haploid, diploid), 0);
+	fprintf(stderr, "minimal P9016: init unphased scaffold seed=%llu\n",
+			(unsigned long long)HK_P9016_INIT_SEED);
+	failed |= check_i32("init coords", init_minimal_coords(bmap, haploid, diploid), 0);
 	failed |= check_coords_finite(diploid, n_diploid);
 	if (failed) goto cleanup;
 
-		fprintf(stderr, "minimal P9016: run soft posterior, min_sep=%.8g lambda_sep=%.8g chr_sep=%.8g lambda_chr_sep=%.8g, n_iter=%d relax_steps=%d relax_step=%.8g\n",
-				run_conf->min_sep_unit, run_conf->lambda_sep,
-				run_conf->chr_sep_unit, run_conf->lambda_chr_sep,
-				n_iter, relax_steps, relax_step);
-		fprintf(stderr, "minimal P9016: temperature %.8g -> %.8g\n",
-				run_conf->temperature_start, run_conf->temperature_end);
+	fprintf(stderr, "minimal P9016: run softall, n_iter=%d relax_steps=%d relax_step=%.8g\n",
+			n_iter, relax_steps, relax_step);
 	hk_fdg_conf_init(&fdg_conf);
 	fdg_conf.backend = HK_FDG_BACKEND_CPU;
 	fdg_conf.k_rel_rep *= HK_P9016_REPULSION_MULTIPLIER;
-	set_minimal_schedule(&schedule_conf, n_iter, relax_steps, relax_step,
-						 run_conf->min_sep_unit, run_conf->lambda_sep,
-						 run_conf->chr_sep_unit, run_conf->lambda_chr_sep,
-						 run_conf->contact_k_multiplier_cis,
-						 run_conf->contact_k_multiplier_trans,
-						 run_conf->trans_d_scale_multiplier,
-						 run_conf->d_scale_mode, run_conf->state_weight_mode,
-						 run_conf->mstep_graph_mode,
-						 run_conf->trans_pmax_min, run_conf->trans_margin_min,
-							 run_conf->trans_posterior_power_gamma,
-								 run_conf->raw_split_confidence_mode,
-						 run_conf->raw_split_confidence_floor,
-						 run_conf->raw_split_trans_scale,
-						 run_conf->raw_split_trans_confidence_power,
-						 run_conf->raw_split_state_p_min,
-						 run_conf->raw_split_posterior_power_gamma,
-						 run_conf->raw_outlier_enable,
-						 run_conf->raw_outlier_beta_cis,
-						 run_conf->raw_outlier_beta_trans,
-						 run_conf->raw_outlier_prior_cis,
-						 run_conf->raw_outlier_prior_trans,
-						 run_conf->raw_soft_min_q,
-						 run_conf->temperature_start, run_conf->temperature_end,
-						 run_conf->repulsion_block_k_min,
-								 run_conf->estep_score_mode);
+	set_minimal_schedule(&schedule_conf, n_iter, relax_steps, relax_step);
 	failed |= check_i32("scheduled run",
 						hk_blind_run_iter_loop_scheduled_cpu(bmap, set, &fdg_conf, diploid,
 															 0, &schedule_conf, per_iter,
@@ -2037,22 +734,21 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 	failed |= check_i32("write force class diag",
 						write_force_class_diag(force_diag_path, &fdg_conf, bmap, set, diploid,
 											   n_iter > 0? &per_iter[n_iter - 1].relax_diag : 0,
-											   run_conf, &final_graph_diag), 0);
+											   &final_graph_diag), 0);
 	if (write_raw)
 		failed |= check_i32("write raw posterior", write_raw_output(raw_path, raw, n_raw, bmap, set), 0);
 	failed |= check_i32("write manifest",
 						write_manifest(manifest_path, pairs_path, result->output_dir,
 									   posterior_path, coords_path, coords_gz_path, diag_path,
 									   force_diag_path, raw_path, bin_size_bp, n_iter, relax_steps,
-									   write_raw, relax_step, run_conf, bmap, set, &base_k_stats, &loop_diag,
-									   &final_graph_diag,
+									   write_raw, relax_step, input_contact_source, bmap, set,
+									   &base_k_stats, &loop_diag, &final_graph_diag,
 									   fdg_conf.k_rel_rep), 0);
 	if (failed) goto cleanup;
 
 	result->n_raw = set->n_raw;
 	result->n_bpair = set->n_bpairs;
 	result->n_beads = bmap->n_beads;
-	result->phase_lock_diag = set->phase_lock_diag;
 	result->n_raw_cis = set->n_raw_cis;
 	result->n_raw_trans = set->n_raw_trans;
 	result->n_bpair_cis = set->n_bpair_cis;
@@ -2064,7 +760,6 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 	result->final_min_sep = loop_diag.final_min_sep;
 	result->final_max_sep = loop_diag.final_max_sep;
 	result->final_sum_wedge_k = loop_diag.final_sum_wedge_k;
-	result->last_training_sum_wedge_k = loop_diag.final_sum_wedge_k;
 	result->final_refreshed_sum_wedge_k = final_graph_diag.sum_wedge_k_cis +
 		final_graph_diag.sum_wedge_k_trans;
 	result->final_refreshed_n_wedges = final_graph_diag.n_wedges_cis +
@@ -2073,26 +768,22 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 	result->final_min_rho_train_bpair = loop_diag.final_min_rho_train_bpair;
 	result->final_max_rho_train_bpair = loop_diag.final_max_rho_train_bpair;
 	result->final_n_expanded_edges = loop_diag.final_n_expanded_edges;
-	result->final_n_split_candidate_pairs = loop_diag.final_n_split_candidate_pairs;
-	result->final_n_split_filter1_pairs = loop_diag.final_n_split_filter1_pairs;
-	result->final_n_split_filter2_pairs = loop_diag.final_n_split_filter2_pairs;
-	result->final_n_split_bmap_pairs = loop_diag.final_n_split_bmap_pairs;
-	result->final_n_split_selected_raw = loop_diag.final_n_split_selected_raw;
-	result->final_n_split_gate_skip_raw = loop_diag.final_n_split_gate_skip_raw;
-	result->final_n_split_same_bin_skip_raw = loop_diag.final_n_split_same_bin_skip_raw;
-	result->final_n_split_locked_skip_raw = loop_diag.final_n_split_locked_skip_raw;
-	memcpy(result->final_n_split_state_raw_count, loop_diag.final_n_split_state_raw_count,
-		   sizeof(result->final_n_split_state_raw_count));
-	result->final_raw_outlier_diag = loop_diag.final_raw_outlier_diag;
+	result->final_n_softall_candidate_pairs = loop_diag.final_n_softall_candidate_pairs;
+	result->final_n_softall_filter1_pairs = loop_diag.final_n_softall_filter1_pairs;
+	result->final_n_softall_filter2_pairs = loop_diag.final_n_softall_filter2_pairs;
+	result->final_n_softall_bmap_pairs = loop_diag.final_n_softall_bmap_pairs;
+	result->final_n_softall_selected_raw = loop_diag.final_n_softall_selected_raw;
+	result->final_n_softall_gate_skip_raw = loop_diag.final_n_softall_gate_skip_raw;
+	result->final_n_softall_same_bin_skip_raw = loop_diag.final_n_softall_same_bin_skip_raw;
+	memcpy(result->final_n_softall_state_raw_count, loop_diag.final_n_softall_state_raw_count,
+		   sizeof(result->final_n_softall_state_raw_count));
 	result->k_rel_rep_effective = fdg_conf.k_rel_rep;
-	if (n_iter > 0) {
-		result->final_contact_energy = per_iter[n_iter - 1].relax_diag.final_contact_energy;
-		result->final_repulsion_energy = per_iter[n_iter - 1].relax_diag.final_repulsion_energy;
-		result->final_backbone_energy = per_iter[n_iter - 1].relax_diag.final_backbone_energy;
-		result->final_n_repulsion_pairs_considered = per_iter[n_iter - 1].relax_diag.final_n_repulsion_pairs_considered;
-		result->final_n_repulsion_pairs_blocked = per_iter[n_iter - 1].relax_diag.final_n_repulsion_pairs_blocked;
-		result->final_n_repulsion_pairs_active = per_iter[n_iter - 1].relax_diag.final_n_repulsion_pairs_active;
-	}
+	result->final_contact_energy = per_iter[n_iter - 1].relax_diag.final_contact_energy;
+	result->final_repulsion_energy = per_iter[n_iter - 1].relax_diag.final_repulsion_energy;
+	result->final_backbone_energy = per_iter[n_iter - 1].relax_diag.final_backbone_energy;
+	result->final_n_repulsion_pairs_considered = per_iter[n_iter - 1].relax_diag.final_n_repulsion_pairs_considered;
+	result->final_n_repulsion_pairs_blocked = per_iter[n_iter - 1].relax_diag.final_n_repulsion_pairs_blocked;
+	result->final_n_repulsion_pairs_active = per_iter[n_iter - 1].relax_diag.final_n_repulsion_pairs_active;
 	result->posterior_refreshed_after_final_relax = loop_diag.posterior_refreshed_after_final_relax;
 	result->n_bad_iter = loop_diag.n_bad_iter;
 	result->n_relax_nonfinite_iter = loop_diag.n_relax_nonfinite_iter;
@@ -2101,7 +792,8 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 		loop_diag.n_relax_nonfinite_iter == 0 &&
 		loop_diag.n_coord_nonfinite == 0;
 	failed |= check_i32("append summary", append_summary_row(summary_fp, result, n_iter,
-															 relax_steps, run_conf, relax_step, write_raw), 0);
+															 relax_steps, relax_step,
+															 input_contact_source, write_raw), 0);
 	fflush(summary_fp);
 	fprintf(stderr, "minimal P9016: status=%s final_entropy=%.8g final_pU=%.8g\n",
 			result->status_ok? "OK" : "WARN", result->final_mean_entropy,
@@ -2130,39 +822,7 @@ int main(void)
 	struct hk_map *map = 0;
 	struct hk_bmap *bmap = 0;
 	struct hk_blind_pair *raw = 0;
-	struct minimal_init_config init_conf;
-	struct minimal_run_config run_conf;
-	uint64_t hard_pc_seed;
-	int hard_pc_kind;
-	int d_scale_mode;
-	int state_weight_mode;
-	int mstep_graph_mode;
-	float trans_pmax_min, trans_margin_min, trans_posterior_power_gamma;
-	float imputed_p4_threshold;
-	int raw_split_confidence_mode;
-	float raw_split_confidence_floor;
-	float raw_split_trans_scale;
-	float raw_split_trans_confidence_power;
-	float raw_split_state_p_min;
-	float raw_split_posterior_power_gamma;
-	int raw_outlier_enable;
-	float raw_outlier_beta_cis;
-	float raw_outlier_beta_trans;
-	float raw_outlier_prior_cis;
-	float raw_outlier_prior_trans;
-	float raw_soft_min_q;
-	uint64_t raw_split_sample_salt;
-	float min_sep_unit, lambda_sep;
-	float chr_sep_unit, lambda_chr_sep;
-	float contact_k_multiplier_cis, contact_k_multiplier_trans;
-	float trans_d_scale_multiplier;
-	float temperature_start, temperature_end;
-	float repulsion_block_k_min;
-	int estep_score_mode;
-	int strict_no_prior_guard;
 	const char *input_contact_source;
-	int hard_pc_sizes[8];
-	int n_hard_pc_sizes, i;
 	int32_t n_raw = 0;
 	char root_dir[1024], summary_path[1024], bmap_summary_path[1024];
 	FILE *summary_fp = 0;
@@ -2171,147 +831,15 @@ int main(void)
 
 	if (make_output_root(root_dir, sizeof(root_dir)) != 0)
 		return 1;
-	if (softall_baseline_env_guard() != 0)
-		return 1;
-	minimal_init_config_from_env(&init_conf);
-	hard_pc_seed = env_u64_or_default("HK_BLIND_P9016_HARD_PC_SEED", HK_P9016_HARD_PC_SEED);
-	hard_pc_kind = hard_pc_kind_from_env();
-	d_scale_mode = d_scale_mode_from_env();
-	state_weight_mode = state_weight_mode_from_env();
-	mstep_graph_mode = mstep_graph_mode_from_env();
-	if (hard_pc_kind < 0 || d_scale_mode < 0 || state_weight_mode < 0 ||
-		mstep_graph_mode < 0)
-		return 1;
-	trans_pmax_min = env_float_or_default("HK_BLIND_P9016_TRANS_PMAX_MIN", 0.0f, 0.0f);
-	if (trans_pmax_min > 1.0f) trans_pmax_min = 1.0f;
-	trans_margin_min = env_float_or_default("HK_BLIND_P9016_TRANS_MARGIN_MIN", 0.0f, 0.0f);
-	if (trans_margin_min > 1.0f) trans_margin_min = 1.0f;
-	trans_posterior_power_gamma = env_float_or_default("HK_BLIND_P9016_TRANS_POSTERIOR_POWER_GAMMA", 1.0f, 0.0f);
-	if (trans_posterior_power_gamma > 0.0f && trans_posterior_power_gamma < 1.0f)
-		trans_posterior_power_gamma = 1.0f;
-	imputed_p4_threshold = env_float_or_default("HK_BLIND_P9016_IMPUTED_P4_THRESHOLD",
-												HK_P9016_IMPUTED_P4_THRESHOLD, 0.0f);
-	if (imputed_p4_threshold > 1.0f) imputed_p4_threshold = 1.0f;
-	raw_split_confidence_mode = raw_split_confidence_mode_from_env();
-	if (raw_split_confidence_mode < 0)
-		return 1;
-	raw_split_confidence_floor = env_float_or_default("HK_BLIND_P9016_RAW_SPLIT_CONFIDENCE_FLOOR",
-													  0.0f, 0.0f);
-	if (raw_split_confidence_floor > 1.0f) raw_split_confidence_floor = 1.0f;
-	raw_split_trans_scale = env_float_or_default("HK_BLIND_P9016_RAW_SPLIT_TRANS_SCALE",
-												 1.0f, 0.0f);
-	raw_split_trans_confidence_power =
-		env_float_or_default("HK_BLIND_P9016_RAW_SPLIT_TRANS_CONFIDENCE_POWER",
-							 1.0f, 1.0f);
-	raw_split_state_p_min = env_float_or_default("HK_BLIND_P9016_RAW_SPLIT_STATE_P_MIN",
-												 0.0f, 0.0f);
-	if (raw_split_state_p_min > 1.0f) raw_split_state_p_min = 1.0f;
-	raw_split_posterior_power_gamma =
-		env_float_or_default("HK_BLIND_P9016_RAW_SPLIT_POSTERIOR_POWER_GAMMA",
-							 1.0f, 0.0f);
-	if (raw_split_posterior_power_gamma > 0.0f &&
-		raw_split_posterior_power_gamma < 1.0f)
-		raw_split_posterior_power_gamma = 1.0f;
-	if (raw_split_posterior_power_gamma > 1.0f &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KWEIGHT &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDWEIGHT &&
-		mstep_graph_mode != HK_BLIND_MSTEP_GRAPH_RAW_SPLIT_SOFT_FILTERED_ALL_CONF_WFILTER_KDHALF) {
-		fprintf(stderr, "HK_BLIND_P9016_RAW_SPLIT_POSTERIOR_POWER_GAMMA>1 is only supported for mstep_graph_mode=wfilter_kweight, wfilter_kdweight or wfilter_kdhalf\n");
-		return 1;
-	}
-	raw_outlier_enable =
-		mstep_graph_mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_SOFT_OUTLIER;
-	if (getenv("HK_BLIND_P9016_RAW_OUTLIER_ENABLE"))
-		raw_outlier_enable = env_flag_enabled("HK_BLIND_P9016_RAW_OUTLIER_ENABLE");
-	if (getenv("HK_BLIND_RAW_OUTLIER_ENABLE"))
-		raw_outlier_enable = env_flag_enabled("HK_BLIND_RAW_OUTLIER_ENABLE");
-	raw_outlier_beta_cis =
-		env_float_or_default("HK_BLIND_P9016_RAW_OUTLIER_BETA_CIS",
-							 HK_BLIND_RAW_OUTLIER_DEFAULT_BETA_CIS, 0.0f);
-	raw_outlier_beta_trans =
-		env_float_or_default("HK_BLIND_P9016_RAW_OUTLIER_BETA_TRANS",
-							 HK_BLIND_RAW_OUTLIER_DEFAULT_BETA_TRANS, 0.0f);
-	raw_outlier_prior_cis =
-		env_float_or_default("HK_BLIND_P9016_RAW_OUTLIER_PRIOR_CIS",
-							 HK_BLIND_RAW_OUTLIER_DEFAULT_PRIOR_CIS, 0.0f);
-	raw_outlier_prior_trans =
-		env_float_or_default("HK_BLIND_P9016_RAW_OUTLIER_PRIOR_TRANS",
-							 HK_BLIND_RAW_OUTLIER_DEFAULT_PRIOR_TRANS, 0.0f);
-	raw_soft_min_q =
-		env_float_or_default("HK_BLIND_P9016_RAW_SOFT_MIN_Q",
-							 HK_BLIND_RAW_SOFT_DEFAULT_MIN_Q, 0.0f);
-	if (raw_soft_min_q > 1.0f)
-		raw_soft_min_q = 1.0f;
-	raw_split_sample_salt = env_u64_or_default("HK_BLIND_P9016_RAW_SPLIT_SAMPLE_SALT", 0);
-	if (mstep_graph_mode_uses_stochastic_selection(mstep_graph_mode)) {
-		char salt_buf[32];
-		snprintf(salt_buf, sizeof(salt_buf), "%llu",
-				 (unsigned long long)raw_split_sample_salt);
-		setenv("HK_BLIND_RAW_SPLIT_SAMPLE_SALT", salt_buf, 1);
-	}
-	min_sep_unit = env_float_or_default("HK_BLIND_P9016_MIN_SEP_UNIT", 0.0f, 0.0f);
-	lambda_sep = env_float_or_default("HK_BLIND_P9016_LAMBDA_SEP", 0.0f, 0.0f);
-	chr_sep_unit = env_float_or_default("HK_BLIND_P9016_CHR_SEP_UNIT", 0.0f, 0.0f);
-	lambda_chr_sep = env_float_or_default("HK_BLIND_P9016_LAMBDA_CHR_SEP", 0.0f, 0.0f);
-	contact_k_multiplier_cis = env_float_or_default("HK_BLIND_P9016_CONTACT_K_MULTIPLIER_CIS",
-													 1.0f, 0.0f);
-	contact_k_multiplier_trans = env_float_or_default("HK_BLIND_P9016_CONTACT_K_MULTIPLIER_TRANS",
-													   1.0f, 0.0f);
-	trans_d_scale_multiplier = env_float_or_default("HK_BLIND_P9016_TRANS_D_SCALE_MULTIPLIER",
-													 1.0f, 0.0f);
-	if (trans_d_scale_multiplier <= 0.0f)
-		trans_d_scale_multiplier = 1.0f;
-	temperature_start = env_float_or_default("HK_BLIND_P9016_TEMPERATURE_START", 1.0f, 1e-6f);
-	temperature_end = env_float_or_default("HK_BLIND_P9016_TEMPERATURE_END", 1.0f, 1e-6f);
-	repulsion_block_k_min = env_float_or_default("HK_BLIND_P9016_REPULSION_BLOCK_K_MIN", 0.0f, 0.0f);
-	estep_score_mode = estep_score_mode_from_env();
-	if (estep_score_mode < 0 || init_conf.mode < 0)
-		return 1;
-	strict_no_prior_guard = env_flag_enabled("HK_BLIND_P9016_STRICT_NO_PRIOR");
 	input_contact_source = input_contact_source_from_path(pairs_path);
-	n_hard_pc_sizes = env_percent_list_or_default("HK_BLIND_P9016_HARD_PC_SIZES",
-												  hard_pc_sizes, 8);
-	if (n_hard_pc_sizes < 0)
-		return 1;
-	if (n_hard_pc_sizes != 1 || hard_pc_sizes[0] != 0) {
-		fprintf(stderr, "HK_BLIND_P9016_HARD_PC_SIZES only supports 0 in the cleaned P9016 softall baseline\n");
+	if (strcmp(input_contact_source, "raw_pairs") != 0) {
+		fprintf(stderr, "minimal P9016 requires raw P9016 pairs, got source=%s path=%s\n",
+				input_contact_source, pairs_path);
 		return 1;
 	}
-	if (strict_no_prior_guard) {
-		if (init_conf.mode != HK_BLIND_INIT_RANDOM_DIPLOID) {
-			fprintf(stderr, "strict no-prior requires HK_BLIND_P9016_INIT_MODE=random_diploid\n");
-			return 1;
-		}
-		if (mstep_graph_mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_CIS ||
-			mstep_graph_mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_PCUT_ORACLE_ALL ||
-			mstep_graph_mode == HK_BLIND_MSTEP_GRAPH_RAW_EXPECTED_ORACLE_ALL) {
-			fprintf(stderr, "strict no-prior rejects oracle addback modes because they use imputed p4 addback labels\n");
-			return 1;
-		}
-		if (!strict_no_prior_source_ok(input_contact_source, pairs_path)) {
-			fprintf(stderr, "strict no-prior rejects input_contact_source=%s path=%s; only the P9016 raw pairs path or smoke fixture is allowed\n",
-					input_contact_source, pairs_path);
-			return 1;
-		}
-		if (n_hard_pc_sizes != 1 || hard_pc_sizes[0] != 0) {
-			fprintf(stderr, "strict no-prior requires HK_BLIND_P9016_HARD_PC_SIZES=0\n");
-			return 1;
-		}
-	}
-	fprintf(stderr, "minimal P9016: input=%s bin_size_bp=%d output_root=%s init=%s seed=%llu d_scale_mode=%s state_weight_mode=%s mstep_graph_mode=%s estep_score_mode=%s pmax_min=%.4g margin_min=%.4g gamma=%.4g state_p_min=%.4g raw_split_gamma=%.4g outlier=%d beta=%.4g/%.4g prior=%.4g/%.4g minq=%.4g contact_k=%.4g/%.4g trans_d_scale=%.4g temperature=%.4g->%.4g repulsion_block_k_min=%.4g chr_sep=%.4g lambda_chr_sep=%.4g\n",
-			pairs_path, bin_size_bp, root_dir, hk_blind_init_mode_name(init_conf.mode),
-			(unsigned long long)init_conf.seed, hk_blind_d_scale_mode_name(d_scale_mode),
-			hk_blind_state_weight_mode_name(state_weight_mode),
-			hk_blind_mstep_graph_mode_name(mstep_graph_mode),
-			hk_blind_estep_score_mode_name(estep_score_mode), trans_pmax_min,
-			trans_margin_min, trans_posterior_power_gamma,
-			raw_split_state_p_min, raw_split_posterior_power_gamma,
-			raw_outlier_enable, raw_outlier_beta_cis, raw_outlier_beta_trans,
-			raw_outlier_prior_cis, raw_outlier_prior_trans, raw_soft_min_q,
-			contact_k_multiplier_cis,
-			contact_k_multiplier_trans, trans_d_scale_multiplier,
-			temperature_start, temperature_end,
-			repulsion_block_k_min, chr_sep_unit, lambda_chr_sep);
+	fprintf(stderr,
+			"minimal P9016: input=%s bin_size_bp=%d output_root=%s baseline=softall n_iter=%d relax_steps=%d relax_step=%.8g\n",
+			pairs_path, bin_size_bp, root_dir, n_iter, relax_steps, relax_step);
 	if (read_blind_pairs(pairs_path, bin_size_bp, &map, &bmap, &raw, &n_raw) != 0)
 		return 1;
 	path_join(bmap_summary_path, sizeof(bmap_summary_path), root_dir, "bmap_summary.tsv");
@@ -2324,39 +852,10 @@ int main(void)
 		goto cleanup;
 	}
 	failed |= check_i32("write summary header", write_summary_header(summary_fp), 0);
-	for (i = 0; !failed && i < n_hard_pc_sizes; ++i) {
-		minimal_run_config_init(&run_conf, &init_conf, hard_pc_sizes[i], hard_pc_kind,
-								d_scale_mode, state_weight_mode, mstep_graph_mode,
-								trans_pmax_min,
-								trans_margin_min, trans_posterior_power_gamma,
-								imputed_p4_threshold,
-								raw_split_confidence_mode,
-								raw_split_confidence_floor,
-								raw_split_trans_scale,
-								raw_split_trans_confidence_power,
-								raw_split_state_p_min,
-								raw_split_posterior_power_gamma,
-								raw_outlier_enable,
-								raw_outlier_beta_cis,
-								raw_outlier_beta_trans,
-								raw_outlier_prior_cis,
-								raw_outlier_prior_trans,
-								raw_soft_min_q,
-								raw_split_sample_salt,
-								hard_pc_seed, min_sep_unit, lambda_sep,
-								chr_sep_unit, lambda_chr_sep,
-								contact_k_multiplier_cis,
-								contact_k_multiplier_trans,
-								trans_d_scale_multiplier,
-								temperature_start, temperature_end,
-								repulsion_block_k_min,
-								estep_score_mode,
-								strict_no_prior_guard,
-								input_contact_source);
-		failed |= run_minimal_config(bmap, raw, map->pairs, n_raw, pairs_path, root_dir,
+	if (!failed)
+		failed |= run_minimal_config(bmap, raw, n_raw, pairs_path, root_dir,
 									 bin_size_bp, n_iter, relax_steps, write_raw,
-									 relax_step, &run_conf, summary_fp, &result);
-	}
+									 relax_step, input_contact_source, summary_fp, &result);
 cleanup:
 	if (summary_fp && fclose(summary_fp) != 0)
 		failed = 1;

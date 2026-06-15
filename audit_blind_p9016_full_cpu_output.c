@@ -32,9 +32,7 @@ enum manifest_key {
 	MK_BASE_K_MEAN,
 	MK_BASE_K_MAX,
 	MK_BASE_K_N_NONFINITE,
-	MK_LEGACY_BASE_K_UNUSED,
 	MK_INIT_MODE,
-	MK_INIT_SCALE,
 	MK_PRIOR_MODE,
 	MK_PRIOR_EPS,
 	MK_PRIOR_INTER_DENSITY,
@@ -55,7 +53,6 @@ enum manifest_key {
 	MK_N_RAW_SAME_BIN_EXCLUDED,
 	MK_N_BPAIR_SAME_BIN_EXCLUDED,
 	MK_RAW_POSTERIOR_SAME_BIN_POLICY,
-	MK_INIT_SPLIT_PARAMS_USED,
 	MK_MIN_SEP_UNIT,
 	MK_LAMBDA_SEP,
 	MK_RELAX_STEP,
@@ -88,10 +85,9 @@ enum manifest_key {
 	MK_N_RELAX_NONFINITE_ITER,
 	MK_N_COORD_NONFINITE,
 	MK_STATUS,
+	MK_BASELINE,
 	MK_N_REQUIRED,
 	MK_RHO_TRAIN_FLOOR = MK_N_REQUIRED,
-	MK_CONTACT_K_MULTIPLIER_CIS,
-	MK_CONTACT_K_MULTIPLIER_TRANS,
 	MK_N_RAW_CIS,
 	MK_N_RAW_TRANS,
 	MK_N_BPAIR_CIS,
@@ -103,7 +99,6 @@ enum manifest_key {
 struct manifest_info {
 	uint8_t seen[MK_N_KEYS];
 	int has_output_raw_posterior;
-	int has_legacy_init_field;
 	char sample[64];
 	char status[64];
 	char runner_family[128];
@@ -132,7 +127,6 @@ struct manifest_info {
 	int64_t n_bpair_cis;
 	int64_t n_bpair_trans;
 	int64_t uses_phase_labels;
-	int64_t init_split_params_used;
 	int64_t posterior_refreshed_after_final_relax;
 	int64_t n_bad_iter;
 	int64_t n_relax_nonfinite_iter;
@@ -143,8 +137,6 @@ struct manifest_info {
 	double base_k_min;
 	double base_k_mean;
 	double base_k_max;
-	double legacy_base_k_unused;
-	double init_scale;
 	double d_scale_eps_count;
 	double min_sep_unit;
 	double lambda_sep;
@@ -154,8 +146,6 @@ struct manifest_info {
 	double rho_train_start;
 	double rho_train_end;
 	double rho_train_floor;
-	double contact_k_multiplier_cis;
-	double contact_k_multiplier_trans;
 	double init_eps_effective;
 	double init_noise_scale_effective;
 	double prior_eps;
@@ -186,7 +176,7 @@ struct manifest_info {
 	char repulsion_blocking_mode[128];
 	char raw_posterior_same_bin_policy[128];
 	char posterior_refresh_prior_mode[128];
-	int has_stale_manifest_base_k;
+	char baseline[64];
 };
 
 struct file_audit {
@@ -270,9 +260,9 @@ static void add_example_fmt(struct file_audit *audit, const char *prefix, int64_
 
 static int scan_forbidden_line(struct file_audit *audit, const char *file_label, int64_t row, const char *line)
 {
-	static const char *forbidden[] = { "phase0", "phase1", "truth", "oracle" };
+	static const char *forbidden[] = { "phase0", "phase1", "truth" };
 	int i, hit = 0;
-	for (i = 0; i < 4; ++i) {
+	for (i = 0; i < (int)(sizeof(forbidden) / sizeof(forbidden[0])); ++i) {
 		if (strstr(line, forbidden[i]) != 0) {
 			char buf[256];
 			++audit->forbidden_hits;
@@ -337,9 +327,7 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "base_k_mean") == 0) return MK_BASE_K_MEAN;
 	if (strcmp(key, "base_k_max") == 0) return MK_BASE_K_MAX;
 	if (strcmp(key, "base_k_n_nonfinite") == 0) return MK_BASE_K_N_NONFINITE;
-	if (strcmp(key, "legacy_base_k_unused") == 0) return MK_LEGACY_BASE_K_UNUSED;
 	if (strcmp(key, "init_mode") == 0) return MK_INIT_MODE;
-	if (strcmp(key, "init_scale") == 0) return MK_INIT_SCALE;
 	if (strcmp(key, "prior_mode") == 0) return MK_PRIOR_MODE;
 	if (strcmp(key, "prior_eps") == 0) return MK_PRIOR_EPS;
 	if (strcmp(key, "prior_inter_density") == 0) return MK_PRIOR_INTER_DENSITY;
@@ -360,7 +348,6 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "n_raw_same_bin_excluded") == 0) return MK_N_RAW_SAME_BIN_EXCLUDED;
 	if (strcmp(key, "n_bpair_same_bin_excluded") == 0) return MK_N_BPAIR_SAME_BIN_EXCLUDED;
 	if (strcmp(key, "raw_posterior_same_bin_policy") == 0) return MK_RAW_POSTERIOR_SAME_BIN_POLICY;
-	if (strcmp(key, "init_split_params_used") == 0) return MK_INIT_SPLIT_PARAMS_USED;
 	if (strcmp(key, "min_sep_unit") == 0) return MK_MIN_SEP_UNIT;
 	if (strcmp(key, "lambda_sep") == 0) return MK_LAMBDA_SEP;
 	if (strcmp(key, "relax_step") == 0) return MK_RELAX_STEP;
@@ -370,8 +357,7 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "rho_train_start") == 0) return MK_RHO_TRAIN_START;
 	if (strcmp(key, "rho_train_end") == 0) return MK_RHO_TRAIN_END;
 	if (strcmp(key, "rho_train_floor") == 0) return MK_RHO_TRAIN_FLOOR;
-	if (strcmp(key, "contact_k_multiplier_cis") == 0) return MK_CONTACT_K_MULTIPLIER_CIS;
-	if (strcmp(key, "contact_k_multiplier_trans") == 0) return MK_CONTACT_K_MULTIPLIER_TRANS;
+	if (strcmp(key, "baseline") == 0) return MK_BASELINE;
 	if (strcmp(key, "n_raw_cis") == 0) return MK_N_RAW_CIS;
 	if (strcmp(key, "n_raw_trans") == 0) return MK_N_RAW_TRANS;
 	if (strcmp(key, "n_bpair_cis") == 0) return MK_N_BPAIR_CIS;
@@ -402,6 +388,36 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "n_coord_nonfinite") == 0) return MK_N_COORD_NONFINITE;
 	if (strcmp(key, "status") == 0) return MK_STATUS;
 	return -1;
+}
+
+static int manifest_optional_current_key(const char *key)
+{
+	return strcmp(key, "input_contact_source") == 0 ||
+		   strcmp(key, "bin_size_bp") == 0 ||
+		   strcmp(key, "resolution_label") == 0 ||
+		   strcmp(key, "scaffold_source") == 0 ||
+		   strcmp(key, "scaffold_fdg_n_iter") == 0 ||
+		   strcmp(key, "training_graph_weighted_filter") == 0 ||
+		   strcmp(key, "training_graph_probability_weighted") == 0 ||
+		   strcmp(key, "training_graph_dscale_probability_weighted") == 0 ||
+		   strcmp(key, "estep_score_mode") == 0 ||
+		   strcmp(key, "copy_labels_are_gauge_only") == 0 ||
+		   strcmp(key, "uses_charm_or_reference") == 0 ||
+		   strcmp(key, "uses_charm_for_training") == 0 ||
+		   strcmp(key, "repulsion_multiplier") == 0 ||
+		   strcmp(key, "k_rel_rep_effective") == 0 ||
+		   strcmp(key, "output_coords_gz") == 0 ||
+		   strcmp(key, "output_force_class_diag") == 0 ||
+		   strcmp(key, "final_mean_sep") == 0 ||
+		   strcmp(key, "final_min_sep") == 0 ||
+		   strcmp(key, "final_max_sep") == 0 ||
+		   strcmp(key, "last_training_sum_wedge_k") == 0 ||
+		   strcmp(key, "final_refreshed_sum_wedge_k") == 0 ||
+		   strcmp(key, "final_refreshed_n_wedges") == 0 ||
+		   strcmp(key, "final_mean_rho_train_bpair") == 0 ||
+		   strcmp(key, "final_min_rho_train_bpair") == 0 ||
+		   strcmp(key, "final_max_rho_train_bpair") == 0 ||
+		   strcmp(key, "final_repulsion_energy") == 0;
 }
 
 static int parse_i64_value(const char *s, int64_t *out)
@@ -496,6 +512,8 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_RUNNER_FAMILY: snprintf(info->runner_family, sizeof(info->runner_family), "%s", value); return 0;
 	case MK_RUNNER_VERSION: snprintf(info->runner_version, sizeof(info->runner_version), "%s", value); return 0;
 	case MK_DEFAULT_PROFILE: snprintf(info->default_profile, sizeof(info->default_profile), "%s", value); return 0;
+	case MK_INPUT_PATH: return 0;
+	case MK_OUTPUT_DIR: return 0;
 	case MK_STATUS: snprintf(info->status, sizeof(info->status), "%s", value); return 0;
 	case MK_BASE_K_MODE: snprintf(info->base_k_mode, sizeof(info->base_k_mode), "%s", value); return 0;
 	case MK_INIT_MODE: snprintf(info->init_mode, sizeof(info->init_mode), "%s", value); return 0;
@@ -506,6 +524,7 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_REPULSION_BLOCKING_MODE: snprintf(info->repulsion_blocking_mode, sizeof(info->repulsion_blocking_mode), "%s", value); return 0;
 	case MK_RAW_POSTERIOR_SAME_BIN_POLICY: snprintf(info->raw_posterior_same_bin_policy, sizeof(info->raw_posterior_same_bin_policy), "%s", value); return 0;
 	case MK_POSTERIOR_REFRESH_PRIOR_MODE: snprintf(info->posterior_refresh_prior_mode, sizeof(info->posterior_refresh_prior_mode), "%s", value); return 0;
+	case MK_BASELINE: snprintf(info->baseline, sizeof(info->baseline), "%s", value); return 0;
 	case MK_N_RAW: return parse_i64_value(value, &info->n_raw);
 	case MK_N_BPAIR: return parse_i64_value(value, &info->n_bpair);
 	case MK_N_BEADS: return parse_i64_value(value, &info->n_beads);
@@ -527,7 +546,6 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_N_BPAIR_CIS: return parse_i64_value(value, &info->n_bpair_cis);
 	case MK_N_BPAIR_TRANS: return parse_i64_value(value, &info->n_bpair_trans);
 	case MK_USES_PHASE_LABELS: return parse_i64_value(value, &info->uses_phase_labels);
-	case MK_INIT_SPLIT_PARAMS_USED: return parse_i64_value(value, &info->init_split_params_used);
 	case MK_POSTERIOR_REFRESHED_AFTER_FINAL_RELAX: return parse_i64_value(value, &info->posterior_refreshed_after_final_relax);
 	case MK_N_BAD_ITER: return parse_i64_value(value, &info->n_bad_iter);
 	case MK_N_RELAX_NONFINITE_ITER: return parse_i64_value(value, &info->n_relax_nonfinite_iter);
@@ -538,8 +556,6 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_BASE_K_MIN: return parse_double_value(value, &info->base_k_min);
 	case MK_BASE_K_MEAN: return parse_double_value(value, &info->base_k_mean);
 	case MK_BASE_K_MAX: return parse_double_value(value, &info->base_k_max);
-	case MK_LEGACY_BASE_K_UNUSED: return parse_double_value(value, &info->legacy_base_k_unused);
-	case MK_INIT_SCALE: return parse_double_value(value, &info->init_scale);
 	case MK_D_SCALE_EPS_COUNT: return parse_double_value(value, &info->d_scale_eps_count);
 	case MK_MIN_SEP_UNIT: return parse_double_value(value, &info->min_sep_unit);
 	case MK_LAMBDA_SEP: return parse_double_value(value, &info->lambda_sep);
@@ -549,8 +565,6 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_RHO_TRAIN_START: return parse_double_value(value, &info->rho_train_start);
 	case MK_RHO_TRAIN_END: return parse_double_value(value, &info->rho_train_end);
 	case MK_RHO_TRAIN_FLOOR: return parse_double_value(value, &info->rho_train_floor);
-	case MK_CONTACT_K_MULTIPLIER_CIS: return parse_double_value(value, &info->contact_k_multiplier_cis);
-	case MK_CONTACT_K_MULTIPLIER_TRANS: return parse_double_value(value, &info->contact_k_multiplier_trans);
 	case MK_INIT_EPS_EFFECTIVE: return parse_double_value(value, &info->init_eps_effective);
 	case MK_INIT_NOISE_SCALE_EFFECTIVE: return parse_double_value(value, &info->init_noise_scale_effective);
 	case MK_PRIOR_EPS: return parse_double_value(value, &info->prior_eps);
@@ -574,15 +588,14 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_OUTPUT_COORDS: snprintf(info->output_coords, sizeof(info->output_coords), "%s", value); return 0;
 	case MK_OUTPUT_LOOP_DIAG: snprintf(info->output_loop_diag, sizeof(info->output_loop_diag), "%s", value); return 0;
 	default:
-		if (strcmp(key, "base_k") == 0)
-			info->has_stale_manifest_base_k = 1;
-		if (strcmp(key, "init_eps") == 0 || strcmp(key, "init_noise_scale") == 0)
-			info->has_legacy_init_field = 1;
 		if (strcmp(key, "output_raw_posterior") == 0) {
 			info->has_output_raw_posterior = 1;
 			snprintf(info->output_raw_posterior, sizeof(info->output_raw_posterior), "%s", value);
+			return 0;
 		}
-		return 0;
+		if (manifest_optional_current_key(key))
+			return 0;
+		return -1;
 	}
 }
 
@@ -596,8 +609,6 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 
 	memset(info, 0, sizeof(*info));
 	info->rho_train_floor = HK_BLIND_RHO_TRAIN_DEFAULT_FLOOR;
-	info->contact_k_multiplier_cis = 1.0;
-	info->contact_k_multiplier_trans = 1.0;
 	audit_init(audit);
 	if (fp == 0) {
 		add_example(audit, "manifest open failed");
@@ -649,13 +660,17 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		failed = 1;
 	}
 	if (info->runner_family[0] == 0 || info->runner_version[0] == 0 ||
-		info->default_profile[0] == 0) {
+		info->default_profile[0] == 0 || info->baseline[0] == 0) {
 		add_example(audit, "manifest runner identity fields are empty");
 		failed = 1;
 	}
 	if (strcmp(info->runner_family, "p9016_minimal") != 0 &&
 		strcmp(info->runner_family, "test_fixture") != 0) {
 		add_example(audit, "manifest runner_family is not recognized");
+		failed = 1;
+	}
+	if (strcmp(info->baseline, "softall") != 0) {
+		add_example(audit, "manifest baseline is not softall");
 		failed = 1;
 	}
 	if (strcmp(info->status, "OK") != 0) {
@@ -672,14 +687,6 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 	}
 	if (info->n_iter <= 0 || info->relax_steps < 0 || info->init_seed < 0) {
 		add_example(audit, "manifest iteration/init integer value out of range");
-		failed = 1;
-	}
-	if (info->has_stale_manifest_base_k) {
-		add_example(audit, "manifest contains stale ambiguous base_k field");
-		failed = 1;
-	}
-	if (info->has_legacy_init_field) {
-		add_example(audit, "manifest contains legacy ambiguous init_eps/init_noise_scale field");
 		failed = 1;
 	}
 	if (!isfinite(info->unit) || info->unit <= 0.0 ||
@@ -704,15 +711,11 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest base_k_mode is not recognized");
 		failed = 1;
 	}
-	if (strcmp(info->init_mode, "toy_split") != 0 &&
-		strcmp(info->init_mode, "unphased_scaffold_split") != 0 &&
-		strcmp(info->init_mode, "random_diploid") != 0 &&
-		strcmp(info->init_mode, "random_haploid_split") != 0) {
+	if (strcmp(info->init_mode, "unphased_scaffold_split") != 0) {
 		add_example(audit, "manifest init_mode is not recognized");
 		failed = 1;
 	}
-	if (strcmp(info->prior_mode, "uniform") != 0 &&
-		strcmp(info->prior_mode, "cis_inter_ratio") != 0) {
+	if (strcmp(info->prior_mode, "uniform") != 0) {
 		add_example(audit, "manifest prior_mode is not recognized");
 		failed = 1;
 	}
@@ -730,41 +733,15 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest prior metadata out of range");
 		failed = 1;
 	}
-	if (info->prior_n_alpha > 0) {
-		if (info->prior_alpha_min < info->prior_alpha_clamp_min - HK_AUDIT_TOL ||
-			info->prior_alpha_max > info->prior_alpha_clamp_max + HK_AUDIT_TOL ||
-			info->prior_alpha_min > info->prior_alpha_median + HK_AUDIT_TOL ||
-			info->prior_alpha_median > info->prior_alpha_max + HK_AUDIT_TOL) {
-			add_example(audit, "manifest prior alpha summary is inconsistent");
-			failed = 1;
-		}
-	}
-	if (strcmp(info->prior_mode, "cis_inter_ratio") == 0) {
-		if (strcmp(info->prior_smoothing_method, "moving_average_3bin_possible_weighted") != 0) {
-			add_example(audit, "manifest cis prior smoothing method is not recognized");
-			failed = 1;
-		}
-		if (info->prior_possible_inter > 0.0) {
-			double expected_density = info->prior_observed_inter / info->prior_possible_inter;
-			if (!check_close(info->prior_inter_density, expected_density)) {
-				add_example(audit, "manifest prior inter density disagrees with observed/possible");
-				failed = 1;
-			}
-		}
-	} else if (strcmp(info->prior_smoothing_method, "none") != 0) {
+	if (info->prior_n_alpha != 0 || strcmp(info->prior_smoothing_method, "none") != 0) {
 		add_example(audit, "manifest uniform prior smoothing method is not none");
 		failed = 1;
 	}
-	if (strcmp(info->rho_train_mode, "constant") != 0 &&
-		strcmp(info->rho_train_mode, "entropy") != 0 &&
-		strcmp(info->rho_train_mode, "entropy_with_floor") != 0 &&
-		strcmp(info->rho_train_mode, "entropy_cis_constant_trans") != 0 &&
-		strcmp(info->rho_train_mode, "entropy_cis_floor_trans") != 0) {
+	if (strcmp(info->rho_train_mode, "constant") != 0) {
 		add_example(audit, "manifest rho_train_mode is not recognized");
 		failed = 1;
 	}
-	if (strcmp(info->d_scale_mode, "raw_count") != 0 &&
-		strcmp(info->d_scale_mode, "expected_count") != 0) {
+	if (strcmp(info->d_scale_mode, "raw_count") != 0) {
 		add_example(audit, "manifest d_scale_mode is not recognized");
 		failed = 1;
 	}
@@ -791,10 +768,8 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		failed = 1;
 	}
 	if (!isfinite(info->rho_train_floor) || info->rho_train_floor < 0.0 ||
-		info->rho_train_floor > 1.0 ||
-		!isfinite(info->contact_k_multiplier_cis) || info->contact_k_multiplier_cis < 0.0 ||
-		!isfinite(info->contact_k_multiplier_trans) || info->contact_k_multiplier_trans < 0.0) {
-		add_example(audit, "manifest rho floor/contact multiplier out of range");
+		info->rho_train_floor > 1.0) {
+		add_example(audit, "manifest rho floor out of range");
 		failed = 1;
 	}
 	if (info->seen[MK_N_RAW_CIS] || info->seen[MK_N_RAW_TRANS] ||
@@ -815,24 +790,10 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest single-iteration schedule endpoints differ from effective value");
 		failed = 1;
 	}
-	if (!isfinite(info->init_eps_effective) || info->init_eps_effective < 0.0 ||
-		!isfinite(info->init_noise_scale_effective) || info->init_noise_scale_effective < 0.0 ||
-		!isfinite(info->init_scale) || info->init_scale < 0.0) {
+	if (!isfinite(info->init_eps_effective) || info->init_eps_effective <= 0.0 ||
+		!isfinite(info->init_noise_scale_effective) || info->init_noise_scale_effective < 0.0) {
 		add_example(audit, "manifest init value out of range");
 		failed = 1;
-	}
-	if (strcmp(info->init_mode, "random_diploid") == 0) {
-		if (info->init_split_params_used != 0 ||
-			info->init_eps_effective > HK_AUDIT_TOL ||
-			info->init_noise_scale_effective > HK_AUDIT_TOL) {
-			add_example(audit, "manifest random_diploid has nonzero split parameters");
-			failed = 1;
-		}
-	} else {
-		if (info->init_split_params_used != 1 || info->init_eps_effective <= 0.0) {
-			add_example(audit, "manifest split init mode has invalid effective split parameters");
-			failed = 1;
-		}
 	}
 	if (!isfinite(info->d_scale_eps_count) || info->d_scale_eps_count <= 0.0) {
 		add_example(audit, "manifest d_scale_eps_count out of range");
@@ -880,8 +841,7 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest repulsion_mode is not N2/CELL");
 		failed = 1;
 	}
-	if (strcmp(info->repulsion_blocking_mode, "current_edge_blocking") != 0 &&
-		strcmp(info->repulsion_blocking_mode, "contact_k_threshold") != 0) {
+	if (strcmp(info->repulsion_blocking_mode, "current_edge_blocking") != 0) {
 		add_example(audit, "manifest repulsion_blocking_mode is not recognized");
 		failed = 1;
 	}
