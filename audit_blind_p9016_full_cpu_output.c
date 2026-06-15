@@ -86,6 +86,8 @@ enum manifest_key {
 	MK_N_COORD_NONFINITE,
 	MK_STATUS,
 	MK_BASELINE,
+	MK_MSTEP_GRAPH_MODE,
+	MK_BIN_SIZE_BP,
 	MK_N_REQUIRED,
 	MK_RHO_TRAIN_FLOOR = MK_N_REQUIRED,
 	MK_N_RAW_CIS,
@@ -108,10 +110,12 @@ struct manifest_info {
 	char output_coords[1024];
 	char output_loop_diag[1024];
 	char output_raw_posterior[1024];
+	char mstep_graph_mode[128];
 	int64_t n_raw;
 	int64_t n_bpair;
 	int64_t n_beads;
 	int64_t resolution;
+	int64_t bin_size_bp;
 	int64_t n_iter;
 	int64_t relax_steps;
 	int64_t init_seed;
@@ -318,6 +322,7 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "n_bpair") == 0) return MK_N_BPAIR;
 	if (strcmp(key, "n_beads") == 0) return MK_N_BEADS;
 	if (strcmp(key, "resolution") == 0) return MK_RESOLUTION;
+	if (strcmp(key, "bin_size_bp") == 0) return MK_BIN_SIZE_BP;
 	if (strcmp(key, "n_iter") == 0) return MK_N_ITER;
 	if (strcmp(key, "unit") == 0) return MK_UNIT;
 	if (strcmp(key, "d_scale") == 0) return MK_D_SCALE;
@@ -358,6 +363,7 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "rho_train_end") == 0) return MK_RHO_TRAIN_END;
 	if (strcmp(key, "rho_train_floor") == 0) return MK_RHO_TRAIN_FLOOR;
 	if (strcmp(key, "baseline") == 0) return MK_BASELINE;
+	if (strcmp(key, "mstep_graph_mode") == 0) return MK_MSTEP_GRAPH_MODE;
 	if (strcmp(key, "n_raw_cis") == 0) return MK_N_RAW_CIS;
 	if (strcmp(key, "n_raw_trans") == 0) return MK_N_RAW_TRANS;
 	if (strcmp(key, "n_bpair_cis") == 0) return MK_N_BPAIR_CIS;
@@ -393,7 +399,6 @@ static int manifest_key_index(const char *key)
 static int manifest_optional_current_key(const char *key)
 {
 	return strcmp(key, "input_contact_source") == 0 ||
-		   strcmp(key, "bin_size_bp") == 0 ||
 		   strcmp(key, "resolution_label") == 0 ||
 		   strcmp(key, "scaffold_source") == 0 ||
 		   strcmp(key, "scaffold_fdg_n_iter") == 0 ||
@@ -525,10 +530,12 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_RAW_POSTERIOR_SAME_BIN_POLICY: snprintf(info->raw_posterior_same_bin_policy, sizeof(info->raw_posterior_same_bin_policy), "%s", value); return 0;
 	case MK_POSTERIOR_REFRESH_PRIOR_MODE: snprintf(info->posterior_refresh_prior_mode, sizeof(info->posterior_refresh_prior_mode), "%s", value); return 0;
 	case MK_BASELINE: snprintf(info->baseline, sizeof(info->baseline), "%s", value); return 0;
+	case MK_MSTEP_GRAPH_MODE: snprintf(info->mstep_graph_mode, sizeof(info->mstep_graph_mode), "%s", value); return 0;
 	case MK_N_RAW: return parse_i64_value(value, &info->n_raw);
 	case MK_N_BPAIR: return parse_i64_value(value, &info->n_bpair);
 	case MK_N_BEADS: return parse_i64_value(value, &info->n_beads);
 	case MK_RESOLUTION: return parse_i64_value(value, &info->resolution);
+	case MK_BIN_SIZE_BP: return parse_i64_value(value, &info->bin_size_bp);
 	case MK_N_ITER: return parse_i64_value(value, &info->n_iter);
 	case MK_PRIOR_N_DISTANCE_BINS: return parse_i64_value(value, &info->prior_n_distance_bins);
 	case MK_PRIOR_N_ALPHA: return parse_i64_value(value, &info->prior_n_alpha);
@@ -673,6 +680,10 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest baseline is not softall");
 		failed = 1;
 	}
+	if (strcmp(info->mstep_graph_mode, "raw_expected_soft_all") != 0) {
+		add_example(audit, "manifest mstep_graph_mode is not raw_expected_soft_all");
+		failed = 1;
+	}
 	if (strcmp(info->status, "OK") != 0) {
 		add_example(audit, "manifest status is not OK");
 		failed = 1;
@@ -681,8 +692,16 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest count is nonpositive");
 		failed = 1;
 	}
-	if (info->resolution != 1000000) {
-		add_example(audit, "manifest resolution is not 1000000");
+	if (info->resolution <= 0) {
+		add_example(audit, "manifest resolution is nonpositive");
+		failed = 1;
+	}
+	if (info->bin_size_bp <= 0) {
+		add_example(audit, "manifest bin_size_bp is nonpositive");
+		failed = 1;
+	}
+	if (info->resolution != info->bin_size_bp) {
+		add_example(audit, "manifest resolution disagrees with bin_size_bp");
 		failed = 1;
 	}
 	if (info->n_iter <= 0 || info->relax_steps < 0 || info->init_seed < 0) {

@@ -483,6 +483,7 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"rho_train_mode\tconstant\n"
 				"rho_train_floor\t0\n"
 				"baseline\tsoftall\n"
+				"mstep_graph_mode\traw_expected_soft_all\n"
 				"training_graph_weighted_filter\t1\n"
 				"training_graph_probability_weighted\t1\n"
 				"training_graph_dscale_probability_weighted\t1\n"
