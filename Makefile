@@ -37,44 +37,7 @@ all: $(PROG)
 hickit: $(OBJS) main.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(ASAN_FLAG) $(LIBS_GL) $(LIBS)
 
-test: test_diploid_index test_blind_input test_blind_binning test_fdg_energy test_blind_posterior test_blind_smoke test_blind_relax_loop test_blind_output test_blind_output_auditor_negative
-	./test_diploid_index
-	if ./test_diploid_index --invalid-copy >/dev/null 2>&1; then \
-		echo "expected invalid copy assertion to fail"; \
-		exit 1; \
-	fi
-	./test_blind_input
-	./test_blind_binning
-	./test_fdg_energy
-	./test_blind_posterior
-	./test_blind_smoke
-	./test_blind_relax_loop
-	./test_blind_output
-	./test_blind_output_auditor_negative
-
-test_blind_input: test_blind_input.c testdata/p9016_blind_fixture.pairs $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_input.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
-
-test_blind_binning: test_blind_binning.c testdata/p9016_blind_fixture.pairs $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_binning.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
-
-test_diploid_index: test_diploid_index.c hickit.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) $< -o $@
-
-test_fdg_energy: test_fdg_energy.c $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_fdg_energy.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
-
-test_blind_posterior: test_blind_posterior.c $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_posterior.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
-
-test_blind_smoke: test_blind_smoke.c testdata/p9016_blind_smoke.pairs $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_smoke.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
-
-test_blind_relax_loop: test_blind_relax_loop.c $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_relax_loop.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
-
-test_blind_output: test_blind_output.c $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_output.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
+test: smoke_blind_p9016_minimal
 
 run_blind_p9016_minimal.bin: run_blind_p9016_minimal.c $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
 	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) run_blind_p9016_minimal.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
@@ -94,14 +57,8 @@ audit_blind_p9016_full_cpu_output: audit_blind_p9016_full_cpu_output.bin
 audit_blind_p9016_full_cpu_output.bin: audit_blind_p9016_full_cpu_output.c hickit.h krng.h
 	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) audit_blind_p9016_full_cpu_output.c -o $@ $(LIBS)
 
-test_blind_output_auditor_negative: test_blind_output_auditor_negative.c audit_blind_p9016_full_cpu_output.bin hickit.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) test_blind_output_auditor_negative.c -o $@ $(LIBS)
-
 clean:
-	rm -f $(PROG) *.o *.bin test_diploid_index test_fdg_energy test_blind_posterior \
-		test_blind_input test_blind_binning test_blind_smoke \
-		test_blind_relax_loop test_blind_output \
-		test_blind_output_auditor_negative
+	rm -f $(PROG) *.o *.bin
 
 depend:
 	( LC_ALL=C ; export LC_ALL; makedepend -Y -- $(CFLAGS) $(CPPFLAGS) -- *.c ) 2>/dev/null

@@ -32,8 +32,7 @@ run_blind_p9016_minimal.c
 audit_blind_p9016_full_cpu_output.c
 blind.c
 hickit.h
-test_blind_*.c
 testdata/
 ```
 
-The Hickit command-line core (`main.c`, `io.c`, `pair.c`, `bin.c`, `fdg.c`, and related headers) is retained for compile compatibility.
+`testdata/p9016_blind_smoke.pairs` is a small P9016-format smoke fixture. The Hickit command-line core (`main.c`, `io.c`, `pair.c`, `bin.c`, `fdg.c`, and related headers) is retained for compile compatibility.
