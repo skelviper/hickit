@@ -2,7 +2,7 @@ CUDA_HOME ?= /usr/local/cuda
 CUDA_LIB  ?= $(CUDA_HOME)/targets/x86_64-linux/lib
 NVCC      ?= $(CUDA_HOME)/bin/nvcc
 
-CFLAGS   ?= -g -Wall -O2 -Wc++-compat -ffast-math
+CFLAGS   ?= -g -Wall -O2 -Wc++-compat -fno-fast-math -fno-unsafe-math-optimizations
 NVCCFLAGS ?= -O3
 CPPFLAGS ?=
 INCLUDES ?=
@@ -26,7 +26,7 @@ PROG := hickit
 BLIND_COMMON_SRCS := sdict.c io.c pair.c count.c phase.c bin.c blind.c fdg.c image.c view3d.c
 BLIND_COMMON_OBJS := sdict.o io.o pair.o count.o phase.o bin.o blind.o fdg.o image.o view3d.o $(FDG_GPU_OBJ)
 ifneq ($(asan),)
-	ASAN_FLAG = -fsanitize=address
+	ASAN_FLAG = -fsanitize=address,undefined -fno-omit-frame-pointer
 endif
 
 ifneq ($(gl),)

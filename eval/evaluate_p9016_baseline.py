@@ -37,6 +37,9 @@ SCATTER_CHR1_LEGEND_WIDTH_IN = 1.15
 BACKGROUND_POINT_SIZE = 1.2
 BACKGROUND_POINT_ALPHA = 0.14
 PMAX_THRESHOLD = 0.90
+MODEL_GEOMETRY_POLICY = "per_chrom_cis_distance_spearman_fixed"
+WHOLE_CHROM_SNP_POLICY = "whole_chrom_snp_cis_top1_oracle_eval_only"
+CHARM_REFERENCE_POLICY = "charm3dg_reference_copy_labels"
 FDG_D_C1 = 0.5
 FDG_D_C2 = 1.5
 FDG_D_C3 = 2.0
@@ -469,6 +472,68 @@ def cis_distance_correlation_row(
     }
 
 
+def cis_distance_correlation_matrix_row(
+    chrom: str,
+    reference_copy: int,
+    reconstruction_copy: int,
+    reference: dict[tuple[str, int, int], np.ndarray],
+    reconstruction: dict[tuple[str, int, int], np.ndarray],
+    swaps_by_chrom: dict[str, int],
+) -> dict[str, object]:
+    keys = sorted(
+        [
+            (c, start, copy)
+            for c, start, copy in reference
+            if c == chrom and copy == reference_copy and (c, start, reconstruction_copy) in reconstruction
+        ],
+        key=lambda key: key[1],
+    )
+    ref = np.vstack([reference[key] for key in keys]) if keys else np.zeros((0, 3), dtype=float)
+    rec = np.vstack([reconstruction[(key[0], key[1], reconstruction_copy)] for key in keys]) if keys else np.zeros((0, 3), dtype=float)
+    ref_dist = condensed_distances(ref)
+    rec_dist = condensed_distances(rec)
+    ref_rg = radius_of_gyration(ref)
+    rec_rg = radius_of_gyration(rec)
+    ref_norm = ref_dist / ref_rg if ref_rg > 0 else ref_dist * float("nan")
+    rec_norm = rec_dist / rec_rg if rec_rg > 0 else rec_dist * float("nan")
+    geometry_swap = int(swaps_by_chrom.get(chrom, 0))
+    return {
+        "chrom": chrom,
+        "reference_copy": f"copy{reference_copy}",
+        "reconstruction_copy": f"copy{reconstruction_copy}",
+        "reference_copy_index": reference_copy,
+        "reconstruction_copy_index": reconstruction_copy,
+        "selected_by_geometry_swap": int(reconstruction_copy == (reference_copy ^ geometry_swap)),
+        "n_points": len(keys),
+        "n_pairwise_distances": len(ref_dist),
+        "cis_distance_pearson": pearson_corr(ref_norm, rec_norm),
+        "cis_distance_spearman": spearman_corr(ref_norm, rec_norm),
+    }
+
+
+def cis_distance_correlation_matrix_rows(
+    chroms: list[str],
+    reference: dict[tuple[str, int, int], np.ndarray],
+    reconstruction: dict[tuple[str, int, int], np.ndarray],
+    swaps_by_chrom: dict[str, int],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for chrom in chroms:
+        for reference_copy in (0, 1):
+            for reconstruction_copy in (0, 1):
+                rows.append(
+                    cis_distance_correlation_matrix_row(
+                        chrom,
+                        reference_copy,
+                        reconstruction_copy,
+                        reference,
+                        reconstruction,
+                        swaps_by_chrom,
+                    )
+                )
+    return rows
+
+
 def choose_distance_swaps(
     chroms: list[str],
     reference: dict[tuple[str, int, int], np.ndarray],
@@ -617,9 +682,9 @@ def contact_accuracy_for_swaps(
     contact_counts: dict[tuple[str, int, str, int], np.ndarray],
     posterior: dict[tuple[str, int, str, int], dict[str, object]],
     reference: dict[tuple[str, int, int], np.ndarray],
-    swaps_by_chrom: dict[str, int],
+    source_policy_swaps: list[tuple[str, str, dict[str, int]]],
 ) -> list[dict[str, object]]:
-    stats_by_source_scope: dict[tuple[str, str], dict[str, float]] = {}
+    stats_by_source_policy_scope: dict[tuple[str, str, str], dict[str, float]] = {}
     for key, counts in contact_counts.items():
         item = posterior.get(key)
         if item is None:
@@ -627,35 +692,105 @@ def contact_accuracy_for_swaps(
         chrom1 = str(item["chrom1"])
         chrom2 = str(item["chrom2"])
         is_cis = chrom1 == chrom2
-        model_p4 = align_p4_to_truth_gauge(
-            np.asarray(item["p4"], dtype=float),
-            swaps_by_chrom.get(chrom1, 0),
-            swaps_by_chrom.get(chrom2, 0),
-        )
         charm_p4 = p4_from_coords_for_bpair(reference, item)
         if charm_p4 is None:
             continue
-        for source, p4 in [("reconstruction_posterior", model_p4), ("charm3dg_uniform_prior_fdg", charm_p4)]:
+        base_p4_by_source = {
+            "reconstruction_posterior": np.asarray(item["p4"], dtype=float),
+            "charm3dg_uniform_prior_fdg": charm_p4,
+        }
+        for source, policy, swaps_by_chrom in source_policy_swaps:
+            base_p4 = base_p4_by_source[source]
+            p4 = align_p4_to_truth_gauge(
+                base_p4,
+                swaps_by_chrom.get(chrom1, 0),
+                swaps_by_chrom.get(chrom2, 0),
+            )
             scopes = ["genome_all", "genome_cis" if is_cis else "genome_trans"]
             if is_cis:
                 scopes.append(f"{chrom1}_cis")
             for scope in scopes:
-                stats = stats_by_source_scope.setdefault((source, scope), empty_accuracy_stats())
+                stats = stats_by_source_policy_scope.setdefault((source, policy, scope), empty_accuracy_stats())
                 update_accuracy_stats(stats, counts, p4)
     rows: list[dict[str, object]] = []
-    copy_swap_policy_by_source = {
-        "reconstruction_posterior": "per_chrom_cis_distance_spearman_fixed",
-        "charm3dg_uniform_prior_fdg": "charm3dg_reference_copy_labels",
-    }
-    for (source, scope), stats in sorted(stats_by_source_scope.items(), key=lambda x: (x[0][0], scope_sort_key(x[0][1]))):
+    for (source, policy, scope), stats in sorted(
+        stats_by_source_policy_scope.items(),
+        key=lambda x: (x[0][0], x[0][1], scope_sort_key(x[0][2])),
+    ):
         row = {
             "source": source,
             "scope": scope,
-            "copy_swap_policy": copy_swap_policy_by_source.get(source, "unknown"),
+            "copy_swap_policy": policy,
         }
         row.update(finalize_accuracy_stats(stats))
         rows.append(row)
     return rows
+
+
+def contact_base_p4(
+    item: dict[str, object],
+    reference: dict[tuple[str, int, int], np.ndarray],
+    source: str,
+) -> np.ndarray | None:
+    if source == "reconstruction_posterior":
+        return np.asarray(item["p4"], dtype=float)
+    if source == "charm3dg_uniform_prior_fdg":
+        return p4_from_coords_for_bpair(reference, item)
+    raise ValueError(f"unknown contact source: {source}")
+
+
+def choose_whole_chrom_snp_swaps(
+    chroms: list[str],
+    contact_counts: dict[tuple[str, int, str, int], np.ndarray],
+    posterior: dict[tuple[str, int, str, int], dict[str, object]],
+    reference: dict[tuple[str, int, int], np.ndarray],
+    source: str,
+    fallback_swaps: dict[str, int],
+) -> tuple[dict[str, int], list[dict[str, object]]]:
+    rows: list[dict[str, object]] = []
+    swaps: dict[str, int] = {}
+    for chrom in chroms:
+        candidates: list[tuple[int, int, int, dict[str, object]]] = []
+        for swap in (0, 1):
+            stats = empty_accuracy_stats()
+            for key, counts in contact_counts.items():
+                item = posterior.get(key)
+                if item is None:
+                    continue
+                chrom1 = str(item["chrom1"])
+                chrom2 = str(item["chrom2"])
+                if chrom1 != chrom or chrom2 != chrom:
+                    continue
+                # Keep the same CHARM-shared denominator as contact_accuracy.tsv.
+                if p4_from_coords_for_bpair(reference, item) is None:
+                    continue
+                base_p4 = contact_base_p4(item, reference, source)
+                if base_p4 is None:
+                    continue
+                p4 = align_p4_to_truth_gauge(base_p4, swap, swap)
+                update_accuracy_stats(stats, counts, p4)
+            finalized = finalize_accuracy_stats(stats)
+            correct = int(finalized["top1_correct_contacts"])
+            n_eval = int(finalized["n_eval_contacts"])
+            candidates.append((correct, n_eval, swap, finalized))
+        fallback = int(fallback_swaps.get(chrom, 0))
+        best = max(candidates, key=lambda item: (item[0], item[2] == fallback))
+        swaps[chrom] = int(best[2])
+        for correct, n_eval, swap, finalized in candidates:
+            row = {
+                "source": source,
+                "copy_swap_policy": WHOLE_CHROM_SNP_POLICY,
+                "chrom": chrom,
+                "copy_swap": swap,
+                "selected_for_eval": int(swap == swaps[chrom]),
+                "fallback_geometry_copy_swap": fallback,
+                "n_eval_contacts": n_eval,
+                "top1_correct_contacts": correct,
+                "top1_accuracy": finalized["top1_accuracy"],
+                "same_cross_accuracy": finalized["same_cross_accuracy"],
+            }
+            rows.append(row)
+    return swaps, rows
 
 
 def fraction(numer: int | float, denom: int | float) -> float:
@@ -1074,72 +1209,51 @@ def write_readme(
     args: argparse.Namespace,
     summary: dict[str, object],
     cis_rows: list[dict[str, object]],
+    cis_matrix_rows: list[dict[str, object]],
     accuracy_rows: list[dict[str, object]],
     truth_rows: list[dict[str, object]],
     separation_rows: list[dict[str, object]],
     volume_rows_data: list[dict[str, object]],
 ) -> None:
-    model_all = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_all")
-    model_cis = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_cis")
-    model_trans = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_trans")
-    charm_all = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_all")
-    charm_cis = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_cis")
-    charm_trans = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_trans")
-    truth_all = first_row(truth_rows, scope="genome_all")
-    truth_cis = first_row(truth_rows, scope="genome_cis")
-    truth_trans = first_row(truth_rows, scope="genome_trans")
-    chr1_cis = next((row for row in cis_rows if row["chrom"] == "chr1" and int(row["selected_for_eval"]) == 1), None)
+    model_all = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_all")
+    model_cis = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_cis")
+    model_trans = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_trans")
     rec_sep = first_row(separation_rows, source="reconstruction", chrom="genome")
     ref_sep = first_row(separation_rows, source="charm3dg", chrom="genome")
-    rec_vol = first_row(volume_rows_data, source="reconstruction", chrom="genome")
-    ref_vol = first_row(volume_rows_data, source="charm3dg", chrom="genome")
-    rows_for_readme = [
-        ("bin_size_bp", args.bin_size),
-        ("pairs_total", summary["pairs_total"]),
-        ("pairs_cis", summary["pairs_cis"]),
-        ("pairs_trans", summary["pairs_trans"]),
-        ("pairs_with_any_phase_eval_only", summary["pairs_with_any_phase"]),
-        ("pairs_with_both_phases_eval_only", summary["pairs_with_both_phases"]),
-        ("reference_points_aggregated", summary["reference_points_aggregated"]),
-        ("reconstruction_points", summary["reconstruction_points"]),
-        ("shared_points_per_chrom_best", summary["shared_points_per_chrom_best"]),
-        ("chr1_shared_points_per_chrom_best", summary["chr1_shared_points_per_chrom_best"]),
-        ("mean_per_chrom_cis_distance_spearman", summary["mean_per_chrom_cis_distance_spearman"]),
-        ("chr1_cis_distance_spearman", chr1_cis["cis_distance_spearman"] if chr1_cis else float("nan")),
-        ("truth_same_copy_fraction_genome_all", truth_all["same_copy_fraction"] if truth_all else float("nan")),
-        ("truth_same_copy_fraction_genome_cis", truth_cis["same_copy_fraction"] if truth_cis else float("nan")),
-        ("truth_same_copy_fraction_genome_trans", truth_trans["same_copy_fraction"] if truth_trans else float("nan")),
-        ("truth_majority_state_accuracy_genome_cis", truth_cis["truth_majority_state_accuracy"] if truth_cis else float("nan")),
-        ("truth_best_same_cross_random_four_state_accuracy_genome_cis", truth_cis["best_same_cross_random_four_state_accuracy"] if truth_cis else float("nan")),
-        ("model_top1_accuracy_genome_all", model_all["top1_accuracy"] if model_all else float("nan")),
-        ("model_same_cross_accuracy_genome_all", model_all["same_cross_accuracy"] if model_all else float("nan")),
-        ("model_pmax90_accuracy_genome_all", model_all["pmax_threshold_accuracy"] if model_all else float("nan")),
-        ("model_pmax90_recall_genome_all", model_all["pmax_threshold_recall"] if model_all else float("nan")),
-        ("model_top1_accuracy_genome_cis", model_cis["top1_accuracy"] if model_cis else float("nan")),
-        ("model_same_cross_accuracy_genome_cis", model_cis["same_cross_accuracy"] if model_cis else float("nan")),
-        ("model_pmax90_accuracy_genome_cis", model_cis["pmax_threshold_accuracy"] if model_cis else float("nan")),
-        ("model_pmax90_recall_genome_cis", model_cis["pmax_threshold_recall"] if model_cis else float("nan")),
-        ("model_top1_accuracy_genome_trans", model_trans["top1_accuracy"] if model_trans else float("nan")),
-        ("model_same_cross_accuracy_genome_trans", model_trans["same_cross_accuracy"] if model_trans else float("nan")),
-        ("model_pmax90_accuracy_genome_trans", model_trans["pmax_threshold_accuracy"] if model_trans else float("nan")),
-        ("model_pmax90_recall_genome_trans", model_trans["pmax_threshold_recall"] if model_trans else float("nan")),
-        ("charm3dg_top1_accuracy_genome_all", charm_all["top1_accuracy"] if charm_all else float("nan")),
-        ("charm3dg_same_cross_accuracy_genome_all", charm_all["same_cross_accuracy"] if charm_all else float("nan")),
-        ("charm3dg_pmax90_accuracy_genome_all", charm_all["pmax_threshold_accuracy"] if charm_all else float("nan")),
-        ("charm3dg_pmax90_recall_genome_all", charm_all["pmax_threshold_recall"] if charm_all else float("nan")),
-        ("charm3dg_top1_accuracy_genome_cis", charm_cis["top1_accuracy"] if charm_cis else float("nan")),
-        ("charm3dg_same_cross_accuracy_genome_cis", charm_cis["same_cross_accuracy"] if charm_cis else float("nan")),
-        ("charm3dg_pmax90_accuracy_genome_cis", charm_cis["pmax_threshold_accuracy"] if charm_cis else float("nan")),
-        ("charm3dg_pmax90_recall_genome_cis", charm_cis["pmax_threshold_recall"] if charm_cis else float("nan")),
-        ("charm3dg_top1_accuracy_genome_trans", charm_trans["top1_accuracy"] if charm_trans else float("nan")),
-        ("charm3dg_same_cross_accuracy_genome_trans", charm_trans["same_cross_accuracy"] if charm_trans else float("nan")),
-        ("charm3dg_pmax90_accuracy_genome_trans", charm_trans["pmax_threshold_accuracy"] if charm_trans else float("nan")),
-        ("charm3dg_pmax90_recall_genome_trans", charm_trans["pmax_threshold_recall"] if charm_trans else float("nan")),
-        ("reconstruction_mean_copy01_separation", rec_sep["mean_copy01_separation"] if rec_sep else float("nan")),
-        ("charm3dg_mean_copy01_separation", ref_sep["mean_copy01_separation"] if ref_sep else float("nan")),
-        ("reconstruction_genome_volume", rec_vol["convex_hull_volume"] if rec_vol else float("nan")),
-        ("charm3dg_genome_volume", ref_vol["convex_hull_volume"] if ref_vol else float("nan")),
+
+    def acc_value(row: dict[str, object] | None, key: str) -> object:
+        return row[key] if row else float("nan")
+
+    def mean_matrix_value(reference_copy: int, reconstruction_copy: int) -> float:
+        values = [
+            float(row["cis_distance_spearman"])
+            for row in cis_matrix_rows
+            if int(row["reference_copy_index"]) == reference_copy
+            and int(row["reconstruction_copy_index"]) == reconstruction_copy
+            and math.isfinite(float(row["cis_distance_spearman"]))
+        ]
+        return float(np.mean(values)) if values else float("nan")
+
+    allele_sep_rows = [
+        ("CHARM/3DG", ref_sep["mean_copy01_separation"] if ref_sep else float("nan")),
+        ("reconstruction", rec_sep["mean_copy01_separation"] if rec_sep else float("nan")),
     ]
+    top1_rows = [
+        ("all", acc_value(model_all, "top1_accuracy")),
+        ("cis", acc_value(model_cis, "top1_accuracy")),
+        ("trans", acc_value(model_trans, "top1_accuracy")),
+    ]
+    p90_rows = [
+        ("all", acc_value(model_all, "pmax_threshold_accuracy"), acc_value(model_all, "pmax_threshold_recall")),
+        ("cis", acc_value(model_cis, "pmax_threshold_accuracy"), acc_value(model_cis, "pmax_threshold_recall")),
+        ("trans", acc_value(model_trans, "pmax_threshold_accuracy"), acc_value(model_trans, "pmax_threshold_recall")),
+    ]
+    matrix_values = {
+        (ref_copy, rec_copy): mean_matrix_value(ref_copy, rec_copy)
+        for ref_copy in (0, 1)
+        for rec_copy in (0, 1)
+    }
+
     with path.open("w") as fh:
         fh.write(f"# {args.outdir.name}\n\n")
         fh.write(f"- label: `{args.label}`\n")
@@ -1149,22 +1263,39 @@ def write_readme(
         fh.write(f"- CHARM/3DG eval reference: `{args.reference_3dg}`\n")
         fh.write(f"- train manifest: `{args.train_manifest}`\n")
         fh.write("- boundary: training used raw P9016 contact information only; phase labels and CHARM/3DG were read only by this post-training evaluator.\n")
-        fh.write("- copy gauge: evaluation first selects one copy swap per chromosome by per-chromosome cis distance-matrix Spearman correlation. Contact top1 and pmax metrics then use this fixed geometry-selected gauge when comparing four-state probabilities to SNP phase truth.\n")
+        fh.write("- copy gauge: structure plots and distance metrics use per-chromosome cis distance-matrix Spearman correlation to select a geometry gauge. Contact identity metrics report the reconstruction under a whole-chromosome SNP cis-top1 oracle gauge, which is eval-only and exists because copy0/copy1 are gauge labels that can be swapped independently per chromosome.\n")
         fh.write("- contact denominator: contact accuracy uses eval-only raw contacts with both `phase0` and `phase1`, excluding same-bin contacts, and requiring a matching posterior bpair.\n")
-        fh.write("- contact baselines: `contact_truth_distribution.tsv` reports the observed four-state SNP truth distribution. For cis contacts, same/cross territory imbalance can make the useful random baseline much closer to 0.5 than the uniform four-state 0.25 baseline.\n")
-        fh.write("- CHARM/3DG probability baseline: `charm3dg_uniform_prior_fdg` recomputes four-state probabilities from CHARM/3DG distances using hickit FDG contact energy, posterior `base_d_scale/base_k`, CHARM/3DG reference copy labels, and uniform four-state prior because posterior log-priors are not exported.\n\n")
         fh.write("- alignment: 3D scatter plots and Procrustes RMSD use rigid alignment only: translation and rotation are fitted, reconstruction scale is not fitted to CHARM/3DG. The reported similarity scale is diagnostic only and is not applied.\n\n")
-        fh.write("## Quantitative Results\n\n")
-        fh.write("| metric | value |\n")
+
+        fh.write("## Allele Separation\n\n")
+        fh.write("| source | mean copy0/copy1 separation |\n")
         fh.write("| --- | ---: |\n")
-        for key, value in rows_for_readme:
-            fh.write(f"| {key} | {format_value(value)} |\n")
+        for source, value in allele_sep_rows:
+            fh.write(f"| {source} | {format_value(value)} |\n")
+
+        fh.write("\n## Contact Accuracy\n\n")
+        fh.write("| scope | top1 accuracy |\n")
+        fh.write("| --- | ---: |\n")
+        for scope, value in top1_rows:
+            fh.write(f"| {scope} | {format_value(value)} |\n")
+        fh.write("\n| scope | pmax >= 0.9 accuracy | pmax >= 0.9 recall |\n")
+        fh.write("| --- | ---: | ---: |\n")
+        for scope, acc, recall in p90_rows:
+            fh.write(f"| {scope} | {format_value(acc)} | {format_value(recall)} |\n")
+
+        fh.write("\n## Cis Distance Matrix Correlation\n\n")
+        fh.write("Mean per-chromosome Spearman correlation, split by CHARM/3DG copy and reconstruction copy.\n\n")
+        fh.write("| CHARM/3DG copy \\\\ reconstruction copy | copy0 | copy1 |\n")
+        fh.write("| --- | ---: | ---: |\n")
+        for ref_copy in (0, 1):
+            fh.write(
+                f"| copy{ref_copy} | {format_value(matrix_values[(ref_copy, 0)])} | {format_value(matrix_values[(ref_copy, 1)])} |\n"
+            )
         fh.write("\n## Output Tables\n\n")
-        fh.write("- `cis_distance_correlations.tsv`: per-chromosome cis distance-matrix Pearson/Spearman for both copy swaps, with the selected per-chrom swap marked.\n")
-        fh.write("- `contact_accuracy.tsv`: four-state top1 accuracy, same/cross accuracy, pmax >= 0.9 accuracy, called fraction, and recall for all/cis/trans contacts plus per-chromosome cis contacts. The `copy_swap_policy` column records whether rows use the reconstruction's fixed cis-distance-selected gauge or CHARM/3DG reference copy labels.\n")
-        fh.write("- `contact_truth_distribution.tsv`: observed SNP truth counts and fractions for 00/01/10/11, same/cross fractions, majority-state baseline, and same/cross-aware random four-state baseline.\n")
+        fh.write("- `cis_distance_correlation_matrix.tsv`: per-chromosome 2x2 cis distance-matrix Pearson/Spearman table for CHARM/3DG copy0/copy1 against reconstruction copy0/copy1.\n")
+        fh.write("- `cis_distance_correlations.tsv`: per-chromosome cis distance-matrix Pearson/Spearman for the two whole-chromosome swap choices, with the selected geometry swap marked.\n")
+        fh.write("- `contact_accuracy.tsv`: four-state top1 accuracy, same/cross accuracy, pmax >= 0.9 accuracy, called fraction, and recall for all/cis/trans contacts plus per-chromosome cis contacts.\n")
         fh.write("- `copy_separation.tsv`: per-chromosome and genome mean/median distance between copy0 and copy1 of the same bin.\n")
-        fh.write("- `per_chrom_volume.tsv`: per-chromosome and genome convex-hull volumes for CHARM/3DG and reconstruction.\n")
         fh.write("\n## Plots\n\n")
         fh.write("- `plots/chr1_distance_maps.png`: rows are CHARM/3DG and reconstruction; columns are copy0 and copy1; larger distances are blue.\n")
         fh.write("- `plots/all_chrom_3d_scatter.png`: each point is one bin; chromosome+copy states are colored separately; reconstruction is rigid-Procrustes-aligned into the CHARM/3DG coordinate frame with no scale fitting, and both panels share one 3D coordinate range.\n")
@@ -1201,19 +1332,44 @@ def main() -> int:
     chroms = sorted({key[0] for key in reference} | {key[0] for key in reconstruction}, key=chrom_sort_key)
 
     distance_swaps, cis_rows = choose_distance_swaps(chroms, reference, reconstruction)
-    accuracy_rows = contact_accuracy_for_swaps(contact_counts, posterior, reference, distance_swaps)
+    model_snp_swaps, whole_chrom_snp_rows = choose_whole_chrom_snp_swaps(
+        chroms,
+        contact_counts,
+        posterior,
+        reference,
+        "reconstruction_posterior",
+        distance_swaps,
+    )
+    accuracy_rows = contact_accuracy_for_swaps(
+        contact_counts,
+        posterior,
+        reference,
+        [
+            ("reconstruction_posterior", MODEL_GEOMETRY_POLICY, distance_swaps),
+            ("reconstruction_posterior", WHOLE_CHROM_SNP_POLICY, model_snp_swaps),
+            ("charm3dg_uniform_prior_fdg", CHARM_REFERENCE_POLICY, {}),
+        ],
+    )
     truth_rows = contact_truth_distribution_rows(contact_counts, posterior)
     separation_rows = copy_separation_rows({"charm3dg": reference, "reconstruction": reconstruction}, distance_swaps, chroms)
     volume_rows_data = volume_rows({"charm3dg": reference, "reconstruction": reconstruction}, chroms)
-    model_all = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_all")
-    model_cis = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_cis")
-    model_trans = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_trans")
-    charm_all = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_all")
-    charm_cis = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_cis")
-    charm_trans = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_trans")
+    cis_matrix_rows = cis_distance_correlation_matrix_rows(chroms, reference, reconstruction, distance_swaps)
+    model_all = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_all")
+    model_cis = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_cis")
+    model_trans = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_trans")
+    model_geom_all = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=MODEL_GEOMETRY_POLICY, scope="genome_all")
+    model_geom_cis = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=MODEL_GEOMETRY_POLICY, scope="genome_cis")
+    model_geom_trans = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=MODEL_GEOMETRY_POLICY, scope="genome_trans")
+    charm_all = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", copy_swap_policy=CHARM_REFERENCE_POLICY, scope="genome_all")
+    charm_cis = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", copy_swap_policy=CHARM_REFERENCE_POLICY, scope="genome_cis")
+    charm_trans = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", copy_swap_policy=CHARM_REFERENCE_POLICY, scope="genome_trans")
     truth_all = first_row(truth_rows, scope="genome_all")
     truth_cis = first_row(truth_rows, scope="genome_cis")
     truth_trans = first_row(truth_rows, scope="genome_trans")
+    rec_sep = first_row(separation_rows, source="reconstruction", chrom="genome")
+    ref_sep = first_row(separation_rows, source="charm3dg", chrom="genome")
+    rec_vol = first_row(volume_rows_data, source="reconstruction", chrom="genome")
+    ref_vol = first_row(volume_rows_data, source="charm3dg", chrom="genome")
 
     best_keys = ordered_keys(reference, reconstruction, distance_swaps)
     best_chr1_keys = ordered_keys(reference, reconstruction, distance_swaps, chrom="chr1")
@@ -1242,9 +1398,11 @@ def main() -> int:
         "shared_points_per_chrom_best": len(best_keys),
         "chr1_shared_points_per_chrom_best": len(best_chr1_keys),
         "distance_per_chrom_copy_swaps_json": json.dumps(distance_swaps, sort_keys=True),
-        "contact_eval_per_chrom_copy_swaps_json": json.dumps(distance_swaps, sort_keys=True),
-        "contact_copy_swap_source": "distance_per_chrom_copy_swaps_json",
-        "copy_swap_policy": "per_chrom_best only; one geometry gauge is selected by cis distance Spearman and reused for contact top1/pmax metrics",
+        "contact_eval_per_chrom_copy_swaps_json": json.dumps(model_snp_swaps, sort_keys=True),
+        "contact_geometry_per_chrom_copy_swaps_json": json.dumps(distance_swaps, sort_keys=True),
+        "contact_whole_chrom_snp_copy_swaps_json": json.dumps(model_snp_swaps, sort_keys=True),
+        "contact_copy_swap_source": "whole_chrom_snp_oracle_swaps.tsv",
+        "copy_swap_policy": "structure uses per-chrom cis distance Spearman geometry gauge; contact identity headline metrics use eval-only whole-chromosome SNP cis-top1 gauge",
         "mean_per_chrom_cis_distance_spearman": mean_cis_spearman,
         "charm3dg_probability_baseline": "uniform_prior_fdg_energy_from_charm3dg_distances",
         "pmax_threshold": PMAX_THRESHOLD,
@@ -1276,6 +1434,25 @@ def main() -> int:
         "model_pmax90_same_cross_accuracy_genome_trans": model_trans["pmax_threshold_same_cross_accuracy"] if model_trans else float("nan"),
         "model_pmax90_recall_genome_trans": model_trans["pmax_threshold_recall"] if model_trans else float("nan"),
         "model_pmax90_same_cross_recall_genome_trans": model_trans["pmax_threshold_same_cross_recall"] if model_trans else float("nan"),
+        "model_contact_copy_swap_policy": WHOLE_CHROM_SNP_POLICY,
+        "model_geometry_top1_accuracy_genome_all": model_geom_all["top1_accuracy"] if model_geom_all else float("nan"),
+        "model_geometry_same_cross_accuracy_genome_all": model_geom_all["same_cross_accuracy"] if model_geom_all else float("nan"),
+        "model_geometry_pmax90_accuracy_genome_all": model_geom_all["pmax_threshold_accuracy"] if model_geom_all else float("nan"),
+        "model_geometry_pmax90_same_cross_accuracy_genome_all": model_geom_all["pmax_threshold_same_cross_accuracy"] if model_geom_all else float("nan"),
+        "model_geometry_pmax90_recall_genome_all": model_geom_all["pmax_threshold_recall"] if model_geom_all else float("nan"),
+        "model_geometry_pmax90_same_cross_recall_genome_all": model_geom_all["pmax_threshold_same_cross_recall"] if model_geom_all else float("nan"),
+        "model_geometry_top1_accuracy_genome_cis": model_geom_cis["top1_accuracy"] if model_geom_cis else float("nan"),
+        "model_geometry_same_cross_accuracy_genome_cis": model_geom_cis["same_cross_accuracy"] if model_geom_cis else float("nan"),
+        "model_geometry_pmax90_accuracy_genome_cis": model_geom_cis["pmax_threshold_accuracy"] if model_geom_cis else float("nan"),
+        "model_geometry_pmax90_same_cross_accuracy_genome_cis": model_geom_cis["pmax_threshold_same_cross_accuracy"] if model_geom_cis else float("nan"),
+        "model_geometry_pmax90_recall_genome_cis": model_geom_cis["pmax_threshold_recall"] if model_geom_cis else float("nan"),
+        "model_geometry_pmax90_same_cross_recall_genome_cis": model_geom_cis["pmax_threshold_same_cross_recall"] if model_geom_cis else float("nan"),
+        "model_geometry_top1_accuracy_genome_trans": model_geom_trans["top1_accuracy"] if model_geom_trans else float("nan"),
+        "model_geometry_same_cross_accuracy_genome_trans": model_geom_trans["same_cross_accuracy"] if model_geom_trans else float("nan"),
+        "model_geometry_pmax90_accuracy_genome_trans": model_geom_trans["pmax_threshold_accuracy"] if model_geom_trans else float("nan"),
+        "model_geometry_pmax90_same_cross_accuracy_genome_trans": model_geom_trans["pmax_threshold_same_cross_accuracy"] if model_geom_trans else float("nan"),
+        "model_geometry_pmax90_recall_genome_trans": model_geom_trans["pmax_threshold_recall"] if model_geom_trans else float("nan"),
+        "model_geometry_pmax90_same_cross_recall_genome_trans": model_geom_trans["pmax_threshold_same_cross_recall"] if model_geom_trans else float("nan"),
         "charm3dg_top1_accuracy_genome_all": charm_all["top1_accuracy"] if charm_all else float("nan"),
         "charm3dg_same_cross_accuracy_genome_all": charm_all["same_cross_accuracy"] if charm_all else float("nan"),
         "charm3dg_pmax90_accuracy_genome_all": charm_all["pmax_threshold_accuracy"] if charm_all else float("nan"),
@@ -1294,16 +1471,36 @@ def main() -> int:
         "charm3dg_pmax90_same_cross_accuracy_genome_trans": charm_trans["pmax_threshold_same_cross_accuracy"] if charm_trans else float("nan"),
         "charm3dg_pmax90_recall_genome_trans": charm_trans["pmax_threshold_recall"] if charm_trans else float("nan"),
         "charm3dg_pmax90_same_cross_recall_genome_trans": charm_trans["pmax_threshold_same_cross_recall"] if charm_trans else float("nan"),
+        "reconstruction_mean_copy01_separation": rec_sep["mean_copy01_separation"] if rec_sep else float("nan"),
+        "reconstruction_median_copy01_separation": rec_sep["median_copy01_separation"] if rec_sep else float("nan"),
+        "charm3dg_mean_copy01_separation": ref_sep["mean_copy01_separation"] if ref_sep else float("nan"),
+        "charm3dg_median_copy01_separation": ref_sep["median_copy01_separation"] if ref_sep else float("nan"),
+        "reconstruction_genome_volume": rec_vol["convex_hull_volume"] if rec_vol else float("nan"),
+        "charm3dg_genome_volume": ref_vol["convex_hull_volume"] if ref_vol else float("nan"),
         "phase_used_eval_only": 1,
         "charm_3dg_used_eval_only": 1,
     }
+    for ref_copy in (0, 1):
+        for rec_copy in (0, 1):
+            values = [
+                float(row["cis_distance_spearman"])
+                for row in cis_matrix_rows
+                if int(row["reference_copy_index"]) == ref_copy
+                and int(row["reconstruction_copy_index"]) == rec_copy
+                and math.isfinite(float(row["cis_distance_spearman"]))
+            ]
+            summary[f"mean_cis_distance_spearman_charm_copy{ref_copy}_reconstruction_copy{rec_copy}"] = (
+                float(np.mean(values)) if values else float("nan")
+            )
     summary.update(pair_stats)
     for key in ["n_raw", "n_bpair", "n_beads", "resolution", "bin_size_bp", "mstep_graph_mode", "input_contact_source", "uses_charm_or_reference", "uses_phase_labels", "copy_labels_are_gauge_only"]:
         if key in train_manifest:
             summary[f"train_manifest_{key}"] = train_manifest[key]
 
     write_table(args.outdir / "cis_distance_correlations.tsv", cis_rows)
+    write_table(args.outdir / "cis_distance_correlation_matrix.tsv", cis_matrix_rows)
     write_table(args.outdir / "contact_accuracy.tsv", accuracy_rows)
+    write_table(args.outdir / "whole_chrom_snp_oracle_swaps.tsv", whole_chrom_snp_rows)
     write_table(args.outdir / "contact_truth_distribution.tsv", truth_rows)
     write_table(args.outdir / "copy_separation.tsv", separation_rows)
     write_table(args.outdir / "per_chrom_volume.tsv", volume_rows_data)
@@ -1314,13 +1511,15 @@ def main() -> int:
     plot_chr1_distance_maps(plots_dir / "chr1_distance_maps.png", reference, reconstruction, distance_swaps)
     plot_3d_scatter(plots_dir / "all_chrom_3d_scatter.png", reference, reconstruction, distance_swaps)
     plot_3d_scatter(plots_dir / "chr1_copy_3d_scatter.png", reference, reconstruction, distance_swaps, chrom="chr1")
-    write_readme(args.outdir / "README.md", args, summary, cis_rows, accuracy_rows, truth_rows, separation_rows, volume_rows_data)
+    write_readme(args.outdir / "README.md", args, summary, cis_rows, cis_matrix_rows, accuracy_rows, truth_rows, separation_rows, volume_rows_data)
     with (args.outdir / "eval_manifest.json").open("w") as fh:
         json.dump(
             {
                 "summary": summary,
                 "cis_distance_correlations": cis_rows,
+                "cis_distance_correlation_matrix": cis_matrix_rows,
                 "contact_accuracy": accuracy_rows,
+                "whole_chrom_snp_oracle_swaps": whole_chrom_snp_rows,
                 "contact_truth_distribution": truth_rows,
                 "copy_separation": separation_rows,
                 "per_chrom_volume": volume_rows_data,
@@ -1331,7 +1530,9 @@ def main() -> int:
 
     print(f"wrote\t{args.outdir / 'README.md'}")
     print(f"wrote\t{args.outdir / 'cis_distance_correlations.tsv'}")
+    print(f"wrote\t{args.outdir / 'cis_distance_correlation_matrix.tsv'}")
     print(f"wrote\t{args.outdir / 'contact_accuracy.tsv'}")
+    print(f"wrote\t{args.outdir / 'whole_chrom_snp_oracle_swaps.tsv'}")
     print(f"wrote\t{args.outdir / 'contact_truth_distribution.tsv'}")
     print(f"wrote\t{args.outdir / 'copy_separation.tsv'}")
     print(f"wrote\t{args.outdir / 'per_chrom_volume.tsv'}")

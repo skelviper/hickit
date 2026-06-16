@@ -19,6 +19,8 @@
 #define HK_P9016_UNIT 1.0f
 #define HK_P9016_D_SCALE 1.0f
 #define HK_P9016_D_SCALE_EPS_COUNT 1e-6f
+#define HK_P9016_PRIOR_EPS 1e-6f
+#define HK_P9016_PRIOR_ALPHA_CLAMP_MIN 1e-6f
 #define HK_P9016_BASE_K_NEIGHBOR_RADIUS 10000000
 #define HK_P9016_INIT_EPS 0.5f
 #define HK_P9016_INIT_NOISE_SCALE 0.0f
@@ -671,7 +673,7 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 					base_k_stats->max, base_k_stats->n_nonfinite,
 					HK_P9016_INIT_EPS, HK_P9016_INIT_NOISE_SCALE,
 				(unsigned long long)HK_P9016_INIT_SEED, HK_P9016_SCAFFOLD_FDG_N_ITER,
-				HK_P9016_D_SCALE_EPS_COUNT, HK_P9016_D_SCALE_EPS_COUNT,
+				HK_P9016_PRIOR_EPS, HK_P9016_PRIOR_ALPHA_CLAMP_MIN,
 				HK_P9016_D_SCALE_EPS_COUNT, set->same_bin_filter_enabled,
 				(long long)set->n_raw_same_bin_excluded,
 				set->n_bpair_same_bin_excluded, (long long)set->n_raw_cis,

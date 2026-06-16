@@ -1,5 +1,8 @@
 key	value
 bin_size_bp	1000000
+charm3dg_genome_volume	351.35
+charm3dg_mean_copy01_separation	4.65535
+charm3dg_median_copy01_separation	4.60667
 charm3dg_pmax90_accuracy_genome_all	0.0507824
 charm3dg_pmax90_accuracy_genome_cis	0.0118652
 charm3dg_pmax90_accuracy_genome_trans	0.0883842
@@ -22,31 +25,56 @@ charm3dg_top1_accuracy_genome_trans	0.165901
 charm_3dg_used_eval_only	1
 chr1_shared_points_per_chrom_best	379
 chromosomes_in_pairs_header	20
-contact_copy_swap_source	distance_per_chrom_copy_swaps_json
-contact_eval_per_chrom_copy_swaps_json	{"chr1": 0, "chr10": 1, "chr11": 0, "chr12": 0, "chr13": 0, "chr14": 0, "chr15": 1, "chr16": 1, "chr17": 0, "chr18": 0, "chr19": 0, "chr2": 1, "chr3": 1, "chr4": 0, "chr5": 1, "chr6": 0, "chr7": 0, "chr8": 1, "chr9": 1, "chrX": 1}
-copy_swap_policy	per_chrom_best only; one geometry gauge is selected by cis distance Spearman and reused for contact top1/pmax metrics
-created_at	2026-06-16T11:38:22
+contact_copy_swap_source	whole_chrom_snp_oracle_swaps.tsv
+contact_eval_per_chrom_copy_swaps_json	{"chr1": 1, "chr10": 1, "chr11": 0, "chr12": 0, "chr13": 1, "chr14": 1, "chr15": 1, "chr16": 1, "chr17": 1, "chr18": 1, "chr19": 1, "chr2": 0, "chr3": 1, "chr4": 0, "chr5": 0, "chr6": 0, "chr7": 1, "chr8": 0, "chr9": 0, "chrX": 0}
+contact_geometry_per_chrom_copy_swaps_json	{"chr1": 0, "chr10": 1, "chr11": 0, "chr12": 0, "chr13": 0, "chr14": 0, "chr15": 1, "chr16": 1, "chr17": 0, "chr18": 0, "chr19": 0, "chr2": 1, "chr3": 1, "chr4": 0, "chr5": 1, "chr6": 0, "chr7": 0, "chr8": 1, "chr9": 1, "chrX": 1}
+contact_whole_chrom_snp_copy_swaps_json	{"chr1": 1, "chr10": 1, "chr11": 0, "chr12": 0, "chr13": 1, "chr14": 1, "chr15": 1, "chr16": 1, "chr17": 1, "chr18": 1, "chr19": 1, "chr2": 0, "chr3": 1, "chr4": 0, "chr5": 0, "chr6": 0, "chr7": 1, "chr8": 0, "chr9": 0, "chrX": 0}
+copy_swap_policy	structure uses per-chrom cis distance Spearman geometry gauge; contact identity headline metrics use eval-only whole-chromosome SNP cis-top1 gauge
+created_at	2026-06-16T15:18:14
 distance_per_chrom_copy_swaps_json	{"chr1": 0, "chr10": 1, "chr11": 0, "chr12": 0, "chr13": 0, "chr14": 0, "chr15": 1, "chr16": 1, "chr17": 0, "chr18": 0, "chr19": 0, "chr2": 1, "chr3": 1, "chr4": 0, "chr5": 1, "chr6": 0, "chr7": 0, "chr8": 1, "chr9": 1, "chrX": 1}
 label	P9016 softall chain 1m
+mean_cis_distance_spearman_charm_copy0_reconstruction_copy0	0.405983
+mean_cis_distance_spearman_charm_copy0_reconstruction_copy1	0.43083
+mean_cis_distance_spearman_charm_copy1_reconstruction_copy0	0.452764
+mean_cis_distance_spearman_charm_copy1_reconstruction_copy1	0.434127
 mean_per_chrom_cis_distance_spearman	0.71501
-model_pmax90_accuracy_genome_all	0.345532
-model_pmax90_accuracy_genome_cis	0.439129
-model_pmax90_accuracy_genome_trans	0.245342
-model_pmax90_recall_genome_all	0.13163
-model_pmax90_recall_genome_cis	0.146921
-model_pmax90_recall_genome_trans	0.109747
-model_pmax90_same_cross_accuracy_genome_all	0.709903
+model_contact_copy_swap_policy	whole_chrom_snp_cis_top1_oracle_eval_only
+model_geometry_pmax90_accuracy_genome_all	0.345532
+model_geometry_pmax90_accuracy_genome_cis	0.439129
+model_geometry_pmax90_accuracy_genome_trans	0.245342
+model_geometry_pmax90_recall_genome_all	0.13163
+model_geometry_pmax90_recall_genome_cis	0.146921
+model_geometry_pmax90_recall_genome_trans	0.109747
+model_geometry_pmax90_same_cross_accuracy_genome_all	0.709903
+model_geometry_pmax90_same_cross_accuracy_genome_cis	0.88979
+model_geometry_pmax90_same_cross_accuracy_genome_trans	0.517344
+model_geometry_pmax90_same_cross_recall_genome_all	0.270437
+model_geometry_pmax90_same_cross_recall_genome_cis	0.297699
+model_geometry_pmax90_same_cross_recall_genome_trans	0.231419
+model_geometry_same_cross_accuracy_genome_all	0.759175
+model_geometry_same_cross_accuracy_genome_cis	0.935654
+model_geometry_same_cross_accuracy_genome_trans	0.506602
+model_geometry_top1_accuracy_genome_all	0.374549
+model_geometry_top1_accuracy_genome_cis	0.465692
+model_geometry_top1_accuracy_genome_trans	0.244108
+model_pmax90_accuracy_genome_all	0.415719
+model_pmax90_accuracy_genome_cis	0.526726
+model_pmax90_accuracy_genome_trans	0.296891
+model_pmax90_recall_genome_all	0.158367
+model_pmax90_recall_genome_cis	0.176228
+model_pmax90_recall_genome_trans	0.132806
+model_pmax90_same_cross_accuracy_genome_all	0.701781
 model_pmax90_same_cross_accuracy_genome_cis	0.88979
-model_pmax90_same_cross_accuracy_genome_trans	0.517344
-model_pmax90_same_cross_recall_genome_all	0.270437
+model_pmax90_same_cross_accuracy_genome_trans	0.500528
+model_pmax90_same_cross_recall_genome_all	0.267343
 model_pmax90_same_cross_recall_genome_cis	0.297699
-model_pmax90_same_cross_recall_genome_trans	0.231419
-model_same_cross_accuracy_genome_all	0.759175
-model_same_cross_accuracy_genome_cis	0.935654
-model_same_cross_accuracy_genome_trans	0.506602
-model_top1_accuracy_genome_all	0.374549
-model_top1_accuracy_genome_cis	0.465692
-model_top1_accuracy_genome_trans	0.244108
+model_pmax90_same_cross_recall_genome_trans	0.223897
+model_same_cross_accuracy_genome_all	0.757001
+model_same_cross_accuracy_genome_cis	0.93562
+model_same_cross_accuracy_genome_trans	0.501365
+model_top1_accuracy_genome_all	0.420891
+model_top1_accuracy_genome_cis	0.520802
+model_top1_accuracy_genome_trans	0.277899
 pairs_cis	1135454
 pairs_path	/shared/zliu/CHARM/CHARM_mesc/data/pairs/P9016.pairs.gz
 pairs_phase_columns_present	1
@@ -60,6 +88,9 @@ phase_used_eval_only	1
 pmax_threshold	0.9
 posterior_bpair_rows	489556
 posterior_path	/mnt/ssd/zliu/phase3/test_res/002-20260616_003319-p9016_softall_4m_1m_200k_chain/outputs/1m/minimal_soft_sep_off/p9016_full.bpair_posterior.tsv
+reconstruction_genome_volume	1009.56
+reconstruction_mean_copy01_separation	4.93077
+reconstruction_median_copy01_separation	4.96408
 reconstruction_path	/mnt/ssd/zliu/phase3/test_res/002-20260616_003319-p9016_softall_4m_1m_200k_chain/outputs/1m/minimal_soft_sep_off/p9016_full.coords.tsv
 reconstruction_points	5266
 reference_3dg_path	/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz

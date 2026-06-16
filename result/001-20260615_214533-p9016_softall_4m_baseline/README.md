@@ -1,51 +1,52 @@
 # 001-20260615_214533-p9016_softall_4m_baseline
 
 - label: `P9016 softall baseline 4000000bp`
-- created_at: `2026-06-15T23:17:26`
+- created_at: `2026-06-16T15:16:17`
 - training input: `/shared/zliu/CHARM/CHARM_mesc/data/pairs/P9016.pairs.gz`
-- reconstruction: `test_res/001-20260615_214533-p9016_softall_4m_baseline/outputs/minimal_soft_sep_off/p9016_full.coords.tsv`
+- reconstruction: `/mnt/ssd/zliu/phase3/test_res/001-20260615_214533-p9016_softall_4m_baseline/outputs/minimal_soft_sep_off/p9016_full.coords.tsv`
 - CHARM/3DG eval reference: `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz`
-- train manifest: `test_res/001-20260615_214533-p9016_softall_4m_baseline/outputs/minimal_soft_sep_off/p9016_full.manifest.tsv`
+- train manifest: `/mnt/ssd/zliu/phase3/test_res/001-20260615_214533-p9016_softall_4m_baseline/outputs/minimal_soft_sep_off/p9016_full.manifest.tsv`
 - boundary: training used raw P9016 contact information only; phase labels and CHARM/3DG were read only by this post-training evaluator.
-- copy gauge: metrics were computed for global swaps; headline metrics and standard plots use the best global swap. A per-chromosome local best-swap row is included only as an eval-only gauge-sensitivity diagnostic.
-
+- copy gauge: structure plots and distance metrics use per-chromosome cis distance-matrix Spearman correlation to select a geometry gauge. Contact identity metrics report the reconstruction under a whole-chromosome SNP cis-top1 oracle gauge, which is eval-only and exists because copy0/copy1 are gauge labels that can be swapped independently per chromosome.
+- contact denominator: contact accuracy uses eval-only raw contacts with both `phase0` and `phase1`, excluding same-bin contacts, and requiring a matching posterior bpair.
 - alignment: 3D scatter plots and Procrustes RMSD use rigid alignment only: translation and rotation are fitted, reconstruction scale is not fitted to CHARM/3DG. The reported similarity scale is diagnostic only and is not applied.
 
-## Quantitative Results
+## Allele Separation
 
-| metric | value |
+| source | mean copy0/copy1 separation |
 | --- | ---: |
-| bin_size_bp | 4000000 |
-| pairs_total | 1703888 |
-| pairs_cis | 1135454 |
-| pairs_trans | 568434 |
-| pairs_with_any_phase_eval_only | 1302203 |
-| reference_points_aggregated | 1304 |
-| reconstruction_points | 1318 |
-| shared_points_best_global_swap | 1295 |
-| chr1_shared_points_best_global_swap | 98 |
-| best_global_copy_swap | 1 |
-| chr1_copy_swap_for_standard_plots | 1 |
-| headline_copy_swap_policy | global_swap_1 |
-| best_genome_distance_spearman | 0.167402 |
-| best_genome_distance_rmse_rg_norm | 0.714589 |
-| best_genome_rigid_procrustes_rmsd_rg_norm | 1.01952 |
-| best_genome_similarity_scale_to_reference_diagnostic | 0.543722 |
-| best_chr1_distance_spearman | 0.703538 |
-| best_chr1_distance_rmse_rg_norm | 0.529354 |
-| best_chr1_rigid_procrustes_rmsd_rg_norm | 0.607649 |
-| best_chr1_similarity_scale_to_reference_diagnostic | 0.845744 |
+| CHARM/3DG | 4.6402 |
+| reconstruction | 3.16821 |
 
-## Swap-Aware Metrics
+## Contact Accuracy
 
-| scope | copy_swap_policy | n_points | distance_spearman | distance_rmse_rg_norm | rigid_procrustes_rmsd_rg_norm | similarity_scale_to_reference_diagnostic |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| genome | global_swap_0 | 1295 | 0.103151 | 0.730969 | 1.09196 | 0.386927 |
-| chr1 | global_swap_0 | 98 | 0.696762 | 0.542847 | 0.645452 | 0.819779 |
-| genome | global_swap_1 | 1295 | 0.167402 | 0.714589 | 1.01952 | 0.543722 |
-| chr1 | global_swap_1 | 98 | 0.703538 | 0.529354 | 0.607649 | 0.845744 |
-| genome | per_chrom_best | 1295 | 0.158531 | 0.716315 | 1.0811 | 0.445728 |
-| chr1 | per_chrom_best | 98 | 0.703538 | 0.529354 | 0.607649 | 0.845744 |
+| scope | top1 accuracy |
+| --- | ---: |
+| all | 0.37496 |
+| cis | 0.489914 |
+| trans | 0.246494 |
+
+| scope | pmax >= 0.9 accuracy | pmax >= 0.9 recall |
+| --- | ---: | ---: |
+| all | 0.394469 | 0.221177 |
+| cis | 0.488169 | 0.323866 |
+| trans | 0.238664 | 0.106417 |
+
+## Cis Distance Matrix Correlation
+
+Mean per-chromosome Spearman correlation, split by CHARM/3DG copy and reconstruction copy.
+
+| CHARM/3DG copy \\ reconstruction copy | copy0 | copy1 |
+| --- | ---: | ---: |
+| copy0 | 0.2464 | 0.310819 |
+| copy1 | 0.343451 | 0.290438 |
+
+## Output Tables
+
+- `cis_distance_correlation_matrix.tsv`: per-chromosome 2x2 cis distance-matrix Pearson/Spearman table for CHARM/3DG copy0/copy1 against reconstruction copy0/copy1.
+- `cis_distance_correlations.tsv`: per-chromosome cis distance-matrix Pearson/Spearman for the two whole-chromosome swap choices, with the selected geometry swap marked.
+- `contact_accuracy.tsv`: four-state top1 accuracy, same/cross accuracy, pmax >= 0.9 accuracy, called fraction, and recall for all/cis/trans contacts plus per-chromosome cis contacts.
+- `copy_separation.tsv`: per-chromosome and genome mean/median distance between copy0 and copy1 of the same bin.
 
 ## Plots
 

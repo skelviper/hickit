@@ -2893,13 +2893,18 @@ static int hk_blind_gpu_pair_push(struct hk_fdg_gpu_pair **pairs, size_t *n_pair
 	assert(m_pairs);
 	if (i == j || k <= 0.0f)
 		return 0;
-	if (!isfinite(k) || !isfinite(d_scale) || d_scale <= 0.0f)
+	if (!isfinite(k) || !isfinite(d_scale) || d_scale <= 0.0f) {
+		fprintf(stderr, "[E::blind-gpu] bad GPU pair i=%d j=%d type=%u k=%.9g d_scale=%.9g\n",
+				i, j, (unsigned)type, k, d_scale);
 		return -1;
+	}
 	if (*n_pairs == *m_pairs) {
 		new_m = *m_pairs? (*m_pairs << 1) : 1024;
 		p = (struct hk_fdg_gpu_pair*)realloc(*pairs, new_m * sizeof(**pairs));
-		if (p == 0)
+		if (p == 0) {
+			fprintf(stderr, "[E::blind-gpu] failed to grow GPU pair buffer to %zu pairs\n", new_m);
 			return -1;
+		}
 		*pairs = p;
 		*m_pairs = new_m;
 	}
@@ -3091,18 +3096,36 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct 
 	}
 	if (n_steps == 0)
 		return 0;
-	if (!hk_fdg_gpu_is_available())
+	if (!hk_fdg_gpu_is_available()) {
+		fprintf(stderr, "[E::blind-gpu] GPU backend requested but CUDA backend/device is unavailable; rebuild with make gpu=1 and check CUDA device visibility\n");
 		return -1;
+	}
 	if (hk_blind_gpu_build_pairs(bmap_or_null, edges, n_diploid, &gpu_pairs, &n_gpu_pairs,
-								 &block_keys, &n_block_keys) != 0)
+								 &block_keys, &n_block_keys) != 0) {
+		fprintf(stderr, "[E::blind-gpu] build GPU pairs failed: n_diploid=%d n_edges=%d\n",
+				n_diploid, edges->n_edges);
 		goto cleanup;
+	}
+	fprintf(stderr, "[M::blind-gpu] prepared pair buffers: n_diploid=%d n_pairs=%zu n_block_keys=%zu n_steps=%d\n",
+			n_diploid, n_gpu_pairs, n_block_keys, n_steps);
 	gpu_ctx = hk_fdg_gpu_create(n_diploid);
-	if (gpu_ctx == 0)
+	if (gpu_ctx == 0) {
+		fprintf(stderr, "[E::blind-gpu] create GPU context failed: n_diploid=%d\n", n_diploid);
 		goto cleanup;
-	if (hk_fdg_gpu_prepare(gpu_ctx, n_diploid, n_block_keys) != 0 ||
-		hk_fdg_gpu_set_blocklist(gpu_ctx, block_keys, n_block_keys) != 0 ||
-		hk_fdg_gpu_upload_positions(gpu_ctx, (const fvec3_t*)coords, n_diploid) != 0)
+	}
+	if (hk_fdg_gpu_prepare(gpu_ctx, n_diploid, n_block_keys) != 0) {
+		fprintf(stderr, "[E::blind-gpu] prepare GPU context failed: n_diploid=%d n_block_keys=%zu\n",
+				n_diploid, n_block_keys);
 		goto cleanup;
+	}
+	if (hk_fdg_gpu_set_blocklist(gpu_ctx, block_keys, n_block_keys) != 0) {
+		fprintf(stderr, "[E::blind-gpu] set GPU blocklist failed: n_block_keys=%zu\n", n_block_keys);
+		goto cleanup;
+	}
+	if (hk_fdg_gpu_upload_positions(gpu_ctx, (const fvec3_t*)coords, n_diploid) != 0) {
+		fprintf(stderr, "[E::blind-gpu] upload GPU positions failed: n_diploid=%d\n", n_diploid);
+		goto cleanup;
+	}
 
 	for (t = 0; t < n_steps; ++t) {
 		struct hk_blind_step_diag step_diag;
@@ -3122,10 +3145,29 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct 
 							   unit,
 							   enable_repulsion? hk_blind_rel_rep_schedule_at(t, n_steps) : 0.0f,
 							   enable_repulsion? gpu_conf.d_r : 0.0f,
-							   &stats, &rms_force, need_sync) != 0)
+							   &stats, &rms_force, need_sync) != 0) {
+			fprintf(stderr, "[E::blind-gpu] GPU compute failed at relax_step=%d/%d n_pairs=%zu n_diploid=%d rel_rep=%.9g rep_radius=%.9g\n",
+					t + 1, n_steps, n_gpu_pairs, n_diploid,
+					enable_repulsion? hk_blind_rel_rep_schedule_at(t, n_steps) : 0.0f,
+					enable_repulsion? gpu_conf.d_r : 0.0f);
 			goto cleanup;
-		if (hk_fdg_gpu_download_positions(gpu_ctx, coords, n_diploid) != 0)
+		}
+		if (!isfinite(rms_force) ||
+			!isfinite(stats.energy[HK_FDG_PAIR_TYPE_CONTACT]) ||
+			!isfinite(stats.energy[HK_FDG_PAIR_TYPE_BACKBONE]) ||
+			!isfinite(stats.energy[HK_FDG_PAIR_TYPE_REPEL])) {
+			fprintf(stderr, "[E::blind-gpu] non-finite GPU stats at relax_step=%d/%d rms=%.9g energy=%.9g,%.9g,%.9g\n",
+					t + 1, n_steps, rms_force,
+					stats.energy[HK_FDG_PAIR_TYPE_CONTACT],
+					stats.energy[HK_FDG_PAIR_TYPE_BACKBONE],
+					stats.energy[HK_FDG_PAIR_TYPE_REPEL]);
 			goto cleanup;
+		}
+		if (hk_fdg_gpu_download_positions(gpu_ctx, coords, n_diploid) != 0) {
+			fprintf(stderr, "[E::blind-gpu] download GPU positions failed at relax_step=%d/%d n_diploid=%d\n",
+					t + 1, n_steps, n_diploid);
+			goto cleanup;
+		}
 		step_diag.contact_energy = stats.energy[HK_FDG_PAIR_TYPE_CONTACT];
 		step_diag.backbone_energy = stats.energy[HK_FDG_PAIR_TYPE_BACKBONE];
 		step_diag.repulsion_energy = stats.energy[HK_FDG_PAIR_TYPE_REPEL];
@@ -3147,8 +3189,11 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct 
 				goto cleanup;
 			}
 			free(extra_force);
-			if (hk_fdg_gpu_upload_positions(gpu_ctx, (const fvec3_t*)coords, n_diploid) != 0)
-				goto cleanup;
+				if (hk_fdg_gpu_upload_positions(gpu_ctx, (const fvec3_t*)coords, n_diploid) != 0) {
+					fprintf(stderr, "[E::blind-gpu] upload GPU positions after extra forces failed at relax_step=%d/%d\n",
+							t + 1, n_steps);
+					goto cleanup;
+				}
 		}
 		step_diag.total_energy = step_diag.contact_energy + step_diag.backbone_energy +
 			step_diag.repulsion_energy + step_diag.sep_energy + step_diag.anchor_energy;
