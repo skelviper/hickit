@@ -15,13 +15,15 @@
 
 Contact accuracy 先用每条染色体 cis distance-matrix Spearman correlation 选定 reconstruction 到 CHARM/3DG 的 copy gauge，然后在这个固定 gauge 下比较 posterior top1/pmax 和 SNP phase truth；SNP phase 不参与 copy gauge 选择。
 
+`truth_samecross_rand4_cis` 是只利用 cis same/cross territory imbalance、但在同类内随机二选一的四状态 baseline；因此 cis 的合理随机参照通常接近 0.5，而不是 uniform 四状态的 0.25。
+
 ## Stage Summary
 
-| stage | bin_size_bp | reference_3dg | shared_points | mean_cis_spearman | model_top1_all | model_top1_cis | model_top1_trans | model_pmax90_acc_all | model_pmax90_acc_cis | model_pmax90_acc_trans | model_pmax90_recall_all | model_pmax90_recall_cis | model_pmax90_recall_trans | charm_top1_all | charm_top1_cis | charm_top1_trans |
-| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `4m` | 4000000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz` | 1295 | 0.683784 | 0.352892 | 0.455591 | 0.23812 | 0.362528 | 0.441315 | 0.237298 | 0.194183 | 0.274932 | 0.103941 | 0.214292 | 0.255442 | 0.168305 |
-| `1m` | 1000000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz` | 4947 | 0.71501 | 0.374549 | 0.465692 | 0.244108 | 0.345532 | 0.439129 | 0.245342 | 0.13163 | 0.146921 | 0.109747 | 0.198369 | 0.221055 | 0.165901 |
-| `200k` | 200000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.200k.3dg.gz` | 24757 | 0.694382 | 0.384278 | 0.468564 | 0.229915 | 0.319269 | 0.438143 | 0.216682 | 0.117764 | 0.11574 | 0.12147 | 0.191512 | 0.206266 | 0.164491 |
+| stage | bin_size_bp | reference_3dg | shared_points | mean_cis_spearman | truth_same_cis | truth_majority_cis | truth_samecross_rand4_cis | model_top1_all | model_top1_cis | model_top1_trans | model_pmax90_acc_all | model_pmax90_acc_cis | model_pmax90_acc_trans | model_pmax90_recall_all | model_pmax90_recall_cis | model_pmax90_recall_trans | charm_top1_all | charm_top1_cis | charm_top1_trans |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `4m` | 4000000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz` | 1295 | 0.683784 | 0.96983 | 0.531728 | 0.484915 | 0.352892 | 0.455591 | 0.23812 | 0.362528 | 0.441315 | 0.237298 | 0.194183 | 0.274932 | 0.103941 | 0.214292 | 0.255442 | 0.168305 |
+| `1m` | 1000000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz` | 4947 | 0.71501 | 0.974824 | 0.534348 | 0.487412 | 0.374549 | 0.465692 | 0.244108 | 0.345532 | 0.439129 | 0.245342 | 0.13163 | 0.146921 | 0.109747 | 0.198369 | 0.221055 | 0.165901 |
+| `200k` | 200000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.200k.3dg.gz` | 24757 | 0.694382 | 0.978969 | 0.533319 | 0.489484 | 0.384278 | 0.468564 | 0.229915 | 0.319269 | 0.438143 | 0.216682 | 0.117764 | 0.11574 | 0.12147 | 0.191512 | 0.206266 | 0.164491 |
 
 ## Output Layout
 
