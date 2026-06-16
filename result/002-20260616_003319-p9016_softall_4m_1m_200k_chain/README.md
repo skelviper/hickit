@@ -17,11 +17,11 @@ Contact accuracy 先用每条染色体 cis distance-matrix Spearman correlation 
 
 ## Stage Summary
 
-| stage | bin_size_bp | reference_3dg | shared_points | mean_cis_spearman | model_top1_all | model_pmax90_acc_all | model_pmax90_recall_all | charm_top1_all |
-| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `4m` | 4000000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz` | 1295 | 0.683784 | 0.352892 | 0.362528 | 0.194183 | 0.214292 |
-| `1m` | 1000000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz` | 4947 | 0.71501 | 0.374549 | 0.345532 | 0.13163 | 0.198369 |
-| `200k` | 200000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.200k.3dg.gz` | 24757 | 0.694382 | 0.384278 | 0.319269 | 0.117764 | 0.191512 |
+| stage | bin_size_bp | reference_3dg | shared_points | mean_cis_spearman | model_top1_all | model_top1_cis | model_top1_trans | model_pmax90_acc_all | model_pmax90_acc_cis | model_pmax90_acc_trans | model_pmax90_recall_all | model_pmax90_recall_cis | model_pmax90_recall_trans | charm_top1_all | charm_top1_cis | charm_top1_trans |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `4m` | 4000000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz` | 1295 | 0.683784 | 0.352892 | 0.455591 | 0.23812 | 0.362528 | 0.441315 | 0.237298 | 0.194183 | 0.274932 | 0.103941 | 0.214292 | 0.255442 | 0.168305 |
+| `1m` | 1000000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz` | 4947 | 0.71501 | 0.374549 | 0.465692 | 0.244108 | 0.345532 | 0.439129 | 0.245342 | 0.13163 | 0.146921 | 0.109747 | 0.198369 | 0.221055 | 0.165901 |
+| `200k` | 200000 | `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.200k.3dg.gz` | 24757 | 0.694382 | 0.384278 | 0.468564 | 0.229915 | 0.319269 | 0.438143 | 0.216682 | 0.117764 | 0.11574 | 0.12147 | 0.191512 | 0.206266 | 0.164491 |
 
 ## Output Layout
 
