@@ -4698,9 +4698,9 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct 
 		return ret;
 	diag->n_chr_flipped = diag->gauge_stats.n_flipped;
 
-	// Step 12A intentionally does not permute stored p4 after coordinate gauge flips.
-	// The p4 values were computed from pre-relax coordinates; the next single iteration
-	// recomputes a fresh posterior from the stabilized coordinates before using p4 again.
+	// Remap stored p4 to the same chromosome-copy gauge as the stabilized coordinates.
+	// The probabilities still come from pre-relax geometry; the next iteration, or the
+	// final posterior refresh after the last iteration, recomputes p4 from stabilized coordinates.
 	return 0;
 }
 
