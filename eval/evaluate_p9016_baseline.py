@@ -178,6 +178,7 @@ def read_posterior(path: Path) -> dict[tuple[str, int, str, int], dict[str, obje
                 "start1": start1,
                 "chrom2": chrom2,
                 "start2": start2,
+                "n_raw": int(row.get("n_raw", "1")),
                 "base_d_scale": float(row["base_d_scale"]),
                 "base_k": float(row["base_k"]),
                 "p4": p4,
@@ -332,6 +333,183 @@ def read_contact_truth_counts(
             if key in posterior:
                 counts[key][state] += 1
     return dict(counts)
+
+
+def distance_for_copies(
+    coords: dict[tuple[str, int, int], np.ndarray],
+    chrom1: str,
+    start1: int,
+    copy1: int,
+    chrom2: str,
+    start2: int,
+    copy2: int,
+) -> float | None:
+    key1 = (chrom1, start1, copy1)
+    key2 = (chrom2, start2, copy2)
+    if key1 not in coords or key2 not in coords:
+        return None
+    return float(np.linalg.norm(coords[key1] - coords[key2]))
+
+
+def min_copy_pair_distance(
+    coords: dict[tuple[str, int, int], np.ndarray],
+    chrom1: str,
+    start1: int,
+    chrom2: str,
+    start2: int,
+) -> float | None:
+    values: list[float] = []
+    for copy1 in (0, 1):
+        for copy2 in (0, 1):
+            distance = distance_for_copies(coords, chrom1, start1, copy1, chrom2, start2, copy2)
+            if distance is not None:
+                values.append(distance)
+    return min(values) if values else None
+
+
+def all_copy_pair_distances(
+    coords: dict[tuple[str, int, int], np.ndarray],
+    chrom1: str,
+    start1: int,
+    chrom2: str,
+    start2: int,
+) -> list[float] | None:
+    values: list[float] = []
+    for copy1 in (0, 1):
+        for copy2 in (0, 1):
+            distance = distance_for_copies(coords, chrom1, start1, copy1, chrom2, start2, copy2)
+            if distance is None:
+                return None
+            values.append(distance)
+    return values
+
+
+def append_weighted(values: list[float], value: float, weight: int) -> None:
+    if weight <= 0:
+        return
+    values.extend([value] * weight)
+
+
+def contact_distance_distributions(
+    contact_counts: dict[tuple[str, int, str, int], np.ndarray],
+    posterior: dict[tuple[str, int, str, int], dict[str, object]],
+    reference: dict[tuple[str, int, int], np.ndarray],
+    reconstruction: dict[tuple[str, int, int], np.ndarray],
+    snp_swaps: dict[str, int],
+) -> tuple[dict[tuple[str, str, str], np.ndarray], dict[str, int]]:
+    distances: dict[tuple[str, str, str], list[float]] = defaultdict(list)
+    stats: dict[str, int] = defaultdict(int)
+
+    for key, counts in contact_counts.items():
+        item = posterior.get(key)
+        if item is None:
+            continue
+        chrom1 = str(item["chrom1"])
+        chrom2 = str(item["chrom2"])
+        start1 = int(item["start1"])
+        start2 = int(item["start2"])
+        n_contacts = int(counts.sum())
+        if n_contacts <= 0:
+            continue
+        is_cis = chrom1 == chrom2
+        scope = "genome_cis" if is_cis else "genome_trans"
+        stats[f"{scope}_posterior_matched_contacts"] += n_contacts
+
+        if is_cis:
+            for state, state_count_value in enumerate(counts):
+                state_count = int(state_count_value)
+                if state_count <= 0:
+                    continue
+                phase1 = state >> 1
+                phase2 = state & 1
+                ref_distance = distance_for_copies(reference, chrom1, start1, phase1, chrom2, start2, phase2)
+                rec_distance = distance_for_copies(
+                    reconstruction,
+                    chrom1,
+                    start1,
+                    phase1 ^ snp_swaps.get(chrom1, 0),
+                    chrom2,
+                    start2,
+                    phase2 ^ snp_swaps.get(chrom2, 0),
+                )
+                if ref_distance is None or rec_distance is None:
+                    stats[f"{scope}_snp_missing_coord_skipped"] += state_count
+                    continue
+                append_weighted(distances[("snp_truth", "charm3dg", scope)], ref_distance, state_count)
+                append_weighted(distances[("snp_truth", "reconstruction", scope)], rec_distance, state_count)
+                stats[f"{scope}_snp_contacts_used"] += state_count
+        else:
+            # Trans SNP 0/1 labels are not a global homolog-copy gauge across
+            # chromosomes. For SNP-labeled trans contacts, use only the
+            # chromosome-pair information and report the closest copy-pair
+            # distance in each structure.
+            ref_distances = all_copy_pair_distances(reference, chrom1, start1, chrom2, start2)
+            rec_distances = all_copy_pair_distances(reconstruction, chrom1, start1, chrom2, start2)
+            ref_distance = min(ref_distances) if ref_distances is not None else None
+            rec_distance = min(rec_distances) if rec_distances is not None else None
+            if ref_distance is None or rec_distance is None:
+                stats[f"{scope}_snp_missing_coord_skipped"] += n_contacts
+            else:
+                append_weighted(distances[("snp_truth", "charm3dg", scope)], ref_distance, n_contacts)
+                append_weighted(distances[("snp_truth", "reconstruction", scope)], rec_distance, n_contacts)
+                stats[f"{scope}_snp_contacts_used"] += n_contacts
+
+    for item in posterior.values():
+        chrom1 = str(item["chrom1"])
+        chrom2 = str(item["chrom2"])
+        start1 = int(item["start1"])
+        start2 = int(item["start2"])
+        if chrom1 == chrom2 and start1 == start2:
+            stats["posterior_top1_same_bin_skipped"] += int(item.get("n_raw", 0))
+            continue
+        weight = int(item.get("n_raw", 0))
+        if weight <= 0:
+            continue
+        is_cis = chrom1 == chrom2
+        scope = "genome_cis" if is_cis else "genome_trans"
+        stats[f"{scope}_top1_candidate_contacts"] += weight
+        top1_state = int(np.argmax(np.asarray(item["p4"], dtype=float)))
+        model_copy1 = top1_state >> 1
+        model_copy2 = top1_state & 1
+        rec_distances = all_copy_pair_distances(reconstruction, chrom1, start1, chrom2, start2)
+        if rec_distances is not None:
+            stats[f"{scope}_top1_min_check_contacts"] += weight
+            if top1_state == int(np.argmin(np.asarray(rec_distances, dtype=float))):
+                stats[f"{scope}_top1_is_reconstruction_min_contacts"] += weight
+        rec_distance = distance_for_copies(
+            reconstruction,
+            chrom1,
+            start1,
+            model_copy1,
+            chrom2,
+            start2,
+            model_copy2,
+        )
+        if is_cis:
+            ref_distance = distance_for_copies(
+                reference,
+                chrom1,
+                start1,
+                model_copy1 ^ snp_swaps.get(chrom1, 0),
+                chrom2,
+                start2,
+                model_copy2 ^ snp_swaps.get(chrom2, 0),
+            )
+        else:
+            # The model top1 state is a concrete copy-pair in reconstruction,
+            # but there is no meaningful exact 00/01 trans copy-pair in CHARM.
+            # Use the closest CHARM copy-pair for the same chromosome pair as a
+            # gauge-safe reference, requiring all four CHARM copy pairs to exist.
+            ref_distances = all_copy_pair_distances(reference, chrom1, start1, chrom2, start2)
+            ref_distance = min(ref_distances) if ref_distances is not None else None
+        if ref_distance is None or rec_distance is None:
+            stats[f"{scope}_top1_missing_coord_skipped"] += weight
+            continue
+        append_weighted(distances[("posterior_top1", "charm3dg", scope)], ref_distance, weight)
+        append_weighted(distances[("posterior_top1", "reconstruction", scope)], rec_distance, weight)
+        stats[f"{scope}_top1_contacts_used"] += weight
+
+    return {key: np.asarray(values, dtype=float) for key, values in distances.items()}, dict(stats)
 
 
 def ordered_keys(
@@ -918,6 +1096,32 @@ def volume_rows(
     return rows
 
 
+def snp_contact_distance_rows(
+    distances_by_source_scope: dict[tuple[str, str, str], np.ndarray],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for contact_set in ("snp_truth", "posterior_top1"):
+        for scope in ("genome_cis", "genome_trans"):
+            for source in ("charm3dg", "reconstruction"):
+                distances = distances_by_source_scope.get((contact_set, source, scope), np.array([], dtype=float))
+                rows.append(
+                    {
+                        "contact_set": contact_set,
+                        "source": source,
+                        "scope": scope,
+                        "n_contacts": int(len(distances)),
+                        "mean_distance": float(np.mean(distances)) if len(distances) else float("nan"),
+                        "median_distance": float(np.median(distances)) if len(distances) else float("nan"),
+                        "p10_distance": float(np.percentile(distances, 10)) if len(distances) else float("nan"),
+                        "p90_distance": float(np.percentile(distances, 90)) if len(distances) else float("nan"),
+                        "p99_distance": float(np.percentile(distances, 99)) if len(distances) else float("nan"),
+                        "min_distance": float(np.min(distances)) if len(distances) else float("nan"),
+                        "max_distance": float(np.max(distances)) if len(distances) else float("nan"),
+                    }
+                )
+    return rows
+
+
 def format_value(value: object) -> str:
     if isinstance(value, float):
         if math.isnan(value):
@@ -1204,6 +1408,79 @@ def plot_3d_scatter(
     return len(keys)
 
 
+def plot_snp_contact_distance_histograms(
+    path: Path,
+    distances_by_source_scope: dict[tuple[str, str, str], np.ndarray],
+) -> None:
+    colors = {"charm3dg": "#4E79A7", "reconstruction": "#E15759"}
+    labels = {"charm3dg": "CHARM/3DG", "reconstruction": "Reconstruction"}
+    row_labels = {
+        "snp_truth": "SNP-labeled contacts",
+        "posterior_top1": "Posterior top1 contacts",
+    }
+    col_labels = {"genome_cis": "cis", "genome_trans": "trans"}
+    fig, axes = plt.subplots(
+        2,
+        2,
+        figsize=(2 * PANEL_SIZE_IN + 0.9, 2 * PANEL_SIZE_IN),
+        constrained_layout=True,
+    )
+    for row_idx, contact_set in enumerate(("snp_truth", "posterior_top1")):
+        for col_idx, scope in enumerate(("genome_cis", "genome_trans")):
+            ax = axes[row_idx, col_idx]
+            arrays = [
+                distances_by_source_scope.get((contact_set, "charm3dg", scope), np.array([], dtype=float)),
+                distances_by_source_scope.get((contact_set, "reconstruction", scope), np.array([], dtype=float)),
+            ]
+            nonempty = [arr[np.isfinite(arr)] for arr in arrays if len(arr)]
+            title = f"{row_labels[contact_set]}: {col_labels[scope]}"
+            if not nonempty:
+                ax.set_title(title)
+                ax.set_xlabel("3D distance")
+                ax.set_ylabel("density")
+                style_axis_text(ax)
+                continue
+            combined = np.concatenate(nonempty)
+            xmax = float(np.percentile(combined, 99.5))
+            if not math.isfinite(xmax) or xmax <= 0:
+                xmax = float(np.max(combined)) if len(combined) else 1.0
+            if xmax <= 0:
+                xmax = 1.0
+            bins = np.linspace(0.0, xmax, 61)
+            for source in ("charm3dg", "reconstruction"):
+                values = distances_by_source_scope.get((contact_set, source, scope), np.array([], dtype=float))
+                values = values[np.isfinite(values)]
+                if not len(values):
+                    continue
+                clipped = np.minimum(values, xmax)
+                ax.hist(
+                    clipped,
+                    bins=bins,
+                    density=True,
+                    histtype="stepfilled",
+                    alpha=0.23,
+                    color=colors[source],
+                    edgecolor=colors[source],
+                    linewidth=1.0,
+                    label=f"{labels[source]} n={len(values)}",
+                )
+                ax.hist(
+                    clipped,
+                    bins=bins,
+                    density=True,
+                    histtype="step",
+                    color=colors[source],
+                    linewidth=1.1,
+                )
+            ax.set_title(title)
+            ax.set_xlabel("3D distance; values above p99.5 clipped")
+            ax.set_ylabel("density")
+            ax.legend(loc="upper right", fontsize=PLOT_FONT_SIZE, frameon=False)
+            style_axis_text(ax)
+    fig.savefig(path, dpi=RETINA_DPI)
+    plt.close(fig)
+
+
 def write_readme(
     path: Path,
     args: argparse.Namespace,
@@ -1214,6 +1491,7 @@ def write_readme(
     truth_rows: list[dict[str, object]],
     separation_rows: list[dict[str, object]],
     volume_rows_data: list[dict[str, object]],
+    contact_distance_rows: list[dict[str, object]],
 ) -> None:
     model_all = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_all")
     model_cis = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_cis")
@@ -1248,6 +1526,22 @@ def write_readme(
         ("cis", acc_value(model_cis, "pmax_threshold_accuracy"), acc_value(model_cis, "pmax_threshold_recall")),
         ("trans", acc_value(model_trans, "pmax_threshold_accuracy"), acc_value(model_trans, "pmax_threshold_recall")),
     ]
+    contact_distance_table_rows = []
+    for contact_set, contact_label in (("snp_truth", "SNP-labeled"), ("posterior_top1", "posterior top1")):
+        for scope, scope_label in (("genome_cis", "cis"), ("genome_trans", "trans")):
+            charm_row = first_row(contact_distance_rows, contact_set=contact_set, source="charm3dg", scope=scope)
+            rec_row = first_row(contact_distance_rows, contact_set=contact_set, source="reconstruction", scope=scope)
+            contact_distance_table_rows.append(
+                (
+                    contact_label,
+                    scope_label,
+                    charm_row["n_contacts"] if charm_row else 0,
+                    charm_row["mean_distance"] if charm_row else float("nan"),
+                    rec_row["mean_distance"] if rec_row else float("nan"),
+                    charm_row["median_distance"] if charm_row else float("nan"),
+                    rec_row["median_distance"] if rec_row else float("nan"),
+                )
+            )
     matrix_values = {
         (ref_copy, rec_copy): mean_matrix_value(ref_copy, rec_copy)
         for ref_copy in (0, 1)
@@ -1291,15 +1585,25 @@ def write_readme(
             fh.write(
                 f"| copy{ref_copy} | {format_value(matrix_values[(ref_copy, 0)])} | {format_value(matrix_values[(ref_copy, 1)])} |\n"
             )
+        fh.write("\n## Contact Distance Distribution\n\n")
+        fh.write("Uses two contact sets. The SNP-labeled row uses eval-only binned contacts with SNP phase labels on both ends, excluding same-bin contacts, and requiring a matching posterior bpair. For cis SNP-labeled contacts, the SNP phase selects the copy pair after the whole-chromosome SNP gauge is applied to reconstruction. For trans SNP-labeled contacts, SNP 0/1 is not a shared cross-chromosome copy gauge, so the plotted distance is the closest copy-pair distance for that chromosome pair in each structure. The posterior-top1 row uses all non-same-bin posterior binned contacts, weighted by raw contact count. For posterior-top1 contacts, cis uses the model top1 copy pair with the same eval-only contact gauge for CHARM/3DG; trans uses the model top1 copy-pair distance in reconstruction and the closest CHARM/3DG copy-pair distance as a gauge-safe reference.\n\n")
+        fh.write("| contact set | scope | contacts | CHARM/3DG mean | reconstruction mean | CHARM/3DG median | reconstruction median |\n")
+        fh.write("| --- | --- | ---: | ---: | ---: | ---: | ---: |\n")
+        for contact_set, scope, n_contacts, charm_mean, rec_mean, charm_median, rec_median in contact_distance_table_rows:
+            fh.write(
+                f"| {contact_set} | {scope} | {n_contacts} | {format_value(charm_mean)} | {format_value(rec_mean)} | {format_value(charm_median)} | {format_value(rec_median)} |\n"
+            )
         fh.write("\n## Output Tables\n\n")
         fh.write("- `cis_distance_correlation_matrix.tsv`: per-chromosome 2x2 cis distance-matrix Pearson/Spearman table for CHARM/3DG copy0/copy1 against reconstruction copy0/copy1.\n")
         fh.write("- `cis_distance_correlations.tsv`: per-chromosome cis distance-matrix Pearson/Spearman for the two whole-chromosome swap choices, with the selected geometry swap marked.\n")
         fh.write("- `contact_accuracy.tsv`: four-state top1 accuracy, same/cross accuracy, pmax >= 0.9 accuracy, called fraction, and recall for all/cis/trans contacts plus per-chromosome cis contacts.\n")
+        fh.write("- `contact_distance_distribution.tsv`: cis/trans 3D distance summaries for SNP-labeled contacts and posterior-top1 contacts in CHARM/3DG and reconstruction.\n")
         fh.write("- `copy_separation.tsv`: per-chromosome and genome mean/median distance between copy0 and copy1 of the same bin.\n")
         fh.write("\n## Plots\n\n")
         fh.write("- `plots/chr1_distance_maps.png`: rows are CHARM/3DG and reconstruction; columns are copy0 and copy1; larger distances are blue.\n")
         fh.write("- `plots/all_chrom_3d_scatter.png`: each point is one bin; chromosome+copy states are colored separately; reconstruction is rigid-Procrustes-aligned into the CHARM/3DG coordinate frame with no scale fitting, and both panels share one 3D coordinate range.\n")
         fh.write("- `plots/chr1_copy_3d_scatter.png`: chr1 copy0/copy1 bins highlighted on top of low-alpha non-chr1 background points, using the same global rigid transform as the all-chromosome scatter plot.\n")
+        fh.write("- `plots/contact_distance_histograms.png`: 2x2 cis/trans histograms for SNP-labeled and posterior-top1 contact distances; CHARM/3DG and reconstruction use different colors.\n")
 
 
 def parse_args() -> argparse.Namespace:
@@ -1354,6 +1658,14 @@ def main() -> int:
     separation_rows = copy_separation_rows({"charm3dg": reference, "reconstruction": reconstruction}, distance_swaps, chroms)
     volume_rows_data = volume_rows({"charm3dg": reference, "reconstruction": reconstruction}, chroms)
     cis_matrix_rows = cis_distance_correlation_matrix_rows(chroms, reference, reconstruction, distance_swaps)
+    snp_contact_distances, snp_contact_distance_stats = contact_distance_distributions(
+        contact_counts,
+        posterior,
+        reference,
+        reconstruction,
+        model_snp_swaps,
+    )
+    contact_distance_rows = snp_contact_distance_rows(snp_contact_distances)
     model_all = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_all")
     model_cis = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_cis")
     model_trans = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_trans")
@@ -1480,6 +1792,18 @@ def main() -> int:
         "phase_used_eval_only": 1,
         "charm_3dg_used_eval_only": 1,
     }
+    for contact_set in ("snp_truth", "posterior_top1"):
+        for scope in ("genome_cis", "genome_trans"):
+            for source in ("charm3dg", "reconstruction"):
+                row = first_row(contact_distance_rows, contact_set=contact_set, source=source, scope=scope)
+                if row:
+                    prefix = f"{source}_{contact_set}_contact_distance_{scope}"
+                    summary[f"{prefix}_n"] = row["n_contacts"]
+                    summary[f"{prefix}_mean"] = row["mean_distance"]
+                    summary[f"{prefix}_median"] = row["median_distance"]
+                    summary[f"{prefix}_p90"] = row["p90_distance"]
+    for key, value in snp_contact_distance_stats.items():
+        summary[f"snp_contact_distance_{key}"] = value
     for ref_copy in (0, 1):
         for rec_copy in (0, 1):
             values = [
@@ -1502,6 +1826,10 @@ def main() -> int:
     write_table(args.outdir / "contact_accuracy.tsv", accuracy_rows)
     write_table(args.outdir / "whole_chrom_snp_oracle_swaps.tsv", whole_chrom_snp_rows)
     write_table(args.outdir / "contact_truth_distribution.tsv", truth_rows)
+    old_contact_distance_path = args.outdir / "snp_contact_distance_distribution.tsv"
+    if old_contact_distance_path.exists():
+        old_contact_distance_path.unlink()
+    write_table(args.outdir / "contact_distance_distribution.tsv", contact_distance_rows)
     write_table(args.outdir / "copy_separation.tsv", separation_rows)
     write_table(args.outdir / "per_chrom_volume.tsv", volume_rows_data)
     metrics_path = args.outdir / "metrics.tsv"
@@ -1511,7 +1839,22 @@ def main() -> int:
     plot_chr1_distance_maps(plots_dir / "chr1_distance_maps.png", reference, reconstruction, distance_swaps)
     plot_3d_scatter(plots_dir / "all_chrom_3d_scatter.png", reference, reconstruction, distance_swaps)
     plot_3d_scatter(plots_dir / "chr1_copy_3d_scatter.png", reference, reconstruction, distance_swaps, chrom="chr1")
-    write_readme(args.outdir / "README.md", args, summary, cis_rows, cis_matrix_rows, accuracy_rows, truth_rows, separation_rows, volume_rows_data)
+    old_contact_distance_plot = plots_dir / "snp_contact_distance_histograms.png"
+    if old_contact_distance_plot.exists():
+        old_contact_distance_plot.unlink()
+    plot_snp_contact_distance_histograms(plots_dir / "contact_distance_histograms.png", snp_contact_distances)
+    write_readme(
+        args.outdir / "README.md",
+        args,
+        summary,
+        cis_rows,
+        cis_matrix_rows,
+        accuracy_rows,
+        truth_rows,
+        separation_rows,
+        volume_rows_data,
+        contact_distance_rows,
+    )
     with (args.outdir / "eval_manifest.json").open("w") as fh:
         json.dump(
             {
@@ -1521,6 +1864,7 @@ def main() -> int:
                 "contact_accuracy": accuracy_rows,
                 "whole_chrom_snp_oracle_swaps": whole_chrom_snp_rows,
                 "contact_truth_distribution": truth_rows,
+                "contact_distance_distribution": contact_distance_rows,
                 "copy_separation": separation_rows,
                 "per_chrom_volume": volume_rows_data,
             },
@@ -1534,11 +1878,13 @@ def main() -> int:
     print(f"wrote\t{args.outdir / 'contact_accuracy.tsv'}")
     print(f"wrote\t{args.outdir / 'whole_chrom_snp_oracle_swaps.tsv'}")
     print(f"wrote\t{args.outdir / 'contact_truth_distribution.tsv'}")
+    print(f"wrote\t{args.outdir / 'contact_distance_distribution.tsv'}")
     print(f"wrote\t{args.outdir / 'copy_separation.tsv'}")
     print(f"wrote\t{args.outdir / 'per_chrom_volume.tsv'}")
     print(f"wrote\t{plots_dir / 'chr1_distance_maps.png'}")
     print(f"wrote\t{plots_dir / 'all_chrom_3d_scatter.png'}")
     print(f"wrote\t{plots_dir / 'chr1_copy_3d_scatter.png'}")
+    print(f"wrote\t{plots_dir / 'contact_distance_histograms.png'}")
     return 0
 
 

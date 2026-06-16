@@ -96,6 +96,11 @@ enum manifest_key {
 	MK_N_BPAIR_TRANS,
 	MK_USES_PHASE_LABELS,
 	MK_INIT_SCALE_EFFECTIVE,
+	MK_CONFIG_NAME,
+	MK_INIT_EPS,
+	MK_INIT_NOISE_SCALE,
+	MK_CHR_SEP_UNIT,
+	MK_LAMBDA_CHR_SEP,
 	MK_N_KEYS
 };
 
@@ -153,7 +158,11 @@ struct manifest_info {
 	double rho_train_floor;
 	double init_eps_effective;
 	double init_noise_scale_effective;
+	double init_eps;
+	double init_noise_scale;
 	double init_scale_effective;
+	double chr_sep_unit;
+	double lambda_chr_sep;
 	double prior_eps;
 	double prior_inter_density;
 	double prior_observed_inter;
@@ -183,6 +192,7 @@ struct manifest_info {
 	char raw_posterior_same_bin_policy[128];
 	char posterior_refresh_prior_mode[128];
 	char baseline[64];
+	char config_name[128];
 };
 
 struct file_audit {
@@ -382,6 +392,11 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "init_eps_effective") == 0) return MK_INIT_EPS_EFFECTIVE;
 	if (strcmp(key, "init_noise_scale_effective") == 0) return MK_INIT_NOISE_SCALE_EFFECTIVE;
 	if (strcmp(key, "init_scale_effective") == 0) return MK_INIT_SCALE_EFFECTIVE;
+	if (strcmp(key, "config_name") == 0) return MK_CONFIG_NAME;
+	if (strcmp(key, "init_eps") == 0) return MK_INIT_EPS;
+	if (strcmp(key, "init_noise_scale") == 0) return MK_INIT_NOISE_SCALE;
+	if (strcmp(key, "chr_sep_unit") == 0) return MK_CHR_SEP_UNIT;
+	if (strcmp(key, "lambda_chr_sep") == 0) return MK_LAMBDA_CHR_SEP;
 	if (strcmp(key, "init_seed") == 0) return MK_INIT_SEED;
 	if (strcmp(key, "enable_repulsion") == 0) return MK_ENABLE_REPULSION;
 	if (strcmp(key, "repulsion_mode") == 0) return MK_REPULSION_MODE;
@@ -443,8 +458,11 @@ static int manifest_optional_current_key(const char *key)
 		   strcmp(key, "final_mean_rho_train_bpair") == 0 ||
 		   strcmp(key, "final_min_rho_train_bpair") == 0 ||
 		   strcmp(key, "final_max_rho_train_bpair") == 0 ||
-		   strcmp(key, "final_repulsion_energy") == 0;
-}
+		   strcmp(key, "final_contact_energy") == 0 ||
+		   strcmp(key, "final_repulsion_energy") == 0 ||
+		   strcmp(key, "final_backbone_energy") == 0 ||
+		   strcmp(key, "final_sep_force_l1") == 0;
+	}
 
 static int parse_i64_value(const char *s, int64_t *out)
 {
@@ -552,6 +570,7 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_POSTERIOR_REFRESH_PRIOR_MODE: snprintf(info->posterior_refresh_prior_mode, sizeof(info->posterior_refresh_prior_mode), "%s", value); return 0;
 	case MK_BASELINE: snprintf(info->baseline, sizeof(info->baseline), "%s", value); return 0;
 	case MK_MSTEP_GRAPH_MODE: snprintf(info->mstep_graph_mode, sizeof(info->mstep_graph_mode), "%s", value); return 0;
+	case MK_CONFIG_NAME: snprintf(info->config_name, sizeof(info->config_name), "%s", value); return 0;
 	case MK_N_RAW: return parse_i64_value(value, &info->n_raw);
 	case MK_N_BPAIR: return parse_i64_value(value, &info->n_bpair);
 	case MK_N_BEADS: return parse_i64_value(value, &info->n_beads);
@@ -596,6 +615,10 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_INIT_EPS_EFFECTIVE: return parse_double_value(value, &info->init_eps_effective);
 	case MK_INIT_NOISE_SCALE_EFFECTIVE: return parse_double_value(value, &info->init_noise_scale_effective);
 	case MK_INIT_SCALE_EFFECTIVE: return parse_double_value(value, &info->init_scale_effective);
+	case MK_INIT_EPS: return parse_double_value(value, &info->init_eps);
+	case MK_INIT_NOISE_SCALE: return parse_double_value(value, &info->init_noise_scale);
+	case MK_CHR_SEP_UNIT: return parse_double_value(value, &info->chr_sep_unit);
+	case MK_LAMBDA_CHR_SEP: return parse_double_value(value, &info->lambda_chr_sep);
 	case MK_PRIOR_EPS: return parse_double_value(value, &info->prior_eps);
 	case MK_PRIOR_INTER_DENSITY: return parse_double_value(value, &info->prior_inter_density);
 	case MK_PRIOR_OBSERVED_INTER: return parse_double_value(value, &info->prior_observed_inter);
@@ -638,6 +661,10 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 
 	memset(info, 0, sizeof(*info));
 	info->rho_train_floor = HK_BLIND_RHO_TRAIN_DEFAULT_FLOOR;
+	info->init_eps = NAN;
+	info->init_noise_scale = NAN;
+	info->chr_sep_unit = NAN;
+	info->lambda_chr_sep = NAN;
 	audit_init(audit);
 	if (fp == 0) {
 		add_example(audit, "manifest open failed");
@@ -835,6 +862,26 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		!isfinite(info->init_noise_scale_effective) || info->init_noise_scale_effective < 0.0 ||
 		!isfinite(info->init_scale_effective) || info->init_scale_effective < 0.0) {
 		add_example(audit, "manifest init value out of range");
+		failed = 1;
+	}
+	if (info->seen[MK_INIT_EPS] &&
+		(!isfinite(info->init_eps) || info->init_eps < 0.0)) {
+		add_example(audit, "manifest init_eps out of range");
+		failed = 1;
+	}
+	if (info->seen[MK_INIT_NOISE_SCALE] &&
+		(!isfinite(info->init_noise_scale) || info->init_noise_scale < 0.0)) {
+		add_example(audit, "manifest init_noise_scale out of range");
+		failed = 1;
+	}
+	if (info->seen[MK_CHR_SEP_UNIT] &&
+		(!isfinite(info->chr_sep_unit) || !check_close(info->chr_sep_unit, 0.0))) {
+		add_example(audit, "manifest chr_sep_unit must remain zero");
+		failed = 1;
+	}
+	if (info->seen[MK_LAMBDA_CHR_SEP] &&
+		(!isfinite(info->lambda_chr_sep) || !check_close(info->lambda_chr_sep, 0.0))) {
+		add_example(audit, "manifest lambda_chr_sep must remain zero");
 		failed = 1;
 	}
 	if (strcmp(info->init_mode, "random_diploid") == 0) {

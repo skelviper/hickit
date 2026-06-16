@@ -99,6 +99,15 @@ struct stage_state {
 	int bin_size_bp;
 };
 
+struct hk_p9016_minimal_params {
+	float init_eps;
+	float init_noise_scale;
+	float min_sep_unit;
+	float lambda_sep;
+	uint64_t init_seed;
+	char config_name[128];
+};
+
 static int check_true(const char *label, int ok)
 {
 	if (!ok) {
@@ -170,6 +179,81 @@ static float env_float_or_default(const char *name, float fallback, float min_va
 		return fallback;
 	}
 	return v;
+}
+
+static int env_float_checked(const char *name, float fallback, float min_value, float *out)
+{
+	const char *s = getenv(name);
+	char *end = 0;
+	float v;
+	assert(out);
+	if (s == 0 || s[0] == 0) {
+		*out = fallback;
+		return 0;
+	}
+	errno = 0;
+	v = strtof(s, &end);
+	if (errno || end == s || *end != 0 || !isfinite(v) || v < min_value) {
+		fprintf(stderr, "invalid %s=%s; expected finite value >= %.9g\n",
+				name, s, min_value);
+		return -1;
+	}
+	*out = v;
+	return 0;
+}
+
+static int config_name_is_safe_slug(const char *s)
+{
+	const unsigned char *p;
+	if (s == 0 || s[0] == 0 || strcmp(s, ".") == 0 || strcmp(s, "..") == 0)
+		return 0;
+	if (strstr(s, "..") != 0)
+		return 0;
+	for (p = (const unsigned char*)s; *p; ++p) {
+		if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+			(*p >= '0' && *p <= '9') || *p == '_' || *p == '-' || *p == '.')
+			continue;
+		return 0;
+	}
+	return 1;
+}
+
+static int load_minimal_params(struct hk_p9016_minimal_params *p)
+{
+	const char *config_name;
+	const char *config_env;
+	int n;
+	assert(p);
+	memset(p, 0, sizeof(*p));
+	if (env_float_checked("HK_BLIND_P9016_INIT_EPS",
+						  HK_P9016_INIT_EPS, 0.0f, &p->init_eps) != 0 ||
+		env_float_checked("HK_BLIND_P9016_INIT_NOISE_SCALE",
+						  HK_P9016_INIT_NOISE_SCALE, 0.0f,
+						  &p->init_noise_scale) != 0 ||
+		env_float_checked("HK_BLIND_P9016_MIN_SEP_UNIT",
+						  0.0f, 0.0f, &p->min_sep_unit) != 0 ||
+		env_float_checked("HK_BLIND_P9016_LAMBDA_SEP",
+						  0.0f, 0.0f, &p->lambda_sep) != 0)
+		return -1;
+	p->init_seed = env_u64_or_default("HK_BLIND_P9016_INIT_SEED",
+									  HK_P9016_INIT_SEED);
+	config_env = getenv("HK_BLIND_P9016_CONFIG_NAME");
+	config_name = config_env? config_env : HK_P9016_CONFIG_NAME;
+	if (!config_name_is_safe_slug(config_name)) {
+		fprintf(stderr, "HK_BLIND_P9016_CONFIG_NAME must be a non-empty safe slug using [A-Za-z0-9._-], without '..'\n");
+		return -1;
+	}
+	n = snprintf(p->config_name, sizeof(p->config_name), "%s", config_name);
+	if (n < 0) {
+		fprintf(stderr, "failed to copy HK_BLIND_P9016_CONFIG_NAME\n");
+		return -1;
+	}
+	if ((size_t)n >= sizeof(p->config_name)) {
+		fprintf(stderr, "HK_BLIND_P9016_CONFIG_NAME is too long; max length is %zu\n",
+				sizeof(p->config_name) - 1);
+		return -1;
+	}
+	return 0;
 }
 
 static int parse_init_mode(int *ok)
@@ -428,9 +512,15 @@ static int init_scaffold_fdg_n_iter(int init_mode)
 		HK_P9016_SCAFFOLD_FDG_N_ITER : 0;
 }
 
-static float init_eps_effective(int init_mode)
+static float init_eps_effective(int init_mode, const struct hk_p9016_minimal_params *p)
 {
-	return init_mode == HK_BLIND_INIT_RANDOM_DIPLOID? 0.0f : HK_P9016_INIT_EPS;
+	return init_mode == HK_BLIND_INIT_RANDOM_DIPLOID? 0.0f : p->init_eps;
+}
+
+static float init_noise_scale_effective(int init_mode,
+										const struct hk_p9016_minimal_params *p)
+{
+	return init_mode == HK_BLIND_INIT_RANDOM_DIPLOID? 0.0f : p->init_noise_scale;
 }
 
 static float init_scale_effective(int init_mode, float init_scale)
@@ -440,40 +530,42 @@ static float init_scale_effective(int init_mode, float init_scale)
 }
 
 static int init_minimal_coords(struct hk_bmap *bmap, fvec3_t *haploid, fvec3_t *diploid,
-							   int init_mode, float init_scale, uint64_t init_seed)
+							   int init_mode, float init_scale,
+							   const struct hk_p9016_minimal_params *p)
 {
 	struct hk_fdg_conf scaffold_conf;
 	assert(bmap);
 	assert(haploid);
 	assert(diploid);
+	assert(p);
 	switch (init_mode) {
 	case HK_BLIND_INIT_UNPHASED_SCAFFOLD_SPLIT:
 		hk_fdg_conf_init(&scaffold_conf);
 		scaffold_conf.backend = HK_FDG_BACKEND_CPU;
 		scaffold_conf.n_iter = HK_P9016_SCAFFOLD_FDG_N_ITER;
 		if (hk_blind_init_haploid_scaffold_from_bmap_fdg(bmap, &scaffold_conf, haploid,
-														 init_seed) != 0)
+														 p->init_seed) != 0)
 			return -1;
 		return hk_blind_init_diploid_coords_from_haploid(bmap, haploid, bmap->n_beads,
-														 diploid, HK_P9016_INIT_EPS,
-														 HK_P9016_INIT_NOISE_SCALE,
-														 init_seed);
+														 diploid, p->init_eps,
+														 p->init_noise_scale,
+														 p->init_seed);
 	case HK_BLIND_INIT_RANDOM_DIPLOID:
-		return hk_blind_init_random_diploid_coords(bmap, diploid, init_scale, init_seed);
+		return hk_blind_init_random_diploid_coords(bmap, diploid, init_scale, p->init_seed);
 	case HK_BLIND_INIT_RANDOM_HAPLOID_SPLIT:
-		if (hk_blind_init_random_haploid_scaffold(bmap, haploid, init_scale, init_seed) != 0)
+		if (hk_blind_init_random_haploid_scaffold(bmap, haploid, init_scale, p->init_seed) != 0)
 			return -1;
 		return hk_blind_init_diploid_coords_from_haploid(bmap, haploid, bmap->n_beads,
-														 diploid, HK_P9016_INIT_EPS,
-														 HK_P9016_INIT_NOISE_SCALE,
-														 init_seed);
+														 diploid, p->init_eps,
+														 p->init_noise_scale,
+														 p->init_seed);
 	case HK_BLIND_INIT_TOY_SPLIT:
 		if (hk_blind_init_toy_haploid_scaffold(bmap, haploid) != 0)
 			return -1;
 		return hk_blind_init_diploid_coords_from_haploid(bmap, haploid, bmap->n_beads,
-														 diploid, HK_P9016_INIT_EPS,
-														 HK_P9016_INIT_NOISE_SCALE,
-														 init_seed);
+														 diploid, p->init_eps,
+														 p->init_noise_scale,
+														 p->init_seed);
 	default:
 		fprintf(stderr, "unsupported init mode %d\n", init_mode);
 		return -1;
@@ -481,7 +573,8 @@ static int init_minimal_coords(struct hk_bmap *bmap, fvec3_t *haploid, fvec3_t *
 }
 
 static void set_minimal_schedule(struct hk_blind_iter_schedule_conf *conf, int n_iter,
-								 int relax_steps, float relax_step)
+								 int relax_steps, float relax_step,
+								 const struct hk_p9016_minimal_params *p)
 {
 	memset(conf, 0, sizeof(*conf));
 	conf->n_iter = n_iter;
@@ -491,8 +584,8 @@ static void set_minimal_schedule(struct hk_blind_iter_schedule_conf *conf, int n
 	conf->base_conf.temperature = 1.0f;
 	conf->base_conf.rho_train = 1.0f;
 	conf->base_conf.rho_train_floor = 0.0f;
-	conf->base_conf.min_sep_unit = 0.0f;
-	conf->base_conf.lambda_sep = 0.0f;
+	conf->base_conf.min_sep_unit = p->min_sep_unit;
+	conf->base_conf.lambda_sep = p->lambda_sep;
 	conf->base_conf.chr_sep_unit = 0.0f;
 	conf->base_conf.lambda_chr_sep = 0.0f;
 	conf->base_conf.relax_step = relax_step;
@@ -634,12 +727,14 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 						  const char *stage_name, int stage_index, int n_stages,
 						  int parent_bin_size_bp, const char *init_source,
 						  float child_offset_step, float parent_anchor_k,
-						  int init_mode, float init_scale, uint64_t init_seed,
+						  int init_mode, float init_scale,
+						  const struct hk_p9016_minimal_params *p,
 						  const char *relax_backend, int approved_pairs_realpath,
 						  const struct hk_bmap *bmap, const struct hk_blind_bpair_set *set,
 						  const struct hk_blind_base_k_stats *base_k_stats,
 						  const struct hk_blind_iter_loop_diag *loop_diag,
 						  const struct hk_blind_contact_class_diag *final_graph_diag,
+						  const struct hk_blind_relax_diag *final_relax_diag,
 						  float k_rel_rep_effective)
 {
 	FILE *fp = fopen(manifest_path, "w");
@@ -648,6 +743,7 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 	int64_t final_refreshed_n_wedges;
 	char label[32];
 	if (fp == 0) return -1;
+	assert(p);
 	assert(final_graph_diag);
 	final_refreshed_sum_wedge_k = final_graph_diag->sum_wedge_k_cis +
 		final_graph_diag->sum_wedge_k_trans;
@@ -663,6 +759,7 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"runner_family\tp9016_minimal\n"
 				"runner_version\t2026-06-15\n"
 				"default_profile\tp9016_softall_minimal_v2\n"
+				"config_name\t%s\n"
 				"input_path\t%s\n"
 				"input_contact_source\t%s\n"
 				"output_dir\t%s\n"
@@ -691,6 +788,8 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"base_k_max\t%.9g\n"
 				"base_k_n_nonfinite\t%d\n"
 				"init_mode\t%s\n"
+				"init_eps\t%.9g\n"
+				"init_noise_scale\t%.9g\n"
 				"init_eps_effective\t%.9g\n"
 				"init_noise_scale_effective\t%.9g\n"
 				"init_scale_effective\t%.9g\n"
@@ -732,8 +831,10 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"uses_phase_labels\t0\n"
 				"uses_charm_or_reference\t0\n"
 				"uses_charm_for_training\t0\n"
-				"min_sep_unit\t0\n"
-				"lambda_sep\t0\n"
+				"min_sep_unit\t%.9g\n"
+				"lambda_sep\t%.9g\n"
+				"chr_sep_unit\t%.9g\n"
+				"lambda_chr_sep\t%.9g\n"
 				"relax_step\t%.9g\n"
 				"relax_steps\t%d\n"
 				"temperature_start\t1\n"
@@ -749,26 +850,29 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"output_bpair_posterior\t%s\n"
 					"output_coords\t%s\n"
 					"output_coords_gz\t%s\n"
-					"output_loop_diag\t%s\n"
-					"output_force_class_diag\t%s\n",
-					pairs_path, input_contact_source, out_dir,
+				"output_loop_diag\t%s\n"
+				"output_force_class_diag\t%s\n",
+					p->config_name, pairs_path, input_contact_source, out_dir,
 					set->n_raw, set->n_bpairs, bmap->n_beads,
 					bin_size_bp, n_iter, bin_size_bp, label,
 						stage_name, stage_index, n_stages, parent_bin_size_bp,
 						init_source, child_offset_step, parent_anchor_k,
 						relax_backend, approved_pairs_realpath,
-						HK_P9016_UNIT, HK_P9016_D_SCALE,
-					base_k_stats->mean, base_k_stats->min, base_k_stats->mean,
-					base_k_stats->max, base_k_stats->n_nonfinite,
-					hk_blind_init_mode_name(init_mode), init_eps_effective(init_mode),
-					HK_P9016_INIT_NOISE_SCALE, init_scale_effective(init_mode, init_scale),
-				(unsigned long long)init_seed, init_scaffold_source_name(init_mode),
+					HK_P9016_UNIT, HK_P9016_D_SCALE,
+				base_k_stats->mean, base_k_stats->min, base_k_stats->mean,
+				base_k_stats->max, base_k_stats->n_nonfinite,
+				hk_blind_init_mode_name(init_mode),
+				p->init_eps, p->init_noise_scale,
+				init_eps_effective(init_mode, p), init_noise_scale_effective(init_mode, p),
+				init_scale_effective(init_mode, init_scale),
+				(unsigned long long)p->init_seed, init_scaffold_source_name(init_mode),
 				init_scaffold_fdg_n_iter(init_mode),
 				HK_P9016_PRIOR_EPS, HK_P9016_PRIOR_ALPHA_CLAMP_MIN,
 				HK_P9016_D_SCALE_EPS_COUNT, set->same_bin_filter_enabled,
 				(long long)set->n_raw_same_bin_excluded,
 				set->n_bpair_same_bin_excluded, (long long)set->n_raw_cis,
 				(long long)set->n_raw_trans, set->n_bpair_cis, set->n_bpair_trans,
+				p->min_sep_unit, p->lambda_sep, 0.0f, 0.0f,
 				relax_step, relax_steps, HK_BLIND_REPULSION_CELL,
 				HK_P9016_REPULSION_MULTIPLIER, k_rel_rep_effective, write_raw,
 				posterior_path, coords_path, coords_gz_path, diag_path, force_diag_path) < 0) {
@@ -797,6 +901,10 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"final_mean_rho_train_bpair\t%.9g\n"
 				"final_min_rho_train_bpair\t%.9g\n"
 				"final_max_rho_train_bpair\t%.9g\n"
+				"final_contact_energy\t%.9g\n"
+				"final_repulsion_energy\t%.9g\n"
+				"final_backbone_energy\t%.9g\n"
+				"final_sep_force_l1\t%.9g\n"
 				"posterior_refreshed_after_final_relax\t%d\n"
 				"posterior_refresh_temperature\t%.9g\n"
 				"posterior_refresh_prior_mode\tuniform\n"
@@ -815,6 +923,10 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				loop_diag->final_mean_rho_train_bpair,
 				loop_diag->final_min_rho_train_bpair,
 				loop_diag->final_max_rho_train_bpair,
+				final_relax_diag? final_relax_diag->final_contact_energy : 0.0f,
+				final_relax_diag? final_relax_diag->final_repulsion_energy : loop_diag->final_repulsion_energy,
+				final_relax_diag? final_relax_diag->final_backbone_energy : 0.0f,
+				final_relax_diag? final_relax_diag->final_sep_force_l1 : 0.0f,
 				loop_diag->posterior_refreshed_after_final_relax,
 				loop_diag->posterior_refresh_temperature,
 				loop_diag->posterior_refresh_mean_kl,
@@ -855,7 +967,8 @@ static int write_summary_header(FILE *fp)
 
 static int append_summary_row(FILE *fp, const struct minimal_result *result, int n_iter,
 							  int relax_steps, float relax_step,
-							  const char *input_contact_source, int write_raw)
+							  const char *input_contact_source, int write_raw,
+							  const char *config_name)
 {
 	return fprintf(fp,
 				   "%s\t%d\t%d\t%d\t%d\t%s\t%s\t%s\tsoftall\t%s\t"
@@ -866,7 +979,7 @@ static int append_summary_row(FILE *fp, const struct minimal_result *result, int
 				   "%lld\t%d\t%d\t%d\t%d\t%s\t%d\t%s\t%s\n",
 				   result->stage_name, result->stage_index, result->n_stages,
 				   result->bin_size_bp, result->parent_bin_size_bp,
-				   HK_P9016_CONFIG_NAME, result->output_dir, input_contact_source,
+				   config_name, result->output_dir, input_contact_source,
 				   result->init_mode, n_iter, relax_steps, relax_step,
 				   result->n_raw, result->n_bpair, result->n_beads,
 				   (long long)result->n_raw_cis, (long long)result->n_raw_trans,
@@ -908,7 +1021,8 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 							  const fvec3_t *parent_coords,
 							  int parent_bin_size_bp,
 							  float child_offset_step, float parent_anchor_k,
-							  int init_mode, float init_scale, uint64_t init_seed,
+							  int init_mode, float init_scale,
+							  const struct hk_p9016_minimal_params *p,
 							  int relax_backend, int approved_pairs_realpath,
 							  FILE *summary_fp, struct minimal_result *result,
 							  fvec3_t **coords_out)
@@ -931,11 +1045,12 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 	int failed = 0;
 
 	assert(stage_name);
+	assert(p);
 	assert(coords_out);
 	*coords_out = 0;
 	memset(result, 0, sizeof(*result));
 	hk_blind_contact_class_diag_init(&final_graph_diag);
-	path_join(result->output_dir, sizeof(result->output_dir), root_dir, HK_P9016_CONFIG_NAME);
+	path_join(result->output_dir, sizeof(result->output_dir), root_dir, p->config_name);
 	if (mkdir_if_missing(result->output_dir) != 0)
 		return 1;
 	path_join(posterior_path, sizeof(posterior_path), result->output_dir, "p9016_full.bpair_posterior.tsv");
@@ -992,10 +1107,10 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 		}
 		fprintf(stderr, "minimal P9016[%s]: init mode=%s seed=%llu scale=%.8g\n",
 				stage_name, hk_blind_init_mode_name(init_mode),
-				(unsigned long long)init_seed, init_scale);
+				(unsigned long long)p->init_seed, init_scale);
 		failed |= check_i32("init coords",
 							init_minimal_coords(bmap, haploid, diploid,
-												init_mode, init_scale, init_seed), 0);
+												init_mode, init_scale, p), 0);
 		snprintf(init_source, sizeof(init_source), "%s", hk_blind_init_mode_name(init_mode));
 	}
 	snprintf(result->init_source, sizeof(result->init_source), "%s", init_source);
@@ -1007,7 +1122,7 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 	hk_fdg_conf_init(&fdg_conf);
 	fdg_conf.backend = (enum hk_fdg_backend)relax_backend;
 	fdg_conf.k_rel_rep *= HK_P9016_REPULSION_MULTIPLIER;
-	set_minimal_schedule(&schedule_conf, n_iter, relax_steps, relax_step);
+	set_minimal_schedule(&schedule_conf, n_iter, relax_steps, relax_step, p);
 	if (anchor_map)
 		failed |= check_i32("scheduled parent-anchor run",
 							hk_blind_run_iter_loop_scheduled_parent_anchor_cpu(bmap, set, &fdg_conf, diploid,
@@ -1044,10 +1159,11 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 									   write_raw, relax_step, input_contact_source,
 									   stage_name, stage_index, n_stages, parent_bin_size_bp,
 									   init_source, child_offset_step, parent_anchor_k,
-									   init_mode, init_scale, init_seed, backend_name,
+									   init_mode, init_scale, p, backend_name,
 									   approved_pairs_realpath,
 									   bmap, set,
 									   &base_k_stats, &loop_diag, &final_graph_diag,
+									   n_iter > 0? &per_iter[n_iter - 1].relax_diag : 0,
 									   fdg_conf.k_rel_rep), 0);
 	if (failed) goto cleanup;
 
@@ -1098,7 +1214,8 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 		loop_diag.n_coord_nonfinite == 0;
 	failed |= check_i32("append summary", append_summary_row(summary_fp, result, n_iter,
 															 relax_steps, relax_step,
-															 input_contact_source, write_raw), 0);
+															 input_contact_source, write_raw,
+															 p->config_name), 0);
 	fflush(summary_fp);
 	*coords_out = diploid;
 	diploid = 0;
@@ -1137,11 +1254,10 @@ int main(void)
 	int init_mode = parse_init_mode(&init_mode_ok);
 	float init_scale = env_float_or_default("HK_BLIND_P9016_INIT_SCALE",
 											HK_P9016_INIT_SCALE, 0.0f);
-	uint64_t init_seed = env_u64_or_default("HK_BLIND_P9016_INIT_SEED",
-											HK_P9016_INIT_SEED);
 	int relax_backend = parse_relax_backend();
 	int approved_pairs_realpath;
 	int write_raw = env_flag_enabled("HK_BLIND_WRITE_RAW");
+	struct hk_p9016_minimal_params params;
 	struct stage_state prev_state;
 	int bins[HK_P9016_MAX_STAGES];
 	int n_bins = 1;
@@ -1152,6 +1268,8 @@ int main(void)
 	int failed = 0;
 
 	memset(&prev_state, 0, sizeof(prev_state));
+	if (load_minimal_params(&params) != 0)
+		return 1;
 	if (!init_mode_ok)
 		return 1;
 	if ((init_mode == HK_BLIND_INIT_RANDOM_DIPLOID ||
@@ -1192,10 +1310,12 @@ int main(void)
 		relax_backend = hk_fdg_gpu_is_available()? HK_FDG_BACKEND_GPU : HK_FDG_BACKEND_CPU;
 	}
 	fprintf(stderr,
-			"minimal P9016: input=%s output_root=%s baseline=softall n_iter=%d relax_steps=%d relax_step=%.8g chain=%d init_mode=%s init_scale=%.8g init_seed=%llu relax_backend=%s\n",
-			pairs_path, root_dir, n_iter, relax_steps, relax_step,
-			run_chain, hk_blind_init_mode_name(init_mode), init_scale,
-			(unsigned long long)init_seed, relax_backend_name(relax_backend));
+			"minimal P9016: input=%s output_root=%s config=%s baseline=softall n_iter=%d relax_steps=%d relax_step=%.8g chain=%d init_mode=%s init_eps=%.8g init_noise=%.8g init_scale=%.8g init_seed=%llu min_sep=%.8g lambda_sep=%.8g relax_backend=%s\n",
+			pairs_path, root_dir, params.config_name, n_iter, relax_steps, relax_step,
+			run_chain, hk_blind_init_mode_name(init_mode),
+			params.init_eps, params.init_noise_scale, init_scale,
+			(unsigned long long)params.init_seed, params.min_sep_unit,
+			params.lambda_sep, relax_backend_name(relax_backend));
 	path_join(summary_path, sizeof(summary_path), root_dir, "matrix_summary.tsv");
 	summary_fp = fopen(summary_path, "w");
 	if (summary_fp == 0) {
@@ -1238,13 +1358,13 @@ int main(void)
 			failed |= run_minimal_config(cur_state.bmap, cur_state.raw, cur_state.n_raw,
 										 pairs_path, stage_root, bins[stage_idx],
 										 n_iter, relax_steps, write_raw, relax_step,
-										 input_contact_source, stage_name, stage_idx + 1, n_bins,
-											 stage_idx > 0? prev_state.bmap : 0,
-											 stage_idx > 0? (const fvec3_t*)prev_state.coords : 0,
-											 parent_bin, child_offset_step, parent_anchor_k,
-											 init_mode, init_scale, init_seed,
-											 relax_backend, approved_pairs_realpath,
-											 summary_fp, &result, &coords);
+											 input_contact_source, stage_name, stage_idx + 1, n_bins,
+												 stage_idx > 0? prev_state.bmap : 0,
+												 stage_idx > 0? (const fvec3_t*)prev_state.coords : 0,
+												 parent_bin, child_offset_step, parent_anchor_k,
+												 init_mode, init_scale, &params,
+												 relax_backend, approved_pairs_realpath,
+												 summary_fp, &result, &coords);
 		if (failed) {
 			free(coords);
 			stage_state_destroy(&cur_state);
