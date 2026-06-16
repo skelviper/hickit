@@ -5,6 +5,7 @@
 #include <string.h>
 #include <zlib.h>
 #include "hkpriv.h"
+#include "fdg_gpu.h"
 
 struct hk_blind_bpair_aux {
 	struct hk_blind_bpair_key key;
@@ -2882,6 +2883,350 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct 
 	return 0;
 }
 
+static int hk_blind_gpu_pair_push(struct hk_fdg_gpu_pair **pairs, size_t *n_pairs, size_t *m_pairs,
+								  int32_t i, int32_t j, float k, float d_scale, uint8_t type)
+{
+	struct hk_fdg_gpu_pair *p;
+	size_t new_m;
+	assert(pairs);
+	assert(n_pairs);
+	assert(m_pairs);
+	if (i == j || k <= 0.0f)
+		return 0;
+	if (!isfinite(k) || !isfinite(d_scale) || d_scale <= 0.0f)
+		return -1;
+	if (*n_pairs == *m_pairs) {
+		new_m = *m_pairs? (*m_pairs << 1) : 1024;
+		p = (struct hk_fdg_gpu_pair*)realloc(*pairs, new_m * sizeof(**pairs));
+		if (p == 0)
+			return -1;
+		*pairs = p;
+		*m_pairs = new_m;
+	}
+	p = &(*pairs)[(*n_pairs)++];
+	p->i = i;
+	p->j = j;
+	p->k = k;
+	p->d_scale = d_scale;
+	p->type = type;
+	p->pad[0] = p->pad[1] = p->pad[2] = 0;
+	return 0;
+}
+
+static int hk_blind_gpu_build_pairs(const struct hk_bmap *bmap_or_null, const struct hk_blind_wedge_list *edges,
+									int32_t n_diploid, struct hk_fdg_gpu_pair **pairs_out,
+									size_t *n_pairs_out, uint64_t **block_keys_out, size_t *n_block_keys_out)
+{
+	struct hk_fdg_gpu_pair *pairs = 0;
+	uint64_t *block_keys = 0;
+	size_t n_pairs = 0, m_pairs = 0;
+	int64_t n_blocked = 0;
+	int32_t i, eidx;
+
+	assert(edges);
+	assert(pairs_out);
+	assert(n_pairs_out);
+	assert(block_keys_out);
+	assert(n_block_keys_out);
+	*pairs_out = 0;
+	*n_pairs_out = 0;
+	*block_keys_out = 0;
+	*n_block_keys_out = 0;
+
+	if (bmap_or_null && bmap_or_null->n_beads > 0) {
+		int32_t mid_dist = hk_blind_bmap_mid_bead_size(bmap_or_null);
+		for (i = 1; i < bmap_or_null->n_beads; ++i) {
+			const struct hk_bead *prev = &bmap_or_null->beads[i - 1];
+			const struct hk_bead *cur = &bmap_or_null->beads[i];
+			float d_scale;
+			int copy;
+			if (prev->chr != cur->chr)
+				continue;
+			d_scale = hk_blind_backbone_d_scale(prev, cur, mid_dist);
+			for (copy = 0; copy < HK_DIPLOID_N_COPY; ++copy) {
+				if (hk_blind_gpu_pair_push(&pairs, &n_pairs, &m_pairs,
+										   hk_diploid_bid(i - 1, copy), hk_diploid_bid(i, copy),
+										   1.0f, d_scale, HK_FDG_PAIR_TYPE_BACKBONE) != 0)
+					goto fail;
+			}
+		}
+	}
+	for (eidx = 0; eidx < edges->n_edges; ++eidx) {
+		const struct hk_blind_wedge *edge = &edges->edges[eidx];
+		assert(edge->bid[0] >= 0 && edge->bid[0] < n_diploid);
+		assert(edge->bid[1] >= 0 && edge->bid[1] < n_diploid);
+		if (hk_blind_gpu_pair_push(&pairs, &n_pairs, &m_pairs,
+								   edge->bid[0], edge->bid[1], edge->k, edge->d_scale,
+								   HK_FDG_PAIR_TYPE_CONTACT) != 0)
+			goto fail;
+	}
+	n_blocked = hk_blind_build_repulsion_blocked_pairs(edges, bmap_or_null, n_diploid, 0.0f, &block_keys);
+	if (n_blocked < 0)
+		goto fail;
+	if (n_blocked > 0) {
+		uint64_t *expanded = MALLOC(uint64_t, (size_t)n_blocked * 2);
+		int64_t k;
+		if (expanded == 0)
+			goto fail;
+		for (k = 0; k < n_blocked; ++k) {
+			uint32_t i0 = (uint32_t)(block_keys[k] >> 32);
+			uint32_t i1 = (uint32_t)block_keys[k];
+			expanded[2 * k] = ((uint64_t)i0 << 32) | (uint64_t)i1;
+			expanded[2 * k + 1] = ((uint64_t)i1 << 32) | (uint64_t)i0;
+		}
+		free(block_keys);
+		block_keys = expanded;
+		n_blocked *= 2;
+	}
+	*pairs_out = pairs;
+	*n_pairs_out = n_pairs;
+	*block_keys_out = block_keys;
+	*n_block_keys_out = (size_t)n_blocked;
+	return 0;
+
+fail:
+	free(block_keys);
+	free(pairs);
+	return -1;
+}
+
+static int hk_blind_apply_extra_cpu_forces(const struct hk_blind_coarse_to_fine_map *anchor_map,
+										   const fvec3_t *coarse_diploid_coords, float anchor_k,
+										   int32_t n_haploid, fvec3_t *coords, float unit, float step,
+										   float min_sep_unit, float lambda_sep,
+										   fvec3_t *extra_force, struct hk_blind_step_diag *step_diag)
+{
+	float sep_force_l1 = 0.0f, anchor_force_l1 = 0.0f;
+	int32_t n_sep_nonfinite = 0, n_anchor_nonfinite = 0;
+	int32_t n_diploid = n_haploid * HK_DIPLOID_N_COPY;
+	int32_t i;
+	int a;
+
+	assert(coords || n_diploid == 0);
+	assert(extra_force || n_diploid == 0);
+	assert(step_diag);
+	if (n_diploid == 0)
+		return 0;
+	step_diag->sep_energy = hk_blind_homolog_sep_accumulate_force_ex(n_haploid, coords, extra_force,
+																	 unit, min_sep_unit, lambda_sep,
+																	 &sep_force_l1, &n_sep_nonfinite);
+	step_diag->sep_force_l1 = sep_force_l1;
+	step_diag->n_sep_nonfinite = n_sep_nonfinite;
+	if (anchor_map && anchor_k > 0.0f) {
+		step_diag->anchor_energy = hk_blind_parent_centroid_anchor_accumulate_force(anchor_map, coords,
+																					coarse_diploid_coords,
+																					anchor_k, extra_force,
+																					&n_anchor_nonfinite,
+																					&anchor_force_l1);
+		step_diag->anchor_force_l1 = anchor_force_l1;
+		step_diag->n_anchor_nonfinite = n_anchor_nonfinite;
+	}
+	for (i = 0; i < n_diploid; ++i) {
+		for (a = 0; a < 3; ++a) {
+			float f = extra_force[i][a];
+			if (hk_blind_float_isfinite(f)) {
+				step_diag->force_l1 += fabsf(f);
+				if (step > 0.0f)
+					coords[i][a] += step * f;
+			} else {
+				++step_diag->n_force_nonfinite;
+			}
+		}
+	}
+	return 0;
+}
+
+static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct hk_blind_wedge_list *edges,
+								   const struct hk_bmap *bmap_or_null, int32_t n_haploid, fvec3_t *coords,
+								   float unit, float step, int32_t n_steps, float min_sep_unit, float lambda_sep,
+								   int enable_repulsion, int repulsion_mode, float repulsion_block_k_min,
+								   const struct hk_blind_coarse_to_fine_map *anchor_map,
+								   const fvec3_t *coarse_diploid_coords, float anchor_k,
+								   struct hk_blind_relax_diag *diag)
+{
+	struct hk_fdg_gpu_pair *gpu_pairs = 0;
+	uint64_t *block_keys = 0;
+	struct hk_fdg_gpu_ctx *gpu_ctx = 0;
+	size_t n_gpu_pairs = 0, n_block_keys = 0;
+	int32_t n_diploid;
+	int32_t t;
+	int ret = -1;
+
+	assert(conf);
+	assert(edges);
+	assert(n_haploid >= 0);
+	assert(n_haploid <= INT32_MAX / HK_DIPLOID_N_COPY);
+	assert(isfinite(unit));
+	assert(unit > 0.0f);
+	assert(isfinite(step));
+	assert(step >= 0.0f);
+	assert(n_steps >= 0);
+	assert(enable_repulsion == 0 || enable_repulsion == 1);
+	assert(repulsion_mode == HK_BLIND_REPULSION_CELL);
+	assert(repulsion_block_k_min == 0.0f);
+	assert(diag);
+	if (bmap_or_null) {
+		assert(bmap_or_null->n_beads == n_haploid);
+		assert(n_haploid == 0 || bmap_or_null->beads);
+	}
+	if (anchor_map) {
+		assert(anchor_map->n_fine == n_haploid);
+		assert(coarse_diploid_coords || anchor_map->n_coarse == 0);
+	} else {
+		assert(anchor_k == 0.0f);
+	}
+	n_diploid = n_haploid * HK_DIPLOID_N_COPY;
+	if (n_diploid > 0)
+		assert(coords);
+	else
+		assert(edges->n_edges == 0);
+
+	hk_blind_relax_diag_init(diag);
+	diag->n_steps = n_steps;
+	diag->repulsion_mode = enable_repulsion? repulsion_mode : HK_BLIND_REPULSION_NONE;
+	diag->n_coord_nonfinite = hk_blind_count_nonfinite_coords(coords, n_diploid);
+	if (diag->n_coord_nonfinite != 0) {
+		++diag->n_nonfinite_step;
+		return -1;
+	}
+	if (n_steps == 0)
+		return 0;
+	if (!hk_fdg_gpu_is_available())
+		return -1;
+	if (hk_blind_gpu_build_pairs(bmap_or_null, edges, n_diploid, &gpu_pairs, &n_gpu_pairs,
+								 &block_keys, &n_block_keys) != 0)
+		goto cleanup;
+	gpu_ctx = hk_fdg_gpu_create(n_diploid);
+	if (gpu_ctx == 0)
+		goto cleanup;
+	if (hk_fdg_gpu_prepare(gpu_ctx, n_diploid, n_block_keys) != 0 ||
+		hk_fdg_gpu_set_blocklist(gpu_ctx, block_keys, n_block_keys) != 0 ||
+		hk_fdg_gpu_upload_positions(gpu_ctx, (const fvec3_t*)coords, n_diploid) != 0)
+		goto cleanup;
+
+	for (t = 0; t < n_steps; ++t) {
+		struct hk_blind_step_diag step_diag;
+		struct hk_fdg_conf gpu_conf = *conf;
+		struct hk_fdg_gpu_stats stats;
+		fvec3_t *extra_force = 0;
+		double rms_force = 0.0;
+		int need_sync = 1;
+
+		hk_blind_step_diag_init(&step_diag);
+		gpu_conf.step = step / unit;
+		gpu_conf.coef_moment = 0.0f;
+		gpu_conf.max_f = 0.0f;
+		if (!enable_repulsion)
+			gpu_conf.k_rel_rep = 0.0f;
+		if (hk_fdg_gpu_compute(gpu_ctx, &gpu_conf, t == 0? gpu_pairs : 0, n_gpu_pairs,
+							   unit,
+							   enable_repulsion? hk_blind_rel_rep_schedule_at(t, n_steps) : 0.0f,
+							   enable_repulsion? gpu_conf.d_r : 0.0f,
+							   &stats, &rms_force, need_sync) != 0)
+			goto cleanup;
+		if (hk_fdg_gpu_download_positions(gpu_ctx, coords, n_diploid) != 0)
+			goto cleanup;
+		step_diag.contact_energy = stats.energy[HK_FDG_PAIR_TYPE_CONTACT];
+		step_diag.backbone_energy = stats.energy[HK_FDG_PAIR_TYPE_BACKBONE];
+		step_diag.repulsion_energy = stats.energy[HK_FDG_PAIR_TYPE_REPEL];
+		step_diag.force_l1 = (float)(rms_force * sqrt((double)n_diploid));
+		step_diag.n_backbone_edges = stats.active[HK_FDG_PAIR_TYPE_BACKBONE];
+		step_diag.n_repulsion_pairs_active = stats.active[HK_FDG_PAIR_TYPE_REPEL];
+		step_diag.n_repulsion_pairs_considered = stats.active[HK_FDG_PAIR_TYPE_REPEL];
+		step_diag.n_repulsion_pairs_blocked = 0;
+		step_diag.repulsion_mode = enable_repulsion? repulsion_mode : HK_BLIND_REPULSION_NONE;
+		if (min_sep_unit > 0.0f || lambda_sep > 0.0f || (anchor_map && anchor_k > 0.0f)) {
+			extra_force = n_diploid > 0? CALLOC(fvec3_t, n_diploid) : 0;
+			if (n_diploid > 0 && extra_force == 0)
+				goto cleanup;
+			if (hk_blind_apply_extra_cpu_forces(anchor_map, coarse_diploid_coords, anchor_k,
+												n_haploid, coords, unit, step,
+												min_sep_unit, lambda_sep,
+												extra_force, &step_diag) != 0) {
+				free(extra_force);
+				goto cleanup;
+			}
+			free(extra_force);
+			if (hk_fdg_gpu_upload_positions(gpu_ctx, (const fvec3_t*)coords, n_diploid) != 0)
+				goto cleanup;
+		}
+		step_diag.total_energy = step_diag.contact_energy + step_diag.backbone_energy +
+			step_diag.repulsion_energy + step_diag.sep_energy + step_diag.anchor_energy;
+		if (t == 0) {
+			diag->initial_total_energy = step_diag.total_energy;
+			diag->initial_contact_energy = step_diag.contact_energy;
+			diag->initial_backbone_energy = step_diag.backbone_energy;
+			diag->initial_repulsion_energy = step_diag.repulsion_energy;
+			diag->initial_sep_energy = step_diag.sep_energy;
+			diag->initial_anchor_energy = step_diag.anchor_energy;
+		}
+		diag->final_total_energy = step_diag.total_energy;
+		diag->final_contact_energy = step_diag.contact_energy;
+		diag->final_backbone_energy = step_diag.backbone_energy;
+		diag->final_repulsion_energy = step_diag.repulsion_energy;
+		diag->final_sep_energy = step_diag.sep_energy;
+		diag->final_anchor_energy = step_diag.anchor_energy;
+		diag->final_force_l1 = step_diag.force_l1;
+		diag->final_backbone_force_l1 = step_diag.backbone_force_l1;
+		diag->final_repulsion_force_l1 = step_diag.repulsion_force_l1;
+		diag->final_sep_force_l1 = step_diag.sep_force_l1;
+		diag->final_anchor_force_l1 = step_diag.anchor_force_l1;
+		diag->final_n_repulsion_pairs_considered = step_diag.n_repulsion_pairs_considered;
+		diag->final_n_repulsion_pairs_blocked = step_diag.n_repulsion_pairs_blocked;
+		diag->final_n_repulsion_pairs_active = step_diag.n_repulsion_pairs_active;
+		if (hk_blind_float_isfinite(step_diag.force_l1) && step_diag.force_l1 > diag->max_force_l1)
+			diag->max_force_l1 = step_diag.force_l1;
+		if (hk_blind_float_isfinite(step_diag.anchor_force_l1) && step_diag.anchor_force_l1 > diag->max_anchor_force_l1)
+			diag->max_anchor_force_l1 = step_diag.anchor_force_l1;
+		if (step_diag.n_backbone_nonfinite != 0)
+			++diag->n_backbone_nonfinite_step;
+		if (step_diag.n_repulsion_nonfinite != 0)
+			++diag->n_repulsion_nonfinite_step;
+		if (step_diag.n_sep_nonfinite != 0)
+			++diag->n_sep_nonfinite_step;
+		if (step_diag.n_anchor_nonfinite != 0)
+			++diag->n_anchor_nonfinite_step;
+		diag->n_coord_nonfinite = hk_blind_count_nonfinite_coords(coords, n_diploid);
+		if (hk_blind_step_diag_has_nonfinite(&step_diag) || diag->n_coord_nonfinite != 0) {
+			++diag->n_nonfinite_step;
+			goto cleanup;
+		}
+		++diag->n_completed;
+	}
+	ret = 0;
+
+cleanup:
+	if (gpu_ctx) hk_fdg_gpu_destroy(gpu_ctx);
+	free(block_keys);
+	free(gpu_pairs);
+	return ret;
+}
+
+static int hk_blind_relax_impl(const struct hk_fdg_conf *conf, const struct hk_blind_wedge_list *edges,
+							   const struct hk_bmap *bmap_or_null, int32_t n_haploid, fvec3_t *coords,
+							   float unit, float step, int32_t n_steps, float min_sep_unit, float lambda_sep,
+							   int enable_repulsion, int repulsion_mode, float repulsion_block_k_min,
+							   float chr_sep_unit, float lambda_chr_sep,
+							   const struct hk_blind_coarse_to_fine_map *anchor_map,
+							   const fvec3_t *coarse_diploid_coords, float anchor_k,
+							   struct hk_blind_relax_diag *diag)
+{
+	if (conf->backend == HK_FDG_BACKEND_GPU) {
+		if (chr_sep_unit > 0.0f || lambda_chr_sep > 0.0f ||
+			repulsion_mode != HK_BLIND_REPULSION_CELL || repulsion_block_k_min != 0.0f)
+			return -1;
+		return hk_blind_relax_gpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step,
+									   n_steps, min_sep_unit, lambda_sep, enable_repulsion,
+									   repulsion_mode, repulsion_block_k_min,
+									   anchor_map, coarse_diploid_coords, anchor_k, diag);
+	}
+	return hk_blind_relax_cpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step,
+								   n_steps, min_sep_unit, lambda_sep, enable_repulsion,
+								   repulsion_mode, repulsion_block_k_min, chr_sep_unit,
+								   lambda_chr_sep, anchor_map, coarse_diploid_coords,
+								   anchor_k, diag);
+}
+
 int hk_blind_relax_cpu(const struct hk_fdg_conf *conf, const struct hk_blind_wedge_list *edges,
 					   const struct hk_bmap *bmap_or_null, int32_t n_haploid, fvec3_t *coords, float unit, float step, int32_t n_steps,
 					   float min_sep_unit, float lambda_sep, int enable_repulsion, int repulsion_mode, struct hk_blind_relax_diag *diag)
@@ -4323,13 +4668,13 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct 
 	hk_blind_iter_diag_validate_wedge_list(&wedges, pre_diag);
 	diag->sum_wedge_k = pre_diag->sum_wedge_k;
 
-	ret = hk_blind_relax_cpu_impl(fdg_conf, &wedges, bmap, bmap->n_beads, coords, iter_conf->unit,
-								  iter_conf->relax_step, iter_conf->relax_steps, iter_conf->min_sep_unit,
-								  iter_conf->lambda_sep, iter_conf->enable_repulsion,
-								  iter_conf->repulsion_mode, iter_conf->repulsion_block_k_min,
-								  iter_conf->chr_sep_unit, iter_conf->lambda_chr_sep,
-								  anchor_map, coarse_diploid_coords, anchor_k,
-								  &diag->relax_diag);
+	ret = hk_blind_relax_impl(fdg_conf, &wedges, bmap, bmap->n_beads, coords, iter_conf->unit,
+							  iter_conf->relax_step, iter_conf->relax_steps, iter_conf->min_sep_unit,
+							  iter_conf->lambda_sep, iter_conf->enable_repulsion,
+							  iter_conf->repulsion_mode, iter_conf->repulsion_block_k_min,
+							  iter_conf->chr_sep_unit, iter_conf->lambda_chr_sep,
+							  anchor_map, coarse_diploid_coords, anchor_k,
+							  &diag->relax_diag);
 	hk_blind_wedge_list_destroy(&wedges);
 	if (ret != 0) {
 		free(prev_coords);

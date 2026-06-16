@@ -12,7 +12,6 @@ import re
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
 
 import matplotlib
 
@@ -324,6 +323,8 @@ def read_contact_truth_counts(
             chrom2 = row["chr2"]
             start1 = (int(row["pos1"]) // bin_size) * bin_size
             start2 = (int(row["pos2"]) // bin_size) * bin_size
+            if chrom1 == chrom2 and start1 == start2:
+                continue
             key, state = canonicalize_contact(chrom1, start1, int(p0), chrom2, start2, int(p1))
             if key in posterior:
                 counts[key][state] += 1
@@ -429,41 +430,299 @@ def procrustes(ref: np.ndarray, query: np.ndarray) -> tuple[float, float, np.nda
     return rmsd, similarity_scale, aligned
 
 
-def global_swaps(value: int, chroms: Iterable[str]) -> dict[str, int]:
-    return {chrom: value for chrom in chroms}
-
-
-def metric_row(
-    scope: str,
-    copy_swap_policy: str,
-    swaps_by_chrom: dict[str, int],
+def points_for_keys(
     keys: list[tuple[str, int, int]],
+    coords: dict[tuple[str, int, int], np.ndarray],
+    query_coords: dict[tuple[str, int, int], np.ndarray] | None = None,
+    swaps_by_chrom: dict[str, int] | None = None,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    left = np.vstack([coords[k] for k in keys]) if keys else np.zeros((0, 3), dtype=float)
+    if query_coords is None or swaps_by_chrom is None:
+        return left, None
+    right = np.vstack([query_coords[(k[0], k[1], k[2] ^ swaps_by_chrom.get(k[0], 0))] for k in keys]) if keys else np.zeros((0, 3), dtype=float)
+    return left, right
+
+
+def cis_distance_correlation_row(
+    chrom: str,
+    swap: int,
     reference: dict[tuple[str, int, int], np.ndarray],
     reconstruction: dict[tuple[str, int, int], np.ndarray],
 ) -> dict[str, object]:
-    ref = np.vstack([reference[k] for k in keys]) if keys else np.zeros((0, 3), dtype=float)
-    rec = np.vstack([reconstruction[(k[0], k[1], k[2] ^ swaps_by_chrom.get(k[0], 0))] for k in keys]) if keys else np.zeros((0, 3), dtype=float)
-    ref_rg = radius_of_gyration(ref)
-    rec_rg = radius_of_gyration(rec)
+    swaps = {chrom: swap}
+    keys = ordered_keys(reference, reconstruction, swaps, chrom=chrom)
+    ref, rec = points_for_keys(keys, reference, reconstruction, swaps)
+    assert rec is not None
     ref_dist = condensed_distances(ref)
     rec_dist = condensed_distances(rec)
+    ref_rg = radius_of_gyration(ref)
+    rec_rg = radius_of_gyration(rec)
     ref_norm = ref_dist / ref_rg if ref_rg > 0 else ref_dist * float("nan")
     rec_norm = rec_dist / rec_rg if rec_rg > 0 else rec_dist * float("nan")
-    rmsd, similarity_scale, _ = procrustes(ref, rec)
     return {
-        "scope": scope,
-        "copy_swap_policy": copy_swap_policy,
+        "chrom": chrom,
+        "copy_swap": swap,
         "n_points": len(keys),
         "n_pairwise_distances": len(ref_dist),
-        "reference_rg": ref_rg,
-        "reconstruction_rg": rec_rg,
-        "distance_pearson": pearson_corr(ref_norm, rec_norm),
-        "distance_spearman": spearman_corr(ref_norm, rec_norm),
-        "distance_rmse_rg_norm": float(np.sqrt(np.mean((ref_norm - rec_norm) ** 2))) if len(ref_norm) else float("nan"),
-        "rigid_procrustes_rmsd_rg_norm": rmsd,
-        "rigid_procrustes_applied_scale": 1.0,
-        "similarity_scale_to_reference_diagnostic": similarity_scale,
+        "cis_distance_pearson": pearson_corr(ref_norm, rec_norm),
+        "cis_distance_spearman": spearman_corr(ref_norm, rec_norm),
     }
+
+
+def choose_distance_swaps(
+    chroms: list[str],
+    reference: dict[tuple[str, int, int], np.ndarray],
+    reconstruction: dict[tuple[str, int, int], np.ndarray],
+) -> tuple[dict[str, int], list[dict[str, object]]]:
+    rows: list[dict[str, object]] = []
+    swaps: dict[str, int] = {}
+    for chrom in chroms:
+        candidates = [cis_distance_correlation_row(chrom, swap, reference, reconstruction) for swap in (0, 1)]
+        best = max(candidates, key=lambda row: (nan_to_neg_inf(row["cis_distance_spearman"]), int(row["n_points"])))
+        swaps[chrom] = int(best["copy_swap"])
+        for row in candidates:
+            out = dict(row)
+            out["selected_for_eval"] = int(int(row["copy_swap"]) == swaps[chrom])
+            rows.append(out)
+    return swaps, rows
+
+
+def nan_to_neg_inf(value: object) -> float:
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return float("-inf")
+    return x if math.isfinite(x) else float("-inf")
+
+
+def swap_state(state: int, swap1: int, swap2: int) -> int:
+    return ((state >> 1) ^ swap1) * 2 + ((state & 1) ^ swap2)
+
+
+def align_p4_to_truth_gauge(p4: np.ndarray, swap1: int, swap2: int) -> np.ndarray:
+    aligned = np.zeros(4, dtype=float)
+    for model_state in range(4):
+        aligned[swap_state(model_state, swap1, swap2)] = p4[model_state]
+    return aligned
+
+
+def fdg_contact_energy_r(r: float, k: float) -> float:
+    if r < FDG_D_C1:
+        t = FDG_D_C1 - r
+        return k * t * t
+    if r <= FDG_D_C2:
+        return 0.0
+    if r <= FDG_D_C3:
+        t = r - FDG_D_C2
+        return k * t * t
+    t = r - FDG_D_C2
+    return k * (FDG_C_C1 * (r - FDG_D_C3) + FDG_C_C2 / t)
+
+
+def p4_from_coords_for_bpair(
+    coords: dict[tuple[str, int, int], np.ndarray],
+    item: dict[str, object],
+) -> np.ndarray | None:
+    chrom1 = str(item["chrom1"])
+    chrom2 = str(item["chrom2"])
+    start1 = int(item["start1"])
+    start2 = int(item["start2"])
+    d_scale = float(item["base_d_scale"])
+    base_k = float(item["base_k"])
+    if d_scale <= 0:
+        return None
+    distances: list[float] = []
+    for state in range(4):
+        copy1 = state >> 1
+        copy2 = state & 1
+        key1 = (chrom1, start1, copy1)
+        key2 = (chrom2, start2, copy2)
+        if key1 not in coords or key2 not in coords:
+            return None
+        distances.append(float(np.linalg.norm(coords[key1] - coords[key2])))
+    energy = np.array([fdg_contact_energy_r(distance / d_scale, base_k) for distance in distances], dtype=float)
+    score = -energy
+    score -= np.max(score)
+    exp_score = np.exp(score)
+    return exp_score / exp_score.sum()
+
+
+def update_accuracy_stats(stats: dict[str, float], counts: np.ndarray, p4_truth_gauge: np.ndarray) -> None:
+    n = int(counts.sum())
+    if n <= 0:
+        return
+    pred = int(np.argmax(p4_truth_gauge))
+    pmax = float(np.max(p4_truth_gauge))
+    correct = int(counts[pred])
+    stats["contacts"] += n
+    stats["correct_top1"] += correct
+    if pmax >= PMAX_THRESHOLD:
+        stats["called_contacts"] += n
+        stats["called_correct"] += correct
+
+
+def empty_accuracy_stats() -> dict[str, float]:
+    return {"contacts": 0.0, "correct_top1": 0.0, "called_contacts": 0.0, "called_correct": 0.0}
+
+
+def finalize_accuracy_stats(stats: dict[str, float]) -> dict[str, object]:
+    contacts = int(stats["contacts"])
+    called = int(stats["called_contacts"])
+    correct = int(stats["correct_top1"])
+    called_correct = int(stats["called_correct"])
+    return {
+        "n_eval_contacts": contacts,
+        "top1_correct_contacts": correct,
+        "top1_accuracy": correct / contacts if contacts else float("nan"),
+        "pmax_threshold": PMAX_THRESHOLD,
+        "n_called_contacts": called,
+        "called_contact_fraction": called / contacts if contacts else float("nan"),
+        "pmax_threshold_correct_contacts": called_correct,
+        "pmax_threshold_accuracy": called_correct / called if called else float("nan"),
+        "pmax_threshold_recall": called_correct / contacts if contacts else float("nan"),
+    }
+
+
+def contact_accuracy_for_swaps(
+    contact_counts: dict[tuple[str, int, str, int], np.ndarray],
+    posterior: dict[tuple[str, int, str, int], dict[str, object]],
+    reference: dict[tuple[str, int, int], np.ndarray],
+    swaps_by_chrom: dict[str, int],
+) -> list[dict[str, object]]:
+    stats_by_source_scope: dict[tuple[str, str], dict[str, float]] = {}
+    for key, counts in contact_counts.items():
+        item = posterior.get(key)
+        if item is None:
+            continue
+        chrom1 = str(item["chrom1"])
+        chrom2 = str(item["chrom2"])
+        is_cis = chrom1 == chrom2
+        model_p4 = align_p4_to_truth_gauge(
+            np.asarray(item["p4"], dtype=float),
+            swaps_by_chrom.get(chrom1, 0),
+            swaps_by_chrom.get(chrom2, 0),
+        )
+        charm_p4 = p4_from_coords_for_bpair(reference, item)
+        if charm_p4 is None:
+            continue
+        for source, p4 in [("reconstruction_posterior", model_p4), ("charm3dg_uniform_prior_fdg", charm_p4)]:
+            scopes = ["genome_all", "genome_cis" if is_cis else "genome_trans"]
+            if is_cis:
+                scopes.append(f"{chrom1}_cis")
+            for scope in scopes:
+                stats = stats_by_source_scope.setdefault((source, scope), empty_accuracy_stats())
+                update_accuracy_stats(stats, counts, p4)
+    rows: list[dict[str, object]] = []
+    def scope_sort_key(scope: str) -> tuple[int, tuple[int, str]]:
+        if scope == "genome_all":
+            return (0, (0, ""))
+        if scope == "genome_cis":
+            return (1, (0, ""))
+        if scope == "genome_trans":
+            return (2, (0, ""))
+        return (3, chrom_sort_key(scope.removesuffix("_cis")))
+
+    for (source, scope), stats in sorted(stats_by_source_scope.items(), key=lambda x: (x[0][0], scope_sort_key(x[0][1]))):
+        row = {"source": source, "scope": scope}
+        row.update(finalize_accuracy_stats(stats))
+        rows.append(row)
+    return rows
+
+
+def choose_contact_swaps(
+    chroms: list[str],
+    contact_counts: dict[tuple[str, int, str, int], np.ndarray],
+    posterior: dict[tuple[str, int, str, int], dict[str, object]],
+) -> dict[str, int]:
+    swaps: dict[str, int] = {}
+    for chrom in chroms:
+        best_swap = 0
+        best_acc = float("-inf")
+        for swap in (0, 1):
+            stats = empty_accuracy_stats()
+            for key, counts in contact_counts.items():
+                item = posterior.get(key)
+                if item is None or item["chrom1"] != chrom or item["chrom2"] != chrom:
+                    continue
+                p4 = align_p4_to_truth_gauge(np.asarray(item["p4"], dtype=float), swap, swap)
+                update_accuracy_stats(stats, counts, p4)
+            acc = float(finalize_accuracy_stats(stats)["top1_accuracy"])
+            if math.isfinite(acc) and acc > best_acc:
+                best_acc = acc
+                best_swap = swap
+        swaps[chrom] = best_swap
+    return swaps
+
+
+def copy_separation_rows(
+    coords_by_source: dict[str, dict[tuple[str, int, int], np.ndarray]],
+    swaps_by_chrom: dict[str, int],
+    chroms: list[str],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for source, coords in coords_by_source.items():
+        genome_distances: list[float] = []
+        for chrom in chroms:
+            starts = sorted({start for c, start, copy in coords if c == chrom})
+            distances: list[float] = []
+            for start in starts:
+                key0 = (chrom, start, swaps_by_chrom.get(chrom, 0) if source == "reconstruction" else 0)
+                key1 = (chrom, start, (1 ^ swaps_by_chrom.get(chrom, 0)) if source == "reconstruction" else 1)
+                if key0 in coords and key1 in coords:
+                    distances.append(float(np.linalg.norm(coords[key0] - coords[key1])))
+            genome_distances.extend(distances)
+            rows.append({
+                "source": source,
+                "chrom": chrom,
+                "n_bins": len(distances),
+                "mean_copy01_separation": float(np.mean(distances)) if distances else float("nan"),
+                "median_copy01_separation": float(np.median(distances)) if distances else float("nan"),
+            })
+        rows.append({
+            "source": source,
+            "chrom": "genome",
+            "n_bins": len(genome_distances),
+            "mean_copy01_separation": float(np.mean(genome_distances)) if genome_distances else float("nan"),
+            "median_copy01_separation": float(np.median(genome_distances)) if genome_distances else float("nan"),
+        })
+    return rows
+
+
+def point_cloud_volume(points: np.ndarray) -> float:
+    if len(points) < 4:
+        return float("nan")
+    try:
+        return float(ConvexHull(points).volume)
+    except QhullError:
+        return 0.0
+
+
+def volume_rows(
+    coords_by_source: dict[str, dict[tuple[str, int, int], np.ndarray]],
+    chroms: list[str],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for source, coords in coords_by_source.items():
+        all_points = np.vstack(list(coords.values())) if coords else np.zeros((0, 3), dtype=float)
+        genome_volume = point_cloud_volume(all_points)
+        for chrom in chroms:
+            points = np.vstack([xyz for (c, _, _), xyz in coords.items() if c == chrom]) if any(c == chrom for c, _, _ in coords) else np.zeros((0, 3), dtype=float)
+            volume = point_cloud_volume(points)
+            rows.append({
+                "source": source,
+                "chrom": chrom,
+                "n_points": len(points),
+                "convex_hull_volume": volume,
+                "volume_fraction_of_source_genome": volume / genome_volume if genome_volume > 0 and math.isfinite(volume) else float("nan"),
+            })
+        rows.append({
+            "source": source,
+            "chrom": "genome",
+            "n_points": len(all_points),
+            "convex_hull_volume": genome_volume,
+            "volume_fraction_of_source_genome": 1.0 if genome_volume > 0 else float("nan"),
+        })
+    return rows
 
 
 def format_value(value: object) -> str:
@@ -474,32 +733,29 @@ def format_value(value: object) -> str:
     return str(value)
 
 
-def write_metrics(path: Path, rows: list[dict[str, object]]) -> None:
-    fieldnames = [
-        "scope",
-        "copy_swap_policy",
-        "n_points",
-        "n_pairwise_distances",
-        "reference_rg",
-        "reconstruction_rg",
-        "distance_pearson",
-        "distance_spearman",
-        "distance_rmse_rg_norm",
-        "rigid_procrustes_rmsd_rg_norm",
-        "rigid_procrustes_applied_scale",
-        "similarity_scale_to_reference_diagnostic",
-    ]
-    with path.open("w", newline="\n") as fh:
-        writer = csv.DictWriter(fh, delimiter="\t", fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
-
 def write_summary(path: Path, values: dict[str, object]) -> None:
     with path.open("w") as fh:
         fh.write("key\tvalue\n")
         for key in sorted(values):
             fh.write(f"{key}\t{format_value(values[key])}\n")
+
+
+def write_table(path: Path, rows: list[dict[str, object]]) -> None:
+    if not rows:
+        path.write_text("")
+        return
+    fieldnames = list(rows[0].keys())
+    with path.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, delimiter="\t", fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def first_row(rows: list[dict[str, object]], **matches: object) -> dict[str, object] | None:
+    for row in rows:
+        if all(row.get(key) == value for key, value in matches.items()):
+            return row
+    return None
 
 
 def distance_matrix_for_plot(points: np.ndarray) -> np.ndarray:
@@ -759,29 +1015,57 @@ def write_readme(
     path: Path,
     args: argparse.Namespace,
     summary: dict[str, object],
-    metric_rows: list[dict[str, object]],
+    cis_rows: list[dict[str, object]],
+    accuracy_rows: list[dict[str, object]],
+    separation_rows: list[dict[str, object]],
+    volume_rows_data: list[dict[str, object]],
 ) -> None:
+    model_all = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_all")
+    model_cis = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_cis")
+    model_trans = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_trans")
+    charm_all = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_all")
+    charm_cis = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_cis")
+    charm_trans = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_trans")
+    chr1_cis = next((row for row in cis_rows if row["chrom"] == "chr1" and int(row["selected_for_eval"]) == 1), None)
+    rec_sep = first_row(separation_rows, source="reconstruction", chrom="genome")
+    ref_sep = first_row(separation_rows, source="charm3dg", chrom="genome")
+    rec_vol = first_row(volume_rows_data, source="reconstruction", chrom="genome")
+    ref_vol = first_row(volume_rows_data, source="charm3dg", chrom="genome")
     rows_for_readme = [
         ("bin_size_bp", args.bin_size),
         ("pairs_total", summary["pairs_total"]),
         ("pairs_cis", summary["pairs_cis"]),
         ("pairs_trans", summary["pairs_trans"]),
         ("pairs_with_any_phase_eval_only", summary["pairs_with_any_phase"]),
+        ("pairs_with_both_phases_eval_only", summary["pairs_with_both_phases"]),
         ("reference_points_aggregated", summary["reference_points_aggregated"]),
         ("reconstruction_points", summary["reconstruction_points"]),
-        ("shared_points_best_global_swap", summary["shared_points_best_global_swap"]),
-        ("chr1_shared_points_best_global_swap", summary["chr1_shared_points_best_global_swap"]),
-        ("best_global_copy_swap", summary["best_global_copy_swap"]),
-        ("chr1_copy_swap_for_standard_plots", summary["chr1_copy_swap_for_standard_plots"]),
-        ("headline_copy_swap_policy", summary["headline_copy_swap_policy"]),
-        ("best_genome_distance_spearman", summary["best_genome_distance_spearman"]),
-        ("best_genome_distance_rmse_rg_norm", summary["best_genome_distance_rmse_rg_norm"]),
-        ("best_genome_rigid_procrustes_rmsd_rg_norm", summary["best_genome_rigid_procrustes_rmsd_rg_norm"]),
-        ("best_genome_similarity_scale_to_reference_diagnostic", summary["best_genome_similarity_scale_to_reference_diagnostic"]),
-        ("best_chr1_distance_spearman", summary["best_chr1_distance_spearman"]),
-        ("best_chr1_distance_rmse_rg_norm", summary["best_chr1_distance_rmse_rg_norm"]),
-        ("best_chr1_rigid_procrustes_rmsd_rg_norm", summary["best_chr1_rigid_procrustes_rmsd_rg_norm"]),
-        ("best_chr1_similarity_scale_to_reference_diagnostic", summary["best_chr1_similarity_scale_to_reference_diagnostic"]),
+        ("shared_points_per_chrom_best", summary["shared_points_per_chrom_best"]),
+        ("chr1_shared_points_per_chrom_best", summary["chr1_shared_points_per_chrom_best"]),
+        ("mean_per_chrom_cis_distance_spearman", summary["mean_per_chrom_cis_distance_spearman"]),
+        ("chr1_cis_distance_spearman", chr1_cis["cis_distance_spearman"] if chr1_cis else float("nan")),
+        ("model_top1_accuracy_genome_all", model_all["top1_accuracy"] if model_all else float("nan")),
+        ("model_pmax90_accuracy_genome_all", model_all["pmax_threshold_accuracy"] if model_all else float("nan")),
+        ("model_pmax90_recall_genome_all", model_all["pmax_threshold_recall"] if model_all else float("nan")),
+        ("model_top1_accuracy_genome_cis", model_cis["top1_accuracy"] if model_cis else float("nan")),
+        ("model_pmax90_accuracy_genome_cis", model_cis["pmax_threshold_accuracy"] if model_cis else float("nan")),
+        ("model_pmax90_recall_genome_cis", model_cis["pmax_threshold_recall"] if model_cis else float("nan")),
+        ("model_top1_accuracy_genome_trans", model_trans["top1_accuracy"] if model_trans else float("nan")),
+        ("model_pmax90_accuracy_genome_trans", model_trans["pmax_threshold_accuracy"] if model_trans else float("nan")),
+        ("model_pmax90_recall_genome_trans", model_trans["pmax_threshold_recall"] if model_trans else float("nan")),
+        ("charm3dg_top1_accuracy_genome_all", charm_all["top1_accuracy"] if charm_all else float("nan")),
+        ("charm3dg_pmax90_accuracy_genome_all", charm_all["pmax_threshold_accuracy"] if charm_all else float("nan")),
+        ("charm3dg_pmax90_recall_genome_all", charm_all["pmax_threshold_recall"] if charm_all else float("nan")),
+        ("charm3dg_top1_accuracy_genome_cis", charm_cis["top1_accuracy"] if charm_cis else float("nan")),
+        ("charm3dg_pmax90_accuracy_genome_cis", charm_cis["pmax_threshold_accuracy"] if charm_cis else float("nan")),
+        ("charm3dg_pmax90_recall_genome_cis", charm_cis["pmax_threshold_recall"] if charm_cis else float("nan")),
+        ("charm3dg_top1_accuracy_genome_trans", charm_trans["top1_accuracy"] if charm_trans else float("nan")),
+        ("charm3dg_pmax90_accuracy_genome_trans", charm_trans["pmax_threshold_accuracy"] if charm_trans else float("nan")),
+        ("charm3dg_pmax90_recall_genome_trans", charm_trans["pmax_threshold_recall"] if charm_trans else float("nan")),
+        ("reconstruction_mean_copy01_separation", rec_sep["mean_copy01_separation"] if rec_sep else float("nan")),
+        ("charm3dg_mean_copy01_separation", ref_sep["mean_copy01_separation"] if ref_sep else float("nan")),
+        ("reconstruction_genome_volume", rec_vol["convex_hull_volume"] if rec_vol else float("nan")),
+        ("charm3dg_genome_volume", ref_vol["convex_hull_volume"] if ref_vol else float("nan")),
     ]
     with path.open("w") as fh:
         fh.write(f"# {args.outdir.name}\n\n")
@@ -792,28 +1076,20 @@ def write_readme(
         fh.write(f"- CHARM/3DG eval reference: `{args.reference_3dg}`\n")
         fh.write(f"- train manifest: `{args.train_manifest}`\n")
         fh.write("- boundary: training used raw P9016 contact information only; phase labels and CHARM/3DG were read only by this post-training evaluator.\n")
-        fh.write("- copy gauge: metrics were computed for global swaps; headline metrics and standard plots use the best global swap. A per-chromosome local best-swap row is included only as an eval-only gauge-sensitivity diagnostic.\n\n")
+        fh.write("- copy gauge: evaluation uses per-chromosome best copy swap. Geometry swaps are selected by per-chromosome cis distance-matrix Spearman correlation; contact-accuracy swaps are selected by per-chromosome cis top1 accuracy.\n")
+        fh.write("- contact denominator: contact accuracy uses eval-only raw contacts with both `phase0` and `phase1`, excluding same-bin contacts, and requiring a matching posterior bpair.\n")
+        fh.write("- CHARM/3DG probability baseline: `charm3dg_uniform_prior_fdg` recomputes four-state probabilities from CHARM/3DG distances using hickit FDG contact energy, posterior `base_d_scale/base_k`, and uniform four-state prior because posterior log-priors are not exported.\n\n")
         fh.write("- alignment: 3D scatter plots and Procrustes RMSD use rigid alignment only: translation and rotation are fitted, reconstruction scale is not fitted to CHARM/3DG. The reported similarity scale is diagnostic only and is not applied.\n\n")
         fh.write("## Quantitative Results\n\n")
         fh.write("| metric | value |\n")
         fh.write("| --- | ---: |\n")
         for key, value in rows_for_readme:
             fh.write(f"| {key} | {format_value(value)} |\n")
-        fh.write("\n## Swap-Aware Metrics\n\n")
-        fh.write("| scope | copy_swap_policy | n_points | distance_spearman | distance_rmse_rg_norm | rigid_procrustes_rmsd_rg_norm | similarity_scale_to_reference_diagnostic |\n")
-        fh.write("| --- | --- | ---: | ---: | ---: | ---: | ---: |\n")
-        for row in metric_rows:
-            fh.write(
-                "| {scope} | {copy_swap_policy} | {n_points} | {distance_spearman} | {distance_rmse_rg_norm} | {rigid_procrustes_rmsd_rg_norm} | {similarity_scale_to_reference_diagnostic} |\n".format(
-                    scope=row["scope"],
-                    copy_swap_policy=row["copy_swap_policy"],
-                    n_points=row["n_points"],
-                    distance_spearman=format_value(row["distance_spearman"]),
-                    distance_rmse_rg_norm=format_value(row["distance_rmse_rg_norm"]),
-                    rigid_procrustes_rmsd_rg_norm=format_value(row["rigid_procrustes_rmsd_rg_norm"]),
-                    similarity_scale_to_reference_diagnostic=format_value(row["similarity_scale_to_reference_diagnostic"]),
-                )
-            )
+        fh.write("\n## Output Tables\n\n")
+        fh.write("- `cis_distance_correlations.tsv`: per-chromosome cis distance-matrix Pearson/Spearman for both copy swaps, with the selected per-chrom swap marked.\n")
+        fh.write("- `contact_accuracy.tsv`: four-state top1 accuracy, pmax >= 0.9 accuracy, called fraction, and recall for all/cis/trans contacts plus per-chromosome cis contacts, comparing reconstruction posterior and CHARM/3DG probability baseline.\n")
+        fh.write("- `copy_separation.tsv`: per-chromosome and genome mean/median distance between copy0 and copy1 of the same bin.\n")
+        fh.write("- `per_chrom_volume.tsv`: per-chromosome and genome convex-hull volumes for CHARM/3DG and reconstruction.\n")
         fh.write("\n## Plots\n\n")
         fh.write("- `plots/chr1_distance_maps.png`: rows are CHARM/3DG and reconstruction; columns are copy0 and copy1; larger distances are blue.\n")
         fh.write("- `plots/all_chrom_3d_scatter.png`: each point is one bin; chromosome+copy states are colored separately; reconstruction is rigid-Procrustes-aligned into the CHARM/3DG coordinate frame with no scale fitting, and both panels share one 3D coordinate range.\n")
@@ -825,6 +1101,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pairs", type=Path, required=True, help="P9016 pairs file; phase columns are eval-only.")
     parser.add_argument("--reference-3dg", type=Path, required=True, help="CHARM/3DG reference coordinates.")
     parser.add_argument("--reconstruction", type=Path, required=True, help="Baseline reconstruction coords TSV.")
+    parser.add_argument("--posterior", type=Path, default=None, help="Baseline bpair posterior TSV. Defaults to p9016_full.bpair_posterior.tsv next to reconstruction.")
     parser.add_argument("--train-manifest", type=Path, default=None, help="Training manifest TSV.")
     parser.add_argument("--outdir", type=Path, required=True, help="Experiment output directory.")
     parser.add_argument("--bin-size", type=int, default=4_000_000, help="Evaluation bin size in bp.")
@@ -841,58 +1118,33 @@ def main() -> int:
     pair_stats, chrom_sizes = summarize_pairs(args.pairs)
     reference = read_reference_3dg(args.reference_3dg, args.bin_size)
     reconstruction = read_reconstruction(args.reconstruction)
+    posterior_path = args.posterior if args.posterior else args.reconstruction.with_name("p9016_full.bpair_posterior.tsv")
+    posterior = read_posterior(posterior_path)
+    contact_counts = read_contact_truth_counts(args.pairs, args.bin_size, posterior)
     train_manifest = read_train_manifest(args.train_manifest)
     validate_train_manifest(train_manifest, args.bin_size)
     chroms = sorted({key[0] for key in reference} | {key[0] for key in reconstruction}, key=chrom_sort_key)
 
-    metric_rows: list[dict[str, object]] = []
-    global_rows: list[dict[str, object]] = []
-    for swap in (0, 1):
-        swaps = global_swaps(swap, chroms)
-        genome_row = metric_row("genome", f"global_swap_{swap}", swaps, ordered_keys(reference, reconstruction, swaps), reference, reconstruction)
-        chr1_row = metric_row("chr1", f"global_swap_{swap}", swaps, ordered_keys(reference, reconstruction, swaps, chrom="chr1"), reference, reconstruction)
-        metric_rows.extend([genome_row, chr1_row])
-        global_rows.append(genome_row)
+    distance_swaps, cis_rows = choose_distance_swaps(chroms, reference, reconstruction)
+    contact_swaps = choose_contact_swaps(chroms, contact_counts, posterior)
+    accuracy_rows = contact_accuracy_for_swaps(contact_counts, posterior, reference, contact_swaps)
+    separation_rows = copy_separation_rows({"charm3dg": reference, "reconstruction": reconstruction}, distance_swaps, chroms)
+    volume_rows_data = volume_rows({"charm3dg": reference, "reconstruction": reconstruction}, chroms)
+    model_all = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_all")
+    model_cis = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_cis")
+    model_trans = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_trans")
+    charm_all = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_all")
+    charm_cis = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_cis")
+    charm_trans = first_row(accuracy_rows, source="charm3dg_uniform_prior_fdg", scope="genome_trans")
 
-    per_chrom_swaps: dict[str, int] = {}
-    for chrom in chroms:
-        candidates = []
-        for swap in (0, 1):
-            swaps = {chrom: swap}
-            keys = ordered_keys(reference, reconstruction, swaps, chrom=chrom)
-            candidates.append(metric_row(chrom, f"{chrom}_swap_{swap}", swaps, keys, reference, reconstruction))
-        best = min(candidates, key=lambda row: (float(row["distance_rmse_rg_norm"]), -int(row["n_points"])))
-        per_chrom_swaps[chrom] = int(str(best["copy_swap_policy"]).rsplit("_", 1)[1])
-
-    per_chrom_genome = metric_row(
-        "genome",
-        "per_chrom_best",
-        per_chrom_swaps,
-        ordered_keys(reference, reconstruction, per_chrom_swaps),
-        reference,
-        reconstruction,
-    )
-    per_chrom_chr1 = metric_row(
-        "chr1",
-        "per_chrom_best",
-        per_chrom_swaps,
-        ordered_keys(reference, reconstruction, per_chrom_swaps, chrom="chr1"),
-        reference,
-        reconstruction,
-    )
-    metric_rows.extend([per_chrom_genome, per_chrom_chr1])
-
-    best_global_row = min(global_rows, key=lambda row: float(row["distance_rmse_rg_norm"]))
-    best_global_swap = int(str(best_global_row["copy_swap_policy"]).rsplit("_", 1)[1])
-    best_global_swaps = global_swaps(best_global_swap, chroms)
-    best_row = best_global_row
-    best_chr1 = next(row for row in metric_rows if row["scope"] == "chr1" and row["copy_swap_policy"] == f"global_swap_{best_global_swap}")
-    best_keys = ordered_keys(reference, reconstruction, best_global_swaps)
-    best_chr1_keys = ordered_keys(reference, reconstruction, best_global_swaps, chrom="chr1")
+    best_keys = ordered_keys(reference, reconstruction, distance_swaps)
+    best_chr1_keys = ordered_keys(reference, reconstruction, distance_swaps, chrom="chr1")
     if len(best_keys) < 2:
-        raise ValueError("fewer than 2 shared genome bins after best global copy swap")
+        raise ValueError("fewer than 2 shared genome bins after per-chrom copy swap")
     if len(best_chr1_keys) < 2:
-        raise ValueError("fewer than 2 shared chr1 bins after best global copy swap")
+        raise ValueError("fewer than 2 shared chr1 bins after per-chrom copy swap")
+    selected_cis_rows = [row for row in cis_rows if int(row["selected_for_eval"]) == 1 and math.isfinite(float(row["cis_distance_spearman"]))]
+    mean_cis_spearman = float(np.mean([float(row["cis_distance_spearman"]) for row in selected_cis_rows])) if selected_cis_rows else float("nan")
 
     summary: dict[str, object] = {
         "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -901,45 +1153,78 @@ def main() -> int:
         "pairs_path": str(args.pairs),
         "reference_3dg_path": str(args.reference_3dg),
         "reconstruction_path": str(args.reconstruction),
+        "posterior_path": str(posterior_path),
         "train_manifest_path": str(args.train_manifest) if args.train_manifest else "",
         "chromosomes_in_pairs_header": len(chrom_sizes),
         "reference_points_aggregated": len(reference),
         "reconstruction_points": len(reconstruction),
-        "shared_points_best_global_swap": len(best_keys),
-        "chr1_shared_points_best_global_swap": len(best_chr1_keys),
-        "best_global_copy_swap": best_global_swap,
-        "chr1_copy_swap_for_standard_plots": best_global_swap,
-        "headline_copy_swap_policy": f"global_swap_{best_global_swap}",
-        "per_chrom_best_is_local_sensitivity": 1,
-        "per_chrom_copy_swaps_json": json.dumps(per_chrom_swaps, sort_keys=True),
-        "best_genome_distance_spearman": best_row["distance_spearman"],
-        "best_genome_distance_rmse_rg_norm": best_row["distance_rmse_rg_norm"],
-        "best_genome_rigid_procrustes_rmsd_rg_norm": best_row["rigid_procrustes_rmsd_rg_norm"],
-        "best_genome_similarity_scale_to_reference_diagnostic": best_row["similarity_scale_to_reference_diagnostic"],
-        "best_chr1_distance_spearman": best_chr1["distance_spearman"],
-        "best_chr1_distance_rmse_rg_norm": best_chr1["distance_rmse_rg_norm"],
-        "best_chr1_rigid_procrustes_rmsd_rg_norm": best_chr1["rigid_procrustes_rmsd_rg_norm"],
-        "best_chr1_similarity_scale_to_reference_diagnostic": best_chr1["similarity_scale_to_reference_diagnostic"],
+        "posterior_bpair_rows": len(posterior),
+        "truth_bpair_rows_with_eval_contacts": len(contact_counts),
+        "truth_eval_contacts": int(sum(int(counts.sum()) for counts in contact_counts.values())),
+        "shared_points_per_chrom_best": len(best_keys),
+        "chr1_shared_points_per_chrom_best": len(best_chr1_keys),
+        "distance_per_chrom_copy_swaps_json": json.dumps(distance_swaps, sort_keys=True),
+        "contact_per_chrom_copy_swaps_json": json.dumps(contact_swaps, sort_keys=True),
+        "copy_swap_policy": "per_chrom_best only; geometry swaps selected by cis distance Spearman, contact swaps selected by cis top1 accuracy",
+        "mean_per_chrom_cis_distance_spearman": mean_cis_spearman,
+        "charm3dg_probability_baseline": "uniform_prior_fdg_energy_from_charm3dg_distances",
+        "pmax_threshold": PMAX_THRESHOLD,
+        "model_top1_accuracy_genome_all": model_all["top1_accuracy"] if model_all else float("nan"),
+        "model_pmax90_accuracy_genome_all": model_all["pmax_threshold_accuracy"] if model_all else float("nan"),
+        "model_pmax90_recall_genome_all": model_all["pmax_threshold_recall"] if model_all else float("nan"),
+        "model_top1_accuracy_genome_cis": model_cis["top1_accuracy"] if model_cis else float("nan"),
+        "model_pmax90_accuracy_genome_cis": model_cis["pmax_threshold_accuracy"] if model_cis else float("nan"),
+        "model_pmax90_recall_genome_cis": model_cis["pmax_threshold_recall"] if model_cis else float("nan"),
+        "model_top1_accuracy_genome_trans": model_trans["top1_accuracy"] if model_trans else float("nan"),
+        "model_pmax90_accuracy_genome_trans": model_trans["pmax_threshold_accuracy"] if model_trans else float("nan"),
+        "model_pmax90_recall_genome_trans": model_trans["pmax_threshold_recall"] if model_trans else float("nan"),
+        "charm3dg_top1_accuracy_genome_all": charm_all["top1_accuracy"] if charm_all else float("nan"),
+        "charm3dg_pmax90_accuracy_genome_all": charm_all["pmax_threshold_accuracy"] if charm_all else float("nan"),
+        "charm3dg_pmax90_recall_genome_all": charm_all["pmax_threshold_recall"] if charm_all else float("nan"),
+        "charm3dg_top1_accuracy_genome_cis": charm_cis["top1_accuracy"] if charm_cis else float("nan"),
+        "charm3dg_pmax90_accuracy_genome_cis": charm_cis["pmax_threshold_accuracy"] if charm_cis else float("nan"),
+        "charm3dg_pmax90_recall_genome_cis": charm_cis["pmax_threshold_recall"] if charm_cis else float("nan"),
+        "charm3dg_top1_accuracy_genome_trans": charm_trans["top1_accuracy"] if charm_trans else float("nan"),
+        "charm3dg_pmax90_accuracy_genome_trans": charm_trans["pmax_threshold_accuracy"] if charm_trans else float("nan"),
+        "charm3dg_pmax90_recall_genome_trans": charm_trans["pmax_threshold_recall"] if charm_trans else float("nan"),
         "phase_used_eval_only": 1,
         "charm_3dg_used_eval_only": 1,
-        "copy_swap_policy": "global swaps evaluated for headline metrics; per_chrom_best retained only as eval-only local gauge-sensitivity",
     }
     summary.update(pair_stats)
     for key in ["n_raw", "n_bpair", "n_beads", "resolution", "bin_size_bp", "mstep_graph_mode", "input_contact_source", "uses_charm_or_reference", "uses_phase_labels", "copy_labels_are_gauge_only"]:
         if key in train_manifest:
             summary[f"train_manifest_{key}"] = train_manifest[key]
 
-    write_metrics(args.outdir / "metrics.tsv", metric_rows)
+    write_table(args.outdir / "cis_distance_correlations.tsv", cis_rows)
+    write_table(args.outdir / "contact_accuracy.tsv", accuracy_rows)
+    write_table(args.outdir / "copy_separation.tsv", separation_rows)
+    write_table(args.outdir / "per_chrom_volume.tsv", volume_rows_data)
+    metrics_path = args.outdir / "metrics.tsv"
+    if metrics_path.exists():
+        metrics_path.unlink()
     write_summary(args.outdir / "summary.tsv", summary)
-    plot_chr1_distance_maps(plots_dir / "chr1_distance_maps.png", reference, reconstruction, best_global_swaps)
-    plot_3d_scatter(plots_dir / "all_chrom_3d_scatter.png", reference, reconstruction, best_global_swaps)
-    plot_3d_scatter(plots_dir / "chr1_copy_3d_scatter.png", reference, reconstruction, best_global_swaps, chrom="chr1")
-    write_readme(args.outdir / "README.md", args, summary, metric_rows)
+    plot_chr1_distance_maps(plots_dir / "chr1_distance_maps.png", reference, reconstruction, distance_swaps)
+    plot_3d_scatter(plots_dir / "all_chrom_3d_scatter.png", reference, reconstruction, distance_swaps)
+    plot_3d_scatter(plots_dir / "chr1_copy_3d_scatter.png", reference, reconstruction, distance_swaps, chrom="chr1")
+    write_readme(args.outdir / "README.md", args, summary, cis_rows, accuracy_rows, separation_rows, volume_rows_data)
     with (args.outdir / "eval_manifest.json").open("w") as fh:
-        json.dump({"summary": summary, "metrics": metric_rows}, fh, indent=2)
+        json.dump(
+            {
+                "summary": summary,
+                "cis_distance_correlations": cis_rows,
+                "contact_accuracy": accuracy_rows,
+                "copy_separation": separation_rows,
+                "per_chrom_volume": volume_rows_data,
+            },
+            fh,
+            indent=2,
+        )
 
     print(f"wrote\t{args.outdir / 'README.md'}")
-    print(f"wrote\t{args.outdir / 'metrics.tsv'}")
+    print(f"wrote\t{args.outdir / 'cis_distance_correlations.tsv'}")
+    print(f"wrote\t{args.outdir / 'contact_accuracy.tsv'}")
+    print(f"wrote\t{args.outdir / 'copy_separation.tsv'}")
+    print(f"wrote\t{args.outdir / 'per_chrom_volume.tsv'}")
     print(f"wrote\t{plots_dir / 'chr1_distance_maps.png'}")
     print(f"wrote\t{plots_dir / 'all_chrom_3d_scatter.png'}")
     print(f"wrote\t{plots_dir / 'chr1_copy_3d_scatter.png'}")

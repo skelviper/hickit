@@ -1,17 +1,30 @@
 CUDA_HOME ?= /usr/local/cuda
 CUDA_LIB  ?= $(CUDA_HOME)/targets/x86_64-linux/lib
+NVCC      ?= $(CUDA_HOME)/bin/nvcc
 
 CFLAGS   ?= -g -Wall -O2 -Wc++-compat -ffast-math
+NVCCFLAGS ?= -O3
 CPPFLAGS ?=
 INCLUDES ?=
 LDFLAGS  += -L$(CUDA_LIB) -Wl,-rpath,$(CUDA_LIB)
 LIBS     := -lm -lz
+AUDIT_LIBS := -lm -lz
 LIBS_GL  :=
 ASAN_FLAG :=
 
-OBJS := sdict.o io.o pair.o count.o phase.o bin.o fdg.o image.o view3d.o fdg_gpu_stub.o
+ifeq ($(gpu),1)
+	FDG_GPU_OBJ := fdg_gpu.o
+	FDG_GPU_STAMP := .fdg_gpu_backend.gpu
+	LIBS += -lcudart -lstdc++
+else
+	FDG_GPU_OBJ := fdg_gpu_stub.o
+	FDG_GPU_STAMP := .fdg_gpu_backend.cpu
+endif
+
+OBJS := sdict.o io.o pair.o count.o phase.o bin.o fdg.o image.o view3d.o $(FDG_GPU_OBJ)
 PROG := hickit
-BLIND_COMMON_SRCS := sdict.c io.c pair.c count.c phase.c bin.c blind.c fdg.c image.c view3d.c fdg_gpu_stub.c
+BLIND_COMMON_SRCS := sdict.c io.c pair.c count.c phase.c bin.c blind.c fdg.c image.c view3d.c
+BLIND_COMMON_OBJS := sdict.o io.o pair.o count.o phase.o bin.o blind.o fdg.o image.o view3d.o $(FDG_GPU_OBJ)
 ifneq ($(asan),)
 	ASAN_FLAG = -fsanitize=address
 endif
@@ -26,11 +39,18 @@ ifneq ($(gl),)
 	endif
 endif
 
-.PHONY: all clean depend test smoke_blind_p9016_minimal audit_blind_p9016_full_cpu_output
+.PHONY: all clean depend test smoke_blind_p9016_minimal smoke_blind_p9016_resolution_chain audit_blind_p9016_full_cpu_output
 .SUFFIXES: .c .o
 
 .c.o:
 	$(CC) -c $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) $< -o $@
+
+fdg_gpu.o: fdg_gpu.cu fdg_gpu.h hickit.h
+	$(NVCC) -c $(NVCCFLAGS) $(CPPFLAGS) $(INCLUDES) $< -o $@
+
+$(FDG_GPU_STAMP):
+	@rm -f .fdg_gpu_backend.*
+	@touch $@
 
 all: $(PROG)
 
@@ -39,12 +59,13 @@ hickit: $(OBJS) main.o
 
 test: smoke_blind_p9016_minimal
 
-run_blind_p9016_minimal.bin: run_blind_p9016_minimal.c $(BLIND_COMMON_SRCS) hickit.h hkpriv.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) run_blind_p9016_minimal.c $(BLIND_COMMON_SRCS) -o $@ $(LIBS)
+run_blind_p9016_minimal.bin: run_blind_p9016_minimal.c $(BLIND_COMMON_OBJS) $(FDG_GPU_STAMP) hickit.h hkpriv.h krng.h
+	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) run_blind_p9016_minimal.c $(BLIND_COMMON_OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
 smoke_blind_p9016_minimal: run_blind_p9016_minimal.bin audit_blind_p9016_full_cpu_output.bin testdata/p9016_blind_smoke.pairs
 	rm -rf /tmp/hk_blind_p9016_minimal_audit_smoke
 	HK_BLIND_P9016_PAIRS=testdata/p9016_blind_smoke.pairs \
+	HK_BLIND_P9016_ALLOW_CUSTOM_PAIRS=1 \
 	HK_BLIND_P9016_OUTPUT_ROOT=/tmp/hk_blind_p9016_minimal_audit_smoke \
 	HK_BLIND_P9016_BIN_SIZE_BP=1000000 \
 	HK_BLIND_P9016_MINIMAL_N_ITER=1 \
@@ -52,13 +73,27 @@ smoke_blind_p9016_minimal: run_blind_p9016_minimal.bin audit_blind_p9016_full_cp
 	./run_blind_p9016_minimal.bin
 	./audit_blind_p9016_full_cpu_output.bin /tmp/hk_blind_p9016_minimal_audit_smoke/minimal_soft_sep_off
 
+smoke_blind_p9016_resolution_chain: run_blind_p9016_minimal.bin audit_blind_p9016_full_cpu_output.bin testdata/p9016_blind_smoke.pairs
+	rm -rf /tmp/hk_blind_p9016_resolution_chain_smoke
+	HK_BLIND_P9016_PAIRS=testdata/p9016_blind_smoke.pairs \
+	HK_BLIND_P9016_ALLOW_CUSTOM_PAIRS=1 \
+	HK_BLIND_P9016_OUTPUT_ROOT=/tmp/hk_blind_p9016_resolution_chain_smoke \
+	HK_BLIND_P9016_CHAIN=1 \
+	HK_BLIND_P9016_RESOLUTION_CHAIN=4000000,1000000,200000 \
+	HK_BLIND_P9016_MINIMAL_N_ITER=1 \
+	HK_BLIND_P9016_MINIMAL_RELAX_STEPS=1 \
+	./run_blind_p9016_minimal.bin
+	./audit_blind_p9016_full_cpu_output.bin /tmp/hk_blind_p9016_resolution_chain_smoke/4m/minimal_soft_sep_off
+	./audit_blind_p9016_full_cpu_output.bin /tmp/hk_blind_p9016_resolution_chain_smoke/1m/minimal_soft_sep_off
+	./audit_blind_p9016_full_cpu_output.bin /tmp/hk_blind_p9016_resolution_chain_smoke/200k/minimal_soft_sep_off
+
 audit_blind_p9016_full_cpu_output: audit_blind_p9016_full_cpu_output.bin
 
 audit_blind_p9016_full_cpu_output.bin: audit_blind_p9016_full_cpu_output.c hickit.h krng.h
-	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) audit_blind_p9016_full_cpu_output.c -o $@ $(LIBS)
+	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) audit_blind_p9016_full_cpu_output.c -o $@ $(AUDIT_LIBS)
 
 clean:
-	rm -f $(PROG) *.o *.bin
+	rm -f $(PROG) *.o *.bin .fdg_gpu_backend.*
 
 depend:
 	( LC_ALL=C ; export LC_ALL; makedepend -Y -- $(CFLAGS) $(CPPFLAGS) -- *.c ) 2>/dev/null

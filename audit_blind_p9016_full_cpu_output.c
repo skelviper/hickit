@@ -400,7 +400,16 @@ static int manifest_optional_current_key(const char *key)
 {
 	return strcmp(key, "input_contact_source") == 0 ||
 		   strcmp(key, "resolution_label") == 0 ||
-		   strcmp(key, "scaffold_source") == 0 ||
+		   strcmp(key, "refinement_stage") == 0 ||
+		   strcmp(key, "refinement_stage_index") == 0 ||
+		   strcmp(key, "refinement_n_stages") == 0 ||
+		   strcmp(key, "parent_bin_size_bp") == 0 ||
+		   strcmp(key, "refinement_init_source") == 0 ||
+		   strcmp(key, "refinement_child_offset_step") == 0 ||
+			   strcmp(key, "refinement_parent_anchor_k") == 0 ||
+			   strcmp(key, "relax_backend") == 0 ||
+			   strcmp(key, "approved_p9016_raw_pairs_realpath") == 0 ||
+			   strcmp(key, "scaffold_source") == 0 ||
 		   strcmp(key, "scaffold_fdg_n_iter") == 0 ||
 		   strcmp(key, "training_graph_weighted_filter") == 0 ||
 		   strcmp(key, "training_graph_probability_weighted") == 0 ||
@@ -413,6 +422,7 @@ static int manifest_optional_current_key(const char *key)
 		   strcmp(key, "k_rel_rep_effective") == 0 ||
 		   strcmp(key, "output_coords_gz") == 0 ||
 		   strcmp(key, "output_force_class_diag") == 0 ||
+		   strcmp(key, "output_coarse_to_fine_map") == 0 ||
 		   strcmp(key, "final_mean_sep") == 0 ||
 		   strcmp(key, "final_min_sep") == 0 ||
 		   strcmp(key, "final_max_sep") == 0 ||
