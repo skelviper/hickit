@@ -622,36 +622,19 @@ def contact_accuracy_for_swaps(
             return (2, (0, ""))
         return (3, chrom_sort_key(scope.removesuffix("_cis")))
 
+    copy_swap_policy_by_source = {
+        "reconstruction_posterior": "per_chrom_cis_distance_spearman_fixed",
+        "charm3dg_uniform_prior_fdg": "charm3dg_reference_copy_labels",
+    }
     for (source, scope), stats in sorted(stats_by_source_scope.items(), key=lambda x: (x[0][0], scope_sort_key(x[0][1]))):
-        row = {"source": source, "scope": scope}
+        row = {
+            "source": source,
+            "scope": scope,
+            "copy_swap_policy": copy_swap_policy_by_source.get(source, "unknown"),
+        }
         row.update(finalize_accuracy_stats(stats))
         rows.append(row)
     return rows
-
-
-def choose_contact_swaps(
-    chroms: list[str],
-    contact_counts: dict[tuple[str, int, str, int], np.ndarray],
-    posterior: dict[tuple[str, int, str, int], dict[str, object]],
-) -> dict[str, int]:
-    swaps: dict[str, int] = {}
-    for chrom in chroms:
-        best_swap = 0
-        best_acc = float("-inf")
-        for swap in (0, 1):
-            stats = empty_accuracy_stats()
-            for key, counts in contact_counts.items():
-                item = posterior.get(key)
-                if item is None or item["chrom1"] != chrom or item["chrom2"] != chrom:
-                    continue
-                p4 = align_p4_to_truth_gauge(np.asarray(item["p4"], dtype=float), swap, swap)
-                update_accuracy_stats(stats, counts, p4)
-            acc = float(finalize_accuracy_stats(stats)["top1_accuracy"])
-            if math.isfinite(acc) and acc > best_acc:
-                best_acc = acc
-                best_swap = swap
-        swaps[chrom] = best_swap
-    return swaps
 
 
 def copy_separation_rows(
@@ -1076,9 +1059,9 @@ def write_readme(
         fh.write(f"- CHARM/3DG eval reference: `{args.reference_3dg}`\n")
         fh.write(f"- train manifest: `{args.train_manifest}`\n")
         fh.write("- boundary: training used raw P9016 contact information only; phase labels and CHARM/3DG were read only by this post-training evaluator.\n")
-        fh.write("- copy gauge: evaluation uses per-chromosome best copy swap. Geometry swaps are selected by per-chromosome cis distance-matrix Spearman correlation; contact-accuracy swaps are selected by per-chromosome cis top1 accuracy.\n")
+        fh.write("- copy gauge: evaluation first selects one copy swap per chromosome by per-chromosome cis distance-matrix Spearman correlation. Contact top1 and pmax metrics then use this fixed geometry-selected gauge when comparing four-state probabilities to SNP phase truth.\n")
         fh.write("- contact denominator: contact accuracy uses eval-only raw contacts with both `phase0` and `phase1`, excluding same-bin contacts, and requiring a matching posterior bpair.\n")
-        fh.write("- CHARM/3DG probability baseline: `charm3dg_uniform_prior_fdg` recomputes four-state probabilities from CHARM/3DG distances using hickit FDG contact energy, posterior `base_d_scale/base_k`, and uniform four-state prior because posterior log-priors are not exported.\n\n")
+        fh.write("- CHARM/3DG probability baseline: `charm3dg_uniform_prior_fdg` recomputes four-state probabilities from CHARM/3DG distances using hickit FDG contact energy, posterior `base_d_scale/base_k`, CHARM/3DG reference copy labels, and uniform four-state prior because posterior log-priors are not exported.\n\n")
         fh.write("- alignment: 3D scatter plots and Procrustes RMSD use rigid alignment only: translation and rotation are fitted, reconstruction scale is not fitted to CHARM/3DG. The reported similarity scale is diagnostic only and is not applied.\n\n")
         fh.write("## Quantitative Results\n\n")
         fh.write("| metric | value |\n")
@@ -1087,7 +1070,7 @@ def write_readme(
             fh.write(f"| {key} | {format_value(value)} |\n")
         fh.write("\n## Output Tables\n\n")
         fh.write("- `cis_distance_correlations.tsv`: per-chromosome cis distance-matrix Pearson/Spearman for both copy swaps, with the selected per-chrom swap marked.\n")
-        fh.write("- `contact_accuracy.tsv`: four-state top1 accuracy, pmax >= 0.9 accuracy, called fraction, and recall for all/cis/trans contacts plus per-chromosome cis contacts, comparing reconstruction posterior and CHARM/3DG probability baseline.\n")
+        fh.write("- `contact_accuracy.tsv`: four-state top1 accuracy, pmax >= 0.9 accuracy, called fraction, and recall for all/cis/trans contacts plus per-chromosome cis contacts. The `copy_swap_policy` column records whether rows use the reconstruction's fixed cis-distance-selected gauge or CHARM/3DG reference copy labels.\n")
         fh.write("- `copy_separation.tsv`: per-chromosome and genome mean/median distance between copy0 and copy1 of the same bin.\n")
         fh.write("- `per_chrom_volume.tsv`: per-chromosome and genome convex-hull volumes for CHARM/3DG and reconstruction.\n")
         fh.write("\n## Plots\n\n")
@@ -1126,8 +1109,7 @@ def main() -> int:
     chroms = sorted({key[0] for key in reference} | {key[0] for key in reconstruction}, key=chrom_sort_key)
 
     distance_swaps, cis_rows = choose_distance_swaps(chroms, reference, reconstruction)
-    contact_swaps = choose_contact_swaps(chroms, contact_counts, posterior)
-    accuracy_rows = contact_accuracy_for_swaps(contact_counts, posterior, reference, contact_swaps)
+    accuracy_rows = contact_accuracy_for_swaps(contact_counts, posterior, reference, distance_swaps)
     separation_rows = copy_separation_rows({"charm3dg": reference, "reconstruction": reconstruction}, distance_swaps, chroms)
     volume_rows_data = volume_rows({"charm3dg": reference, "reconstruction": reconstruction}, chroms)
     model_all = first_row(accuracy_rows, source="reconstruction_posterior", scope="genome_all")
@@ -1164,8 +1146,9 @@ def main() -> int:
         "shared_points_per_chrom_best": len(best_keys),
         "chr1_shared_points_per_chrom_best": len(best_chr1_keys),
         "distance_per_chrom_copy_swaps_json": json.dumps(distance_swaps, sort_keys=True),
-        "contact_per_chrom_copy_swaps_json": json.dumps(contact_swaps, sort_keys=True),
-        "copy_swap_policy": "per_chrom_best only; geometry swaps selected by cis distance Spearman, contact swaps selected by cis top1 accuracy",
+        "contact_eval_per_chrom_copy_swaps_json": json.dumps(distance_swaps, sort_keys=True),
+        "contact_copy_swap_source": "distance_per_chrom_copy_swaps_json",
+        "copy_swap_policy": "per_chrom_best only; one geometry gauge is selected by cis distance Spearman and reused for contact top1/pmax metrics",
         "mean_per_chrom_cis_distance_spearman": mean_cis_spearman,
         "charm3dg_probability_baseline": "uniform_prior_fdg_energy_from_charm3dg_distances",
         "pmax_threshold": PMAX_THRESHOLD,

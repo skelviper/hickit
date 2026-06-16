@@ -1,6 +1,6 @@
 {
   "summary": {
-    "created_at": "2026-06-16T01:24:04",
+    "created_at": "2026-06-16T10:59:56",
     "label": "P9016 softall chain 4m",
     "bin_size_bp": 4000000,
     "pairs_path": "/shared/zliu/CHARM/CHARM_mesc/data/pairs/P9016.pairs.gz",
@@ -17,20 +17,21 @@
     "shared_points_per_chrom_best": 1295,
     "chr1_shared_points_per_chrom_best": 98,
     "distance_per_chrom_copy_swaps_json": "{\"chr1\": 0, \"chr10\": 1, \"chr11\": 0, \"chr12\": 0, \"chr13\": 0, \"chr14\": 0, \"chr15\": 1, \"chr16\": 1, \"chr17\": 0, \"chr18\": 0, \"chr19\": 0, \"chr2\": 1, \"chr3\": 1, \"chr4\": 0, \"chr5\": 1, \"chr6\": 1, \"chr7\": 1, \"chr8\": 1, \"chr9\": 1, \"chrX\": 1}",
-    "contact_per_chrom_copy_swaps_json": "{\"chr1\": 1, \"chr10\": 0, \"chr11\": 0, \"chr12\": 0, \"chr13\": 0, \"chr14\": 0, \"chr15\": 1, \"chr16\": 0, \"chr17\": 1, \"chr18\": 1, \"chr19\": 0, \"chr2\": 0, \"chr3\": 1, \"chr4\": 0, \"chr5\": 1, \"chr6\": 0, \"chr7\": 0, \"chr8\": 1, \"chr9\": 0, \"chrX\": 0}",
-    "copy_swap_policy": "per_chrom_best only; geometry swaps selected by cis distance Spearman, contact swaps selected by cis top1 accuracy",
+    "contact_eval_per_chrom_copy_swaps_json": "{\"chr1\": 0, \"chr10\": 1, \"chr11\": 0, \"chr12\": 0, \"chr13\": 0, \"chr14\": 0, \"chr15\": 1, \"chr16\": 1, \"chr17\": 0, \"chr18\": 0, \"chr19\": 0, \"chr2\": 1, \"chr3\": 1, \"chr4\": 0, \"chr5\": 1, \"chr6\": 1, \"chr7\": 1, \"chr8\": 1, \"chr9\": 1, \"chrX\": 1}",
+    "contact_copy_swap_source": "distance_per_chrom_copy_swaps_json",
+    "copy_swap_policy": "per_chrom_best only; one geometry gauge is selected by cis distance Spearman and reused for contact top1/pmax metrics",
     "mean_per_chrom_cis_distance_spearman": 0.6837837610937668,
     "charm3dg_probability_baseline": "uniform_prior_fdg_energy_from_charm3dg_distances",
     "pmax_threshold": 0.9,
-    "model_top1_accuracy_genome_all": 0.3842974938950532,
-    "model_pmax90_accuracy_genome_all": 0.4041938253540203,
-    "model_pmax90_recall_genome_all": 0.21650052143046838,
-    "model_top1_accuracy_genome_cis": 0.4921050855154554,
-    "model_pmax90_accuracy_genome_cis": 0.48783947516179554,
-    "model_pmax90_recall_genome_cis": 0.3039158530373789,
-    "model_top1_accuracy_genome_trans": 0.26381735510551185,
-    "model_pmax90_accuracy_genome_trans": 0.2712426999013606,
-    "model_pmax90_recall_genome_trans": 0.11880970832504646,
+    "model_top1_accuracy_genome_all": 0.3528918339454474,
+    "model_pmax90_accuracy_genome_all": 0.3625276625591042,
+    "model_pmax90_recall_genome_all": 0.19418264964406703,
+    "model_top1_accuracy_genome_cis": 0.4555914895706124,
+    "model_pmax90_accuracy_genome_cis": 0.4413152476925047,
+    "model_pmax90_recall_genome_cis": 0.2749320356176321,
+    "model_top1_accuracy_genome_trans": 0.23812005788235616,
+    "model_pmax90_accuracy_genome_trans": 0.2372982197936401,
+    "model_pmax90_recall_genome_trans": 0.10394134953673541,
     "charm3dg_top1_accuracy_genome_all": 0.21429172901161397,
     "charm3dg_pmax90_accuracy_genome_all": 0.1421236900230274,
     "charm3dg_pmax90_recall_genome_all": 0.07835707299378818,
@@ -427,6 +428,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "genome_all",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 308766,
       "top1_correct_contacts": 66166,
       "top1_accuracy": 0.21429172901161397,
@@ -440,6 +442,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "genome_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 162953,
       "top1_correct_contacts": 41625,
       "top1_accuracy": 0.25544175314354445,
@@ -453,6 +456,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "genome_trans",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 145813,
       "top1_correct_contacts": 24541,
       "top1_accuracy": 0.16830460932838637,
@@ -466,6 +470,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr1_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 14946,
       "top1_correct_contacts": 3678,
       "top1_accuracy": 0.2460859092733842,
@@ -479,6 +484,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr2_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 10603,
       "top1_correct_contacts": 2521,
       "top1_accuracy": 0.2377628972932189,
@@ -492,6 +498,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr3_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 11579,
       "top1_correct_contacts": 2462,
       "top1_accuracy": 0.21262630624406254,
@@ -505,6 +512,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr4_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 9950,
       "top1_correct_contacts": 2660,
       "top1_accuracy": 0.26733668341708544,
@@ -518,6 +526,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr5_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 10445,
       "top1_correct_contacts": 2611,
       "top1_accuracy": 0.24997606510292006,
@@ -531,6 +540,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr6_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 10544,
       "top1_correct_contacts": 2473,
       "top1_accuracy": 0.23454097116843703,
@@ -544,6 +554,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr7_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 9666,
       "top1_correct_contacts": 2210,
       "top1_accuracy": 0.22863645768673702,
@@ -557,6 +568,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr8_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 8393,
       "top1_correct_contacts": 2605,
       "top1_accuracy": 0.31037769569879664,
@@ -570,6 +582,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr9_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 8381,
       "top1_correct_contacts": 2275,
       "top1_accuracy": 0.2714473213220379,
@@ -583,6 +596,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr10_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 9750,
       "top1_correct_contacts": 2612,
       "top1_accuracy": 0.2678974358974359,
@@ -596,6 +610,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr11_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 7873,
       "top1_correct_contacts": 2033,
       "top1_accuracy": 0.25822431093611076,
@@ -609,6 +624,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr12_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 6903,
       "top1_correct_contacts": 1521,
       "top1_accuracy": 0.22033898305084745,
@@ -622,6 +638,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr13_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 8066,
       "top1_correct_contacts": 2122,
       "top1_accuracy": 0.2630795933548227,
@@ -635,6 +652,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr14_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 7083,
       "top1_correct_contacts": 1909,
       "top1_accuracy": 0.26951856557955667,
@@ -648,6 +666,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr15_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 6087,
       "top1_correct_contacts": 1642,
       "top1_accuracy": 0.2697552160341712,
@@ -661,6 +680,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr16_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 5319,
       "top1_correct_contacts": 1398,
       "top1_accuracy": 0.2628313592780598,
@@ -674,6 +694,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr17_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 4684,
       "top1_correct_contacts": 1333,
       "top1_accuracy": 0.2845858240819812,
@@ -687,6 +708,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr18_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 6263,
       "top1_correct_contacts": 1877,
       "top1_accuracy": 0.2996966310075044,
@@ -700,6 +722,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chr19_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 2560,
       "top1_correct_contacts": 753,
       "top1_accuracy": 0.294140625,
@@ -713,6 +736,7 @@
     {
       "source": "charm3dg_uniform_prior_fdg",
       "scope": "chrX_cis",
+      "copy_swap_policy": "charm3dg_reference_copy_labels",
       "n_eval_contacts": 3858,
       "top1_correct_contacts": 930,
       "top1_accuracy": 0.2410575427682737,
@@ -726,71 +750,77 @@
     {
       "source": "reconstruction_posterior",
       "scope": "genome_all",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 308766,
-      "top1_correct_contacts": 118658,
-      "top1_accuracy": 0.3842974938950532,
+      "top1_correct_contacts": 108961,
+      "top1_accuracy": 0.3528918339454474,
       "pmax_threshold": 0.9,
       "n_called_contacts": 165386,
       "called_contact_fraction": 0.5356354002707552,
-      "pmax_threshold_correct_contacts": 66848,
-      "pmax_threshold_accuracy": 0.4041938253540203,
-      "pmax_threshold_recall": 0.21650052143046838
+      "pmax_threshold_correct_contacts": 59957,
+      "pmax_threshold_accuracy": 0.3625276625591042,
+      "pmax_threshold_recall": 0.19418264964406703
     },
     {
       "source": "reconstruction_posterior",
       "scope": "genome_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 162953,
-      "top1_correct_contacts": 80190,
-      "top1_accuracy": 0.4921050855154554,
+      "top1_correct_contacts": 74240,
+      "top1_accuracy": 0.4555914895706124,
       "pmax_threshold": 0.9,
       "n_called_contacts": 101517,
       "called_contact_fraction": 0.622983314207164,
-      "pmax_threshold_correct_contacts": 49524,
-      "pmax_threshold_accuracy": 0.48783947516179554,
-      "pmax_threshold_recall": 0.3039158530373789
+      "pmax_threshold_correct_contacts": 44801,
+      "pmax_threshold_accuracy": 0.4413152476925047,
+      "pmax_threshold_recall": 0.2749320356176321
     },
     {
       "source": "reconstruction_posterior",
       "scope": "genome_trans",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 145813,
-      "top1_correct_contacts": 38468,
-      "top1_accuracy": 0.26381735510551185,
+      "top1_correct_contacts": 34721,
+      "top1_accuracy": 0.23812005788235616,
       "pmax_threshold": 0.9,
       "n_called_contacts": 63869,
       "called_contact_fraction": 0.4380199296359035,
-      "pmax_threshold_correct_contacts": 17324,
-      "pmax_threshold_accuracy": 0.2712426999013606,
-      "pmax_threshold_recall": 0.11880970832504646
+      "pmax_threshold_correct_contacts": 15156,
+      "pmax_threshold_accuracy": 0.2372982197936401,
+      "pmax_threshold_recall": 0.10394134953673541
     },
     {
       "source": "reconstruction_posterior",
       "scope": "chr1_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 14946,
-      "top1_correct_contacts": 7753,
-      "top1_accuracy": 0.5187341094607253,
+      "top1_correct_contacts": 6245,
+      "top1_accuracy": 0.417837548507962,
       "pmax_threshold": 0.9,
       "n_called_contacts": 7637,
       "called_contact_fraction": 0.5109728355412819,
-      "pmax_threshold_correct_contacts": 4289,
-      "pmax_threshold_accuracy": 0.5616079612413252,
-      "pmax_threshold_recall": 0.2869664124180383
+      "pmax_threshold_correct_contacts": 2993,
+      "pmax_threshold_accuracy": 0.39190781720570905,
+      "pmax_threshold_recall": 0.20025424862839555
     },
     {
       "source": "reconstruction_posterior",
       "scope": "chr2_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 10603,
-      "top1_correct_contacts": 5354,
-      "top1_accuracy": 0.5049514288408941,
+      "top1_correct_contacts": 4674,
+      "top1_accuracy": 0.4408186362350278,
       "pmax_threshold": 0.9,
       "n_called_contacts": 6188,
       "called_contact_fraction": 0.583608412713383,
-      "pmax_threshold_correct_contacts": 2907,
-      "pmax_threshold_accuracy": 0.4697802197802198,
-      "pmax_threshold_recall": 0.27416768839007827
+      "pmax_threshold_correct_contacts": 2883,
+      "pmax_threshold_accuracy": 0.46590174531351003,
+      "pmax_threshold_recall": 0.2719041780628124
     },
     {
       "source": "reconstruction_posterior",
       "scope": "chr3_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 11579,
       "top1_correct_contacts": 6566,
       "top1_accuracy": 0.567061058813369,
@@ -804,6 +834,7 @@
     {
       "source": "reconstruction_posterior",
       "scope": "chr4_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 9950,
       "top1_correct_contacts": 5051,
       "top1_accuracy": 0.5076381909547739,
@@ -817,6 +848,7 @@
     {
       "source": "reconstruction_posterior",
       "scope": "chr5_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 10445,
       "top1_correct_contacts": 4887,
       "top1_accuracy": 0.4678793681187171,
@@ -830,32 +862,35 @@
     {
       "source": "reconstruction_posterior",
       "scope": "chr6_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 10544,
-      "top1_correct_contacts": 5141,
-      "top1_accuracy": 0.48757587253414264,
+      "top1_correct_contacts": 4193,
+      "top1_accuracy": 0.3976669195751138,
       "pmax_threshold": 0.9,
       "n_called_contacts": 6192,
       "called_contact_fraction": 0.5872534142640364,
-      "pmax_threshold_correct_contacts": 3147,
-      "pmax_threshold_accuracy": 0.5082364341085271,
-      "pmax_threshold_recall": 0.29846358118361155
+      "pmax_threshold_correct_contacts": 2349,
+      "pmax_threshold_accuracy": 0.3793604651162791,
+      "pmax_threshold_recall": 0.22278072837632776
     },
     {
       "source": "reconstruction_posterior",
       "scope": "chr7_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 9666,
-      "top1_correct_contacts": 4498,
-      "top1_accuracy": 0.4653424374094765,
+      "top1_correct_contacts": 4282,
+      "top1_accuracy": 0.44299606869439273,
       "pmax_threshold": 0.9,
       "n_called_contacts": 7015,
       "called_contact_fraction": 0.7257397061866335,
-      "pmax_threshold_correct_contacts": 3314,
-      "pmax_threshold_accuracy": 0.47241625089094796,
-      "pmax_threshold_recall": 0.34285123111938753
+      "pmax_threshold_correct_contacts": 3093,
+      "pmax_threshold_accuracy": 0.44091233071988595,
+      "pmax_threshold_recall": 0.31998758535071387
     },
     {
       "source": "reconstruction_posterior",
       "scope": "chr8_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 8393,
       "top1_correct_contacts": 4357,
       "top1_accuracy": 0.5191230787561063,
@@ -869,32 +904,35 @@
     {
       "source": "reconstruction_posterior",
       "scope": "chr9_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 8381,
-      "top1_correct_contacts": 4920,
-      "top1_accuracy": 0.5870421190788688,
+      "top1_correct_contacts": 3193,
+      "top1_accuracy": 0.38098078988187567,
       "pmax_threshold": 0.9,
       "n_called_contacts": 4303,
       "called_contact_fraction": 0.5134232191862547,
-      "pmax_threshold_correct_contacts": 2685,
-      "pmax_threshold_accuracy": 0.6239832674877992,
-      "pmax_threshold_recall": 0.3203674979119437
+      "pmax_threshold_correct_contacts": 1462,
+      "pmax_threshold_accuracy": 0.33976295607715545,
+      "pmax_threshold_recall": 0.1744421906693712
     },
     {
       "source": "reconstruction_posterior",
       "scope": "chr10_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 9750,
-      "top1_correct_contacts": 4725,
-      "top1_accuracy": 0.4846153846153846,
+      "top1_correct_contacts": 4618,
+      "top1_accuracy": 0.4736410256410256,
       "pmax_threshold": 0.9,
       "n_called_contacts": 5815,
       "called_contact_fraction": 0.5964102564102564,
-      "pmax_threshold_correct_contacts": 3056,
-      "pmax_threshold_accuracy": 0.5255374032674118,
-      "pmax_threshold_recall": 0.31343589743589745
+      "pmax_threshold_correct_contacts": 2501,
+      "pmax_threshold_accuracy": 0.4300945829750645,
+      "pmax_threshold_recall": 0.25651282051282054
     },
     {
       "source": "reconstruction_posterior",
       "scope": "chr11_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 7873,
       "top1_correct_contacts": 4089,
       "top1_accuracy": 0.5193699987298361,
@@ -908,6 +946,7 @@
     {
       "source": "reconstruction_posterior",
       "scope": "chr12_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 6903,
       "top1_correct_contacts": 3711,
       "top1_accuracy": 0.5375923511516731,
@@ -921,6 +960,7 @@
     {
       "source": "reconstruction_posterior",
       "scope": "chr13_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 8066,
       "top1_correct_contacts": 3518,
       "top1_accuracy": 0.4361517480783536,
@@ -934,6 +974,7 @@
     {
       "source": "reconstruction_posterior",
       "scope": "chr14_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 7083,
       "top1_correct_contacts": 2781,
       "top1_accuracy": 0.3926302414231258,
@@ -947,6 +988,7 @@
     {
       "source": "reconstruction_posterior",
       "scope": "chr15_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 6087,
       "top1_correct_contacts": 2374,
       "top1_accuracy": 0.3900114999178577,
@@ -960,45 +1002,49 @@
     {
       "source": "reconstruction_posterior",
       "scope": "chr16_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 5319,
-      "top1_correct_contacts": 2654,
-      "top1_accuracy": 0.4989659710471893,
+      "top1_correct_contacts": 2536,
+      "top1_accuracy": 0.4767813498777966,
       "pmax_threshold": 0.9,
       "n_called_contacts": 4738,
       "called_contact_fraction": 0.8907689415303629,
-      "pmax_threshold_correct_contacts": 2279,
-      "pmax_threshold_accuracy": 0.4810046433094133,
-      "pmax_threshold_recall": 0.4284639969919158
+      "pmax_threshold_correct_contacts": 2350,
+      "pmax_threshold_accuracy": 0.49598986914309834,
+      "pmax_threshold_recall": 0.4418123707463809
     },
     {
       "source": "reconstruction_posterior",
       "scope": "chr17_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 4684,
-      "top1_correct_contacts": 2288,
-      "top1_accuracy": 0.4884713919726729,
+      "top1_correct_contacts": 2200,
+      "top1_accuracy": 0.46968403074295473,
       "pmax_threshold": 0.9,
       "n_called_contacts": 3826,
       "called_contact_fraction": 0.8168232280102476,
-      "pmax_threshold_correct_contacts": 1814,
-      "pmax_threshold_accuracy": 0.47412441191845267,
-      "pmax_threshold_recall": 0.38727583262169085
+      "pmax_threshold_correct_contacts": 1864,
+      "pmax_threshold_accuracy": 0.487192890747517,
+      "pmax_threshold_recall": 0.39795046968403075
     },
     {
       "source": "reconstruction_posterior",
       "scope": "chr18_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 6263,
-      "top1_correct_contacts": 2147,
-      "top1_accuracy": 0.3428069615200383,
+      "top1_correct_contacts": 2051,
+      "top1_accuracy": 0.3274788440044707,
       "pmax_threshold": 0.9,
       "n_called_contacts": 4829,
       "called_contact_fraction": 0.7710362446112087,
-      "pmax_threshold_correct_contacts": 1643,
-      "pmax_threshold_accuracy": 0.34023607372126735,
-      "pmax_threshold_recall": 0.26233434456330834
+      "pmax_threshold_correct_contacts": 1331,
+      "pmax_threshold_accuracy": 0.275626423690205,
+      "pmax_threshold_recall": 0.21251796263771355
     },
     {
       "source": "reconstruction_posterior",
       "scope": "chr19_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 2560,
       "top1_correct_contacts": 1287,
       "top1_accuracy": 0.502734375,
@@ -1012,15 +1058,16 @@
     {
       "source": "reconstruction_posterior",
       "scope": "chrX_cis",
+      "copy_swap_policy": "per_chrom_cis_distance_spearman_fixed",
       "n_eval_contacts": 3858,
-      "top1_correct_contacts": 2089,
-      "top1_accuracy": 0.5414722654224987,
+      "top1_correct_contacts": 1627,
+      "top1_accuracy": 0.4217210990150337,
       "pmax_threshold": 0.9,
       "n_called_contacts": 1944,
       "called_contact_fraction": 0.5038880248833593,
-      "pmax_threshold_correct_contacts": 1155,
-      "pmax_threshold_accuracy": 0.5941358024691358,
-      "pmax_threshold_recall": 0.29937791601866254
+      "pmax_threshold_correct_contacts": 740,
+      "pmax_threshold_accuracy": 0.38065843621399176,
+      "pmax_threshold_recall": 0.1918092275790565
     }
   ],
   "copy_separation": [
