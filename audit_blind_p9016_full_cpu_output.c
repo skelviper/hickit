@@ -95,6 +95,7 @@ enum manifest_key {
 	MK_N_BPAIR_CIS,
 	MK_N_BPAIR_TRANS,
 	MK_USES_PHASE_LABELS,
+	MK_INIT_SCALE_EFFECTIVE,
 	MK_N_KEYS
 };
 
@@ -152,6 +153,7 @@ struct manifest_info {
 	double rho_train_floor;
 	double init_eps_effective;
 	double init_noise_scale_effective;
+	double init_scale_effective;
 	double prior_eps;
 	double prior_inter_density;
 	double prior_observed_inter;
@@ -219,6 +221,14 @@ static int in_unit_range(double x)
 static double expected_base_d_scale_from_n_raw(int n_raw)
 {
 	return pow((double)n_raw, -1.0 / 3.0);
+}
+
+static int recognized_init_mode(const char *mode)
+{
+	return strcmp(mode, "unphased_scaffold_split") == 0 ||
+		   strcmp(mode, "random_diploid") == 0 ||
+		   strcmp(mode, "random_haploid_split") == 0 ||
+		   strcmp(mode, "toy_split") == 0;
 }
 
 static int file_exists(const char *path)
@@ -371,6 +381,7 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "uses_phase_labels") == 0) return MK_USES_PHASE_LABELS;
 	if (strcmp(key, "init_eps_effective") == 0) return MK_INIT_EPS_EFFECTIVE;
 	if (strcmp(key, "init_noise_scale_effective") == 0) return MK_INIT_NOISE_SCALE_EFFECTIVE;
+	if (strcmp(key, "init_scale_effective") == 0) return MK_INIT_SCALE_EFFECTIVE;
 	if (strcmp(key, "init_seed") == 0) return MK_INIT_SEED;
 	if (strcmp(key, "enable_repulsion") == 0) return MK_ENABLE_REPULSION;
 	if (strcmp(key, "repulsion_mode") == 0) return MK_REPULSION_MODE;
@@ -584,6 +595,7 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_RHO_TRAIN_FLOOR: return parse_double_value(value, &info->rho_train_floor);
 	case MK_INIT_EPS_EFFECTIVE: return parse_double_value(value, &info->init_eps_effective);
 	case MK_INIT_NOISE_SCALE_EFFECTIVE: return parse_double_value(value, &info->init_noise_scale_effective);
+	case MK_INIT_SCALE_EFFECTIVE: return parse_double_value(value, &info->init_scale_effective);
 	case MK_PRIOR_EPS: return parse_double_value(value, &info->prior_eps);
 	case MK_PRIOR_INTER_DENSITY: return parse_double_value(value, &info->prior_inter_density);
 	case MK_PRIOR_OBSERVED_INTER: return parse_double_value(value, &info->prior_observed_inter);
@@ -740,7 +752,7 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest base_k_mode is not recognized");
 		failed = 1;
 	}
-	if (strcmp(info->init_mode, "unphased_scaffold_split") != 0) {
+	if (!recognized_init_mode(info->init_mode)) {
 		add_example(audit, "manifest init_mode is not recognized");
 		failed = 1;
 	}
@@ -819,10 +831,30 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest single-iteration schedule endpoints differ from effective value");
 		failed = 1;
 	}
-	if (!isfinite(info->init_eps_effective) || info->init_eps_effective <= 0.0 ||
-		!isfinite(info->init_noise_scale_effective) || info->init_noise_scale_effective < 0.0) {
+	if (!isfinite(info->init_eps_effective) || info->init_eps_effective < 0.0 ||
+		!isfinite(info->init_noise_scale_effective) || info->init_noise_scale_effective < 0.0 ||
+		!isfinite(info->init_scale_effective) || info->init_scale_effective < 0.0) {
 		add_example(audit, "manifest init value out of range");
 		failed = 1;
+	}
+	if (strcmp(info->init_mode, "random_diploid") == 0) {
+		if (!check_close(info->init_eps_effective, 0.0) ||
+			info->init_scale_effective <= 0.0) {
+			add_example(audit, "manifest random_diploid init metadata is inconsistent");
+			failed = 1;
+		}
+	} else if (strcmp(info->init_mode, "random_haploid_split") == 0) {
+		if (info->init_eps_effective <= 0.0 || info->init_scale_effective <= 0.0) {
+			add_example(audit, "manifest random_haploid_split init metadata is inconsistent");
+			failed = 1;
+		}
+	} else if (strcmp(info->init_mode, "unphased_scaffold_split") == 0 ||
+			   strcmp(info->init_mode, "toy_split") == 0) {
+		if (info->init_eps_effective <= 0.0 ||
+			!check_close(info->init_scale_effective, 0.0)) {
+			add_example(audit, "manifest split init metadata is inconsistent");
+			failed = 1;
+		}
 	}
 	if (!isfinite(info->d_scale_eps_count) || info->d_scale_eps_count <= 0.0) {
 		add_example(audit, "manifest d_scale_eps_count out of range");
