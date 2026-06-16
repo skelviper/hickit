@@ -554,32 +554,52 @@ def update_accuracy_stats(stats: dict[str, float], counts: np.ndarray, p4_truth_
     pred = int(np.argmax(p4_truth_gauge))
     pmax = float(np.max(p4_truth_gauge))
     correct = int(counts[pred])
+    pred_same = pred in (0, 3)
+    same_counts = int(counts[0] + counts[3])
+    cross_counts = int(counts[1] + counts[2])
+    same_cross_correct = same_counts if pred_same else cross_counts
     stats["contacts"] += n
     stats["correct_top1"] += correct
+    stats["same_cross_correct"] += same_cross_correct
     if pmax >= PMAX_THRESHOLD:
         stats["called_contacts"] += n
         stats["called_correct"] += correct
+        stats["called_same_cross_correct"] += same_cross_correct
 
 
 def empty_accuracy_stats() -> dict[str, float]:
-    return {"contacts": 0.0, "correct_top1": 0.0, "called_contacts": 0.0, "called_correct": 0.0}
+    return {
+        "contacts": 0.0,
+        "correct_top1": 0.0,
+        "same_cross_correct": 0.0,
+        "called_contacts": 0.0,
+        "called_correct": 0.0,
+        "called_same_cross_correct": 0.0,
+    }
 
 
 def finalize_accuracy_stats(stats: dict[str, float]) -> dict[str, object]:
     contacts = int(stats["contacts"])
     called = int(stats["called_contacts"])
     correct = int(stats["correct_top1"])
+    same_cross_correct = int(stats["same_cross_correct"])
     called_correct = int(stats["called_correct"])
+    called_same_cross_correct = int(stats["called_same_cross_correct"])
     return {
         "n_eval_contacts": contacts,
         "top1_correct_contacts": correct,
         "top1_accuracy": correct / contacts if contacts else float("nan"),
+        "same_cross_correct_contacts": same_cross_correct,
+        "same_cross_accuracy": same_cross_correct / contacts if contacts else float("nan"),
         "pmax_threshold": PMAX_THRESHOLD,
         "n_called_contacts": called,
         "called_contact_fraction": called / contacts if contacts else float("nan"),
         "pmax_threshold_correct_contacts": called_correct,
         "pmax_threshold_accuracy": called_correct / called if called else float("nan"),
         "pmax_threshold_recall": called_correct / contacts if contacts else float("nan"),
+        "pmax_threshold_same_cross_correct_contacts": called_same_cross_correct,
+        "pmax_threshold_same_cross_accuracy": called_same_cross_correct / called if called else float("nan"),
+        "pmax_threshold_same_cross_recall": called_same_cross_correct / contacts if contacts else float("nan"),
     }
 
 
@@ -1092,21 +1112,27 @@ def write_readme(
         ("truth_majority_state_accuracy_genome_cis", truth_cis["truth_majority_state_accuracy"] if truth_cis else float("nan")),
         ("truth_best_same_cross_random_four_state_accuracy_genome_cis", truth_cis["best_same_cross_random_four_state_accuracy"] if truth_cis else float("nan")),
         ("model_top1_accuracy_genome_all", model_all["top1_accuracy"] if model_all else float("nan")),
+        ("model_same_cross_accuracy_genome_all", model_all["same_cross_accuracy"] if model_all else float("nan")),
         ("model_pmax90_accuracy_genome_all", model_all["pmax_threshold_accuracy"] if model_all else float("nan")),
         ("model_pmax90_recall_genome_all", model_all["pmax_threshold_recall"] if model_all else float("nan")),
         ("model_top1_accuracy_genome_cis", model_cis["top1_accuracy"] if model_cis else float("nan")),
+        ("model_same_cross_accuracy_genome_cis", model_cis["same_cross_accuracy"] if model_cis else float("nan")),
         ("model_pmax90_accuracy_genome_cis", model_cis["pmax_threshold_accuracy"] if model_cis else float("nan")),
         ("model_pmax90_recall_genome_cis", model_cis["pmax_threshold_recall"] if model_cis else float("nan")),
         ("model_top1_accuracy_genome_trans", model_trans["top1_accuracy"] if model_trans else float("nan")),
+        ("model_same_cross_accuracy_genome_trans", model_trans["same_cross_accuracy"] if model_trans else float("nan")),
         ("model_pmax90_accuracy_genome_trans", model_trans["pmax_threshold_accuracy"] if model_trans else float("nan")),
         ("model_pmax90_recall_genome_trans", model_trans["pmax_threshold_recall"] if model_trans else float("nan")),
         ("charm3dg_top1_accuracy_genome_all", charm_all["top1_accuracy"] if charm_all else float("nan")),
+        ("charm3dg_same_cross_accuracy_genome_all", charm_all["same_cross_accuracy"] if charm_all else float("nan")),
         ("charm3dg_pmax90_accuracy_genome_all", charm_all["pmax_threshold_accuracy"] if charm_all else float("nan")),
         ("charm3dg_pmax90_recall_genome_all", charm_all["pmax_threshold_recall"] if charm_all else float("nan")),
         ("charm3dg_top1_accuracy_genome_cis", charm_cis["top1_accuracy"] if charm_cis else float("nan")),
+        ("charm3dg_same_cross_accuracy_genome_cis", charm_cis["same_cross_accuracy"] if charm_cis else float("nan")),
         ("charm3dg_pmax90_accuracy_genome_cis", charm_cis["pmax_threshold_accuracy"] if charm_cis else float("nan")),
         ("charm3dg_pmax90_recall_genome_cis", charm_cis["pmax_threshold_recall"] if charm_cis else float("nan")),
         ("charm3dg_top1_accuracy_genome_trans", charm_trans["top1_accuracy"] if charm_trans else float("nan")),
+        ("charm3dg_same_cross_accuracy_genome_trans", charm_trans["same_cross_accuracy"] if charm_trans else float("nan")),
         ("charm3dg_pmax90_accuracy_genome_trans", charm_trans["pmax_threshold_accuracy"] if charm_trans else float("nan")),
         ("charm3dg_pmax90_recall_genome_trans", charm_trans["pmax_threshold_recall"] if charm_trans else float("nan")),
         ("reconstruction_mean_copy01_separation", rec_sep["mean_copy01_separation"] if rec_sep else float("nan")),
@@ -1135,7 +1161,7 @@ def write_readme(
             fh.write(f"| {key} | {format_value(value)} |\n")
         fh.write("\n## Output Tables\n\n")
         fh.write("- `cis_distance_correlations.tsv`: per-chromosome cis distance-matrix Pearson/Spearman for both copy swaps, with the selected per-chrom swap marked.\n")
-        fh.write("- `contact_accuracy.tsv`: four-state top1 accuracy, pmax >= 0.9 accuracy, called fraction, and recall for all/cis/trans contacts plus per-chromosome cis contacts. The `copy_swap_policy` column records whether rows use the reconstruction's fixed cis-distance-selected gauge or CHARM/3DG reference copy labels.\n")
+        fh.write("- `contact_accuracy.tsv`: four-state top1 accuracy, same/cross accuracy, pmax >= 0.9 accuracy, called fraction, and recall for all/cis/trans contacts plus per-chromosome cis contacts. The `copy_swap_policy` column records whether rows use the reconstruction's fixed cis-distance-selected gauge or CHARM/3DG reference copy labels.\n")
         fh.write("- `contact_truth_distribution.tsv`: observed SNP truth counts and fractions for 00/01/10/11, same/cross fractions, majority-state baseline, and same/cross-aware random four-state baseline.\n")
         fh.write("- `copy_separation.tsv`: per-chromosome and genome mean/median distance between copy0 and copy1 of the same bin.\n")
         fh.write("- `per_chrom_volume.tsv`: per-chromosome and genome convex-hull volumes for CHARM/3DG and reconstruction.\n")
@@ -1233,23 +1259,41 @@ def main() -> int:
         "truth_best_same_cross_random_four_state_accuracy_genome_cis": truth_cis["best_same_cross_random_four_state_accuracy"] if truth_cis else float("nan"),
         "truth_best_same_cross_random_four_state_accuracy_genome_trans": truth_trans["best_same_cross_random_four_state_accuracy"] if truth_trans else float("nan"),
         "model_top1_accuracy_genome_all": model_all["top1_accuracy"] if model_all else float("nan"),
+        "model_same_cross_accuracy_genome_all": model_all["same_cross_accuracy"] if model_all else float("nan"),
         "model_pmax90_accuracy_genome_all": model_all["pmax_threshold_accuracy"] if model_all else float("nan"),
+        "model_pmax90_same_cross_accuracy_genome_all": model_all["pmax_threshold_same_cross_accuracy"] if model_all else float("nan"),
         "model_pmax90_recall_genome_all": model_all["pmax_threshold_recall"] if model_all else float("nan"),
+        "model_pmax90_same_cross_recall_genome_all": model_all["pmax_threshold_same_cross_recall"] if model_all else float("nan"),
         "model_top1_accuracy_genome_cis": model_cis["top1_accuracy"] if model_cis else float("nan"),
+        "model_same_cross_accuracy_genome_cis": model_cis["same_cross_accuracy"] if model_cis else float("nan"),
         "model_pmax90_accuracy_genome_cis": model_cis["pmax_threshold_accuracy"] if model_cis else float("nan"),
+        "model_pmax90_same_cross_accuracy_genome_cis": model_cis["pmax_threshold_same_cross_accuracy"] if model_cis else float("nan"),
         "model_pmax90_recall_genome_cis": model_cis["pmax_threshold_recall"] if model_cis else float("nan"),
+        "model_pmax90_same_cross_recall_genome_cis": model_cis["pmax_threshold_same_cross_recall"] if model_cis else float("nan"),
         "model_top1_accuracy_genome_trans": model_trans["top1_accuracy"] if model_trans else float("nan"),
+        "model_same_cross_accuracy_genome_trans": model_trans["same_cross_accuracy"] if model_trans else float("nan"),
         "model_pmax90_accuracy_genome_trans": model_trans["pmax_threshold_accuracy"] if model_trans else float("nan"),
+        "model_pmax90_same_cross_accuracy_genome_trans": model_trans["pmax_threshold_same_cross_accuracy"] if model_trans else float("nan"),
         "model_pmax90_recall_genome_trans": model_trans["pmax_threshold_recall"] if model_trans else float("nan"),
+        "model_pmax90_same_cross_recall_genome_trans": model_trans["pmax_threshold_same_cross_recall"] if model_trans else float("nan"),
         "charm3dg_top1_accuracy_genome_all": charm_all["top1_accuracy"] if charm_all else float("nan"),
+        "charm3dg_same_cross_accuracy_genome_all": charm_all["same_cross_accuracy"] if charm_all else float("nan"),
         "charm3dg_pmax90_accuracy_genome_all": charm_all["pmax_threshold_accuracy"] if charm_all else float("nan"),
+        "charm3dg_pmax90_same_cross_accuracy_genome_all": charm_all["pmax_threshold_same_cross_accuracy"] if charm_all else float("nan"),
         "charm3dg_pmax90_recall_genome_all": charm_all["pmax_threshold_recall"] if charm_all else float("nan"),
+        "charm3dg_pmax90_same_cross_recall_genome_all": charm_all["pmax_threshold_same_cross_recall"] if charm_all else float("nan"),
         "charm3dg_top1_accuracy_genome_cis": charm_cis["top1_accuracy"] if charm_cis else float("nan"),
+        "charm3dg_same_cross_accuracy_genome_cis": charm_cis["same_cross_accuracy"] if charm_cis else float("nan"),
         "charm3dg_pmax90_accuracy_genome_cis": charm_cis["pmax_threshold_accuracy"] if charm_cis else float("nan"),
+        "charm3dg_pmax90_same_cross_accuracy_genome_cis": charm_cis["pmax_threshold_same_cross_accuracy"] if charm_cis else float("nan"),
         "charm3dg_pmax90_recall_genome_cis": charm_cis["pmax_threshold_recall"] if charm_cis else float("nan"),
+        "charm3dg_pmax90_same_cross_recall_genome_cis": charm_cis["pmax_threshold_same_cross_recall"] if charm_cis else float("nan"),
         "charm3dg_top1_accuracy_genome_trans": charm_trans["top1_accuracy"] if charm_trans else float("nan"),
+        "charm3dg_same_cross_accuracy_genome_trans": charm_trans["same_cross_accuracy"] if charm_trans else float("nan"),
         "charm3dg_pmax90_accuracy_genome_trans": charm_trans["pmax_threshold_accuracy"] if charm_trans else float("nan"),
+        "charm3dg_pmax90_same_cross_accuracy_genome_trans": charm_trans["pmax_threshold_same_cross_accuracy"] if charm_trans else float("nan"),
         "charm3dg_pmax90_recall_genome_trans": charm_trans["pmax_threshold_recall"] if charm_trans else float("nan"),
+        "charm3dg_pmax90_same_cross_recall_genome_trans": charm_trans["pmax_threshold_same_cross_recall"] if charm_trans else float("nan"),
         "phase_used_eval_only": 1,
         "charm_3dg_used_eval_only": 1,
     }

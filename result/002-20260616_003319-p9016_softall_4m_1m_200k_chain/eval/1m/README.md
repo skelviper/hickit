@@ -1,7 +1,7 @@
 # 1m
 
 - label: `P9016 softall chain 1m`
-- created_at: `2026-06-16T11:28:33`
+- created_at: `2026-06-16T11:38:22`
 - training input: `/shared/zliu/CHARM/CHARM_mesc/data/pairs/P9016.pairs.gz`
 - reconstruction: `/mnt/ssd/zliu/phase3/test_res/002-20260616_003319-p9016_softall_4m_1m_200k_chain/outputs/1m/minimal_soft_sep_off/p9016_full.coords.tsv`
 - CHARM/3DG eval reference: `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz`
@@ -36,21 +36,27 @@
 | truth_majority_state_accuracy_genome_cis | 0.534348 |
 | truth_best_same_cross_random_four_state_accuracy_genome_cis | 0.487412 |
 | model_top1_accuracy_genome_all | 0.374549 |
+| model_same_cross_accuracy_genome_all | 0.759175 |
 | model_pmax90_accuracy_genome_all | 0.345532 |
 | model_pmax90_recall_genome_all | 0.13163 |
 | model_top1_accuracy_genome_cis | 0.465692 |
+| model_same_cross_accuracy_genome_cis | 0.935654 |
 | model_pmax90_accuracy_genome_cis | 0.439129 |
 | model_pmax90_recall_genome_cis | 0.146921 |
 | model_top1_accuracy_genome_trans | 0.244108 |
+| model_same_cross_accuracy_genome_trans | 0.506602 |
 | model_pmax90_accuracy_genome_trans | 0.245342 |
 | model_pmax90_recall_genome_trans | 0.109747 |
 | charm3dg_top1_accuracy_genome_all | 0.198369 |
+| charm3dg_same_cross_accuracy_genome_all | 0.847503 |
 | charm3dg_pmax90_accuracy_genome_all | 0.0507824 |
 | charm3dg_pmax90_recall_genome_all | 0.0144815 |
 | charm3dg_top1_accuracy_genome_cis | 0.221055 |
+| charm3dg_same_cross_accuracy_genome_cis | 0.977244 |
 | charm3dg_pmax90_accuracy_genome_cis | 0.0118652 |
 | charm3dg_pmax90_recall_genome_cis | 0.00282446 |
 | charm3dg_top1_accuracy_genome_trans | 0.165901 |
+| charm3dg_same_cross_accuracy_genome_trans | 0.661821 |
 | charm3dg_pmax90_accuracy_genome_trans | 0.0883842 |
 | charm3dg_pmax90_recall_genome_trans | 0.0311647 |
 | reconstruction_mean_copy01_separation | 4.93077 |
@@ -61,7 +67,7 @@
 ## Output Tables
 
 - `cis_distance_correlations.tsv`: per-chromosome cis distance-matrix Pearson/Spearman for both copy swaps, with the selected per-chrom swap marked.
-- `contact_accuracy.tsv`: four-state top1 accuracy, pmax >= 0.9 accuracy, called fraction, and recall for all/cis/trans contacts plus per-chromosome cis contacts. The `copy_swap_policy` column records whether rows use the reconstruction's fixed cis-distance-selected gauge or CHARM/3DG reference copy labels.
+- `contact_accuracy.tsv`: four-state top1 accuracy, same/cross accuracy, pmax >= 0.9 accuracy, called fraction, and recall for all/cis/trans contacts plus per-chromosome cis contacts. The `copy_swap_policy` column records whether rows use the reconstruction's fixed cis-distance-selected gauge or CHARM/3DG reference copy labels.
 - `contact_truth_distribution.tsv`: observed SNP truth counts and fractions for 00/01/10/11, same/cross fractions, majority-state baseline, and same/cross-aware random four-state baseline.
 - `copy_separation.tsv`: per-chromosome and genome mean/median distance between copy0 and copy1 of the same bin.
 - `per_chrom_volume.tsv`: per-chromosome and genome convex-hull volumes for CHARM/3DG and reconstruction.
