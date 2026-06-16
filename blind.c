@@ -3958,7 +3958,8 @@ static int hk_blind_softall_apply_final_prob_to_filtered_pairs(struct hk_map *m,
 
 static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list *out,
 											  const struct hk_bmap *bmap,
-											  struct hk_blind_softall_aux *aux)
+											  struct hk_blind_softall_aux *aux,
+											  int d_scale_mode, float d_scale_eps_count)
 {
 	struct hk_bmap *split_bmap = 0;
 	int32_t *split_to_diploid = 0;
@@ -3971,6 +3972,9 @@ static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list
 	assert(aux);
 	assert(aux->map);
 	assert(aux->n_final_phased_prob == aux->map->n_pairs);
+	assert(hk_blind_d_scale_mode_valid(d_scale_mode));
+	assert(isfinite(d_scale_eps_count));
+	assert(d_scale_eps_count > 0.0f);
 
 	out->n_softall_selected_raw = aux->n_selected_raw;
 	out->n_softall_gate_skip_raw = aux->n_gate_skip_raw;
@@ -4039,8 +4043,12 @@ static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list
 		k = hk_blind_native_fdg_k_from_nei(p, median_nei) * prob;
 		if (k <= 0.0f)
 			continue;
-		effective_n = (float)p->n * prob;
-		d_scale = powf(fmaxf(1e-6f, effective_n), -1.0f / 3.0f);
+		effective_n = (float)p->n;
+		if (d_scale_mode == HK_BLIND_D_SCALE_EXPECTED_COUNT)
+			effective_n *= prob;
+		if (!isfinite(effective_n) || effective_n < d_scale_eps_count)
+			effective_n = d_scale_eps_count;
+		d_scale = powf(effective_n, -1.0f / 3.0f);
 		if (d1 < d0) {
 			int32_t t = d0;
 			d0 = d1;
@@ -4071,11 +4079,25 @@ int hk_blind_wedge_list_build_softall(struct hk_blind_wedge_list *out,
 									  const struct hk_bmap *bmap,
 									  const struct hk_blind_bpair_set *set)
 {
+	return hk_blind_wedge_list_build_softall_mode(out, bmap, set,
+												 HK_BLIND_D_SCALE_EXPECTED_COUNT,
+												 1e-6f);
+}
+
+int hk_blind_wedge_list_build_softall_mode(struct hk_blind_wedge_list *out,
+										   const struct hk_bmap *bmap,
+										   const struct hk_blind_bpair_set *set,
+										   int d_scale_mode,
+										   float d_scale_eps_count)
+{
 	struct hk_blind_softall_aux aux;
 	int ret = -1;
 	assert(out);
 	assert(bmap);
 	assert(set);
+	assert(hk_blind_d_scale_mode_valid(d_scale_mode));
+	assert(isfinite(d_scale_eps_count));
+	assert(d_scale_eps_count > 0.0f);
 	memset(&aux, 0, sizeof(aux));
 
 	out->n_edges = 0;
@@ -4100,7 +4122,8 @@ int hk_blind_wedge_list_build_softall(struct hk_blind_wedge_list *out,
 
 	if (hk_blind_build_softall_map(bmap, set, &aux) != 0)
 		goto cleanup;
-	ret = hk_blind_wedge_list_build_softall_from_map(out, bmap, &aux);
+	ret = hk_blind_wedge_list_build_softall_from_map(out, bmap, &aux,
+													 d_scale_mode, d_scale_eps_count);
 
 cleanup:
 	free(aux.final_phased_prob);
@@ -4664,7 +4687,9 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct 
 	free(sep_force);
 
 	hk_blind_wedge_list_init(&wedges);
-	ret = hk_blind_wedge_list_build_softall(&wedges, bmap, set);
+	ret = hk_blind_wedge_list_build_softall_mode(&wedges, bmap, set,
+												 iter_conf->d_scale_mode,
+												 iter_conf->d_scale_eps_count);
 	if (ret != 0) {
 		hk_blind_wedge_list_destroy(&wedges);
 		free(prev_coords);

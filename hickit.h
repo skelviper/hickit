@@ -807,6 +807,11 @@ int hk_blind_wedge_list_build_from_bpair_set_params_mode_ex(struct hk_blind_wedg
 int hk_blind_wedge_list_build_softall(struct hk_blind_wedge_list *out,
 									  const struct hk_bmap *bmap,
 									  const struct hk_blind_bpair_set *set);
+int hk_blind_wedge_list_build_softall_mode(struct hk_blind_wedge_list *out,
+										   const struct hk_bmap *bmap,
+										   const struct hk_blind_bpair_set *set,
+										   int d_scale_mode,
+										   float d_scale_eps_count);
 int hk_blind_wedge_list_aggregate_exact(struct hk_blind_wedge_list *list);
 void hk_blind_iter_diag_init(struct hk_blind_iter_diag *diag);
 void hk_blind_iter_diag_validate_bpair_set(const struct hk_blind_bpair_set *set, struct hk_blind_iter_diag *diag);

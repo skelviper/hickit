@@ -47,6 +47,7 @@ enum manifest_key {
 	MK_PRIOR_ALPHA_CLAMP_MIN,
 	MK_PRIOR_ALPHA_CLAMP_MAX,
 	MK_RHO_TRAIN_MODE,
+	MK_RHO_TRAIN,
 	MK_D_SCALE_MODE,
 	MK_D_SCALE_EPS_COUNT,
 	MK_SAME_BIN_FILTER_ENABLED,
@@ -99,6 +100,7 @@ enum manifest_key {
 	MK_CONFIG_NAME,
 	MK_INIT_EPS,
 	MK_INIT_NOISE_SCALE,
+	MK_INIT_SCALE,
 	MK_CHR_SEP_UNIT,
 	MK_LAMBDA_CHR_SEP,
 	MK_N_KEYS
@@ -155,11 +157,13 @@ struct manifest_info {
 	double temperature_end;
 	double rho_train_start;
 	double rho_train_end;
+	double rho_train;
 	double rho_train_floor;
 	double init_eps_effective;
 	double init_noise_scale_effective;
 	double init_eps;
 	double init_noise_scale;
+	double init_scale;
 	double init_scale_effective;
 	double chr_sep_unit;
 	double lambda_chr_sep;
@@ -367,6 +371,7 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "prior_alpha_clamp_min") == 0) return MK_PRIOR_ALPHA_CLAMP_MIN;
 	if (strcmp(key, "prior_alpha_clamp_max") == 0) return MK_PRIOR_ALPHA_CLAMP_MAX;
 	if (strcmp(key, "rho_train_mode") == 0) return MK_RHO_TRAIN_MODE;
+	if (strcmp(key, "rho_train") == 0) return MK_RHO_TRAIN;
 	if (strcmp(key, "d_scale_mode") == 0) return MK_D_SCALE_MODE;
 	if (strcmp(key, "d_scale_eps_count") == 0) return MK_D_SCALE_EPS_COUNT;
 	if (strcmp(key, "same_bin_filter_enabled") == 0) return MK_SAME_BIN_FILTER_ENABLED;
@@ -395,6 +400,7 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "config_name") == 0) return MK_CONFIG_NAME;
 	if (strcmp(key, "init_eps") == 0) return MK_INIT_EPS;
 	if (strcmp(key, "init_noise_scale") == 0) return MK_INIT_NOISE_SCALE;
+	if (strcmp(key, "init_scale") == 0) return MK_INIT_SCALE;
 	if (strcmp(key, "chr_sep_unit") == 0) return MK_CHR_SEP_UNIT;
 	if (strcmp(key, "lambda_chr_sep") == 0) return MK_LAMBDA_CHR_SEP;
 	if (strcmp(key, "init_seed") == 0) return MK_INIT_SEED;
@@ -440,6 +446,8 @@ static int manifest_optional_current_key(const char *key)
 		   strcmp(key, "training_graph_weighted_filter") == 0 ||
 		   strcmp(key, "training_graph_probability_weighted") == 0 ||
 		   strcmp(key, "training_graph_dscale_probability_weighted") == 0 ||
+		   strcmp(key, "training_graph_mode") == 0 ||
+		   strcmp(key, "softall_mode") == 0 ||
 		   strcmp(key, "estep_score_mode") == 0 ||
 		   strcmp(key, "copy_labels_are_gauge_only") == 0 ||
 		   strcmp(key, "uses_charm_or_reference") == 0 ||
@@ -448,6 +456,7 @@ static int manifest_optional_current_key(const char *key)
 		   strcmp(key, "k_rel_rep_effective") == 0 ||
 		   strcmp(key, "output_coords_gz") == 0 ||
 		   strcmp(key, "output_force_class_diag") == 0 ||
+		   strcmp(key, "output_sep_diag") == 0 ||
 		   strcmp(key, "output_coarse_to_fine_map") == 0 ||
 		   strcmp(key, "final_mean_sep") == 0 ||
 		   strcmp(key, "final_min_sep") == 0 ||
@@ -461,6 +470,7 @@ static int manifest_optional_current_key(const char *key)
 		   strcmp(key, "final_contact_energy") == 0 ||
 		   strcmp(key, "final_repulsion_energy") == 0 ||
 		   strcmp(key, "final_backbone_energy") == 0 ||
+		   strcmp(key, "final_sep_energy") == 0 ||
 		   strcmp(key, "final_sep_force_l1") == 0;
 	}
 
@@ -611,12 +621,14 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_TEMPERATURE_END: return parse_double_value(value, &info->temperature_end);
 	case MK_RHO_TRAIN_START: return parse_double_value(value, &info->rho_train_start);
 	case MK_RHO_TRAIN_END: return parse_double_value(value, &info->rho_train_end);
+	case MK_RHO_TRAIN: return parse_double_value(value, &info->rho_train);
 	case MK_RHO_TRAIN_FLOOR: return parse_double_value(value, &info->rho_train_floor);
 	case MK_INIT_EPS_EFFECTIVE: return parse_double_value(value, &info->init_eps_effective);
 	case MK_INIT_NOISE_SCALE_EFFECTIVE: return parse_double_value(value, &info->init_noise_scale_effective);
 	case MK_INIT_SCALE_EFFECTIVE: return parse_double_value(value, &info->init_scale_effective);
 	case MK_INIT_EPS: return parse_double_value(value, &info->init_eps);
 	case MK_INIT_NOISE_SCALE: return parse_double_value(value, &info->init_noise_scale);
+	case MK_INIT_SCALE: return parse_double_value(value, &info->init_scale);
 	case MK_CHR_SEP_UNIT: return parse_double_value(value, &info->chr_sep_unit);
 	case MK_LAMBDA_CHR_SEP: return parse_double_value(value, &info->lambda_chr_sep);
 	case MK_PRIOR_EPS: return parse_double_value(value, &info->prior_eps);
@@ -661,8 +673,10 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 
 	memset(info, 0, sizeof(*info));
 	info->rho_train_floor = HK_BLIND_RHO_TRAIN_DEFAULT_FLOOR;
+	info->rho_train = NAN;
 	info->init_eps = NAN;
 	info->init_noise_scale = NAN;
+	info->init_scale = NAN;
 	info->chr_sep_unit = NAN;
 	info->lambda_chr_sep = NAN;
 	audit_init(audit);
@@ -809,7 +823,13 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest rho_train_mode is not recognized");
 		failed = 1;
 	}
-	if (strcmp(info->d_scale_mode, "raw_count") != 0) {
+	if (info->seen[MK_RHO_TRAIN] &&
+		(!isfinite(info->rho_train) || !check_close(info->rho_train, 1.0))) {
+		add_example(audit, "manifest rho_train must remain one");
+		failed = 1;
+	}
+	if (strcmp(info->d_scale_mode, "raw_count") != 0 &&
+		strcmp(info->d_scale_mode, "expected_count") != 0) {
 		add_example(audit, "manifest d_scale_mode is not recognized");
 		failed = 1;
 	}
@@ -872,6 +892,11 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 	if (info->seen[MK_INIT_NOISE_SCALE] &&
 		(!isfinite(info->init_noise_scale) || info->init_noise_scale < 0.0)) {
 		add_example(audit, "manifest init_noise_scale out of range");
+		failed = 1;
+	}
+	if (info->seen[MK_INIT_SCALE] &&
+		(!isfinite(info->init_scale) || info->init_scale < 0.0)) {
+		add_example(audit, "manifest init_scale out of range");
 		failed = 1;
 	}
 	if (info->seen[MK_CHR_SEP_UNIT] &&
