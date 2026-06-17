@@ -978,7 +978,10 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"softall_mode\traw_expected_soft_all\n"
 				"training_graph_weighted_filter\t1\n"
 				"training_graph_probability_weighted\t1\n"
-				"training_graph_dscale_probability_weighted\t1\n"
+				"edge_k_probability_weighted\t1\n"
+				"dscale_mode\t%s\n"
+				"dscale_probability_weighted\t%d\n"
+				"training_graph_dscale_probability_weighted\t%d\n"
 				"estep_score_mode\tfdg_flat\n"
 				"d_scale_mode\t%s\n"
 				"d_scale_eps_count\t%.9g\n"
@@ -1032,6 +1035,9 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				(unsigned long long)p->init_seed, init_scaffold_source_name(init_mode),
 				init_scaffold_fdg_n_iter(init_mode),
 				HK_P9016_PRIOR_EPS, HK_P9016_PRIOR_ALPHA_CLAMP_MIN,
+				hk_blind_d_scale_mode_name(p->d_scale_mode),
+				p->d_scale_mode == HK_BLIND_D_SCALE_EXPECTED_COUNT? 1 : 0,
+				p->d_scale_mode == HK_BLIND_D_SCALE_EXPECTED_COUNT? 1 : 0,
 				hk_blind_d_scale_mode_name(p->d_scale_mode),
 				p->d_scale_eps_count, set->same_bin_filter_enabled,
 				(long long)set->n_raw_same_bin_excluded,

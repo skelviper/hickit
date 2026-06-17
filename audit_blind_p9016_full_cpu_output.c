@@ -443,10 +443,13 @@ static int manifest_optional_current_key(const char *key)
 			   strcmp(key, "approved_p9016_raw_pairs_realpath") == 0 ||
 			   strcmp(key, "scaffold_source") == 0 ||
 		   strcmp(key, "scaffold_fdg_n_iter") == 0 ||
-		   strcmp(key, "training_graph_weighted_filter") == 0 ||
-		   strcmp(key, "training_graph_probability_weighted") == 0 ||
-		   strcmp(key, "training_graph_dscale_probability_weighted") == 0 ||
-		   strcmp(key, "training_graph_mode") == 0 ||
+			   strcmp(key, "training_graph_weighted_filter") == 0 ||
+			   strcmp(key, "training_graph_probability_weighted") == 0 ||
+			   strcmp(key, "edge_k_probability_weighted") == 0 ||
+			   strcmp(key, "dscale_mode") == 0 ||
+			   strcmp(key, "dscale_probability_weighted") == 0 ||
+			   strcmp(key, "training_graph_dscale_probability_weighted") == 0 ||
+			   strcmp(key, "training_graph_mode") == 0 ||
 		   strcmp(key, "softall_mode") == 0 ||
 		   strcmp(key, "estep_score_mode") == 0 ||
 		   strcmp(key, "copy_labels_are_gauge_only") == 0 ||
@@ -469,10 +472,12 @@ static int manifest_optional_current_key(const char *key)
 		   strcmp(key, "final_max_rho_train_bpair") == 0 ||
 		   strcmp(key, "final_contact_energy") == 0 ||
 		   strcmp(key, "final_repulsion_energy") == 0 ||
-		   strcmp(key, "final_backbone_energy") == 0 ||
-		   strcmp(key, "final_sep_energy") == 0 ||
-		   strcmp(key, "final_sep_force_l1") == 0;
-	}
+			   strcmp(key, "final_backbone_energy") == 0 ||
+			   strcmp(key, "final_sep_energy") == 0 ||
+			   strcmp(key, "final_sep_force_l1") == 0 ||
+			   strcmp(key, "git_commit") == 0 ||
+			   strcmp(key, "binary_hash") == 0;
+		}
 
 static int parse_i64_value(const char *s, int64_t *out)
 {

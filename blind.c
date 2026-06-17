@@ -4080,7 +4080,7 @@ int hk_blind_wedge_list_build_softall(struct hk_blind_wedge_list *out,
 									  const struct hk_blind_bpair_set *set)
 {
 	return hk_blind_wedge_list_build_softall_mode(out, bmap, set,
-												 HK_BLIND_D_SCALE_EXPECTED_COUNT,
+												 HK_BLIND_D_SCALE_RAW_COUNT,
 												 1e-6f);
 }
 
