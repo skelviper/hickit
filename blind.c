@@ -145,7 +145,6 @@ const char *hk_blind_d_scale_effective_count_formula(int mode, float gamma)
 	case HK_BLIND_D_SCALE_RAW_COUNT:
 		return "n_raw";
 	case HK_BLIND_D_SCALE_POSTERIOR_COUNT:
-		return "n_raw*posterior_prob";
 	case HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT:
 		snprintf(buf, sizeof(buf), "n_raw*posterior_prob^%.9g", gamma);
 		return buf;
@@ -1594,19 +1593,18 @@ void hk_blind_bpair_expand_weighted_edges_mode_gamma_ex(const struct hk_blind_bp
 		float d_scale = base_d_scale;
 		float k = base_k * rho_eff * bp->p4[s];
 		/*
-		 * edge k is posterior-weighted in all d_scale modes.
+		 * Edge k is posterior-weighted in all d_scale modes.
 		 * raw_count: dscale_effective_count = n_raw.
-		 * posterior_count / legacy expected_count:
-		 *   dscale_effective_count = n_raw * posterior_prob.
+		 * posterior_count / legacy expected_count / tempered_posterior_count:
+		 *   dscale_effective_count = n_raw * posterior_prob^gamma.
+		 * Gamma only controls whether posterior also tempers count-to-distance mapping.
 		 */
-		if (d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT) {
-			float n_eff = (float)bp->n_raw * bp->p4[s];
-			if (n_eff < d_scale_eps_count) n_eff = d_scale_eps_count;
-			d_scale = powf(n_eff, -1.0f / 3.0f);
-		} else if (d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT) {
-			float p_eff = powf(bp->p4[s], d_scale_posterior_gamma);
+		if (d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT ||
+			d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT) {
+			float p = hk_blind_clip01(bp->p4[s]);
+			float p_eff = powf(p, d_scale_posterior_gamma);
 			float n_eff = (float)bp->n_raw * p_eff;
-			if (n_eff < d_scale_eps_count) n_eff = d_scale_eps_count;
+			if (!isfinite(n_eff) || n_eff < d_scale_eps_count) n_eff = d_scale_eps_count;
 			d_scale = powf(n_eff, -1.0f / 3.0f);
 		} else if (d_scale_mode == HK_BLIND_D_SCALE_DENSITY_NORMALIZED_RAW_COUNT) {
 			float n_eff = hk_blind_bpair_density_normalized_raw_count(bp, d_scale_eps_count);
@@ -4095,14 +4093,14 @@ static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list
 			continue;
 		effective_n = (float)p->n;
 		/*
-		 * softall always keeps edge k posterior-weighted.
+		 * Softall always keeps edge k posterior-weighted.
 		 * raw_count: dscale_effective_count = n_raw.
-		 * posterior_count / legacy expected_count:
-		 *   dscale_effective_count = n_raw * posterior_prob.
+		 * posterior_count / legacy expected_count / tempered_posterior_count:
+		 *   dscale_effective_count = n_raw * posterior_prob^gamma.
+		 * Gamma only controls whether posterior also tempers count-to-distance mapping.
 		 */
-		if (d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT)
-			effective_n *= prob;
-		else if (d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT)
+		if (d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT ||
+			d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT)
 			effective_n *= powf(prob, d_scale_posterior_gamma);
 		if (!isfinite(effective_n) || effective_n < d_scale_eps_count)
 			effective_n = d_scale_eps_count;

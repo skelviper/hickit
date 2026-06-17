@@ -284,13 +284,10 @@ static int load_minimal_params(struct hk_p9016_minimal_params *p)
 	}
 	if (strcmp(config_env, "raw_count") == 0) {
 		p->d_scale_mode = HK_BLIND_D_SCALE_RAW_COUNT;
-		p->d_scale_posterior_gamma = 1.0f;
 	} else if (strcmp(config_env, "posterior_count") == 0) {
 		p->d_scale_mode = HK_BLIND_D_SCALE_POSTERIOR_COUNT;
-		p->d_scale_posterior_gamma = 1.0f;
 	} else if (strcmp(config_env, "expected_count") == 0) {
 		p->d_scale_mode = HK_BLIND_D_SCALE_POSTERIOR_COUNT;
-		p->d_scale_posterior_gamma = 1.0f;
 		p->legacy_expected_count_alias_used = 1;
 	} else if (strcmp(config_env, "tempered_posterior_count") == 0) {
 		p->d_scale_mode = HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT;
@@ -1016,6 +1013,7 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"dscale_mode\t%s\n"
 				"d_scale_mode_input_string\t%s\n"
 				"d_scale_posterior_gamma\t%.9g\n"
+				"dscale_posterior_gamma\t%.9g\n"
 				"dscale_effective_count_formula\t%s\n"
 				"dscale_probability_weighted\t%d\n"
 				"legacy_expected_count_alias_used\t%d\n"
@@ -1077,12 +1075,15 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				hk_blind_d_scale_mode_name(p->d_scale_mode),
 				p->d_scale_mode_input_string,
 				p->d_scale_posterior_gamma,
+				p->d_scale_posterior_gamma,
 				hk_blind_d_scale_effective_count_formula(p->d_scale_mode, p->d_scale_posterior_gamma),
-				(p->d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT ||
-				 p->d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT)? 1 : 0,
+				((p->d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT ||
+				  p->d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT) &&
+				 p->d_scale_posterior_gamma > 0.0f)? 1 : 0,
 				p->legacy_expected_count_alias_used,
-				(p->d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT ||
-				 p->d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT)? 1 : 0,
+				((p->d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT ||
+				  p->d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT) &&
+				 p->d_scale_posterior_gamma > 0.0f)? 1 : 0,
 				hk_blind_d_scale_mode_name(p->d_scale_mode),
 				p->d_scale_eps_count, set->same_bin_filter_enabled,
 				(long long)set->n_raw_same_bin_excluded,

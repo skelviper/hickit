@@ -45,9 +45,10 @@ awk -F'\t' '$1=="dscale_effective_count_formula" && $2=="n_raw" { found=1 } END 
 awk -F'\t' '$1=="dscale_probability_weighted" && $2=="0" { found=1 } END { exit found?0:1 }' "$RAW_MANIFEST"
 awk -F'\t' '$1=="d_scale_mode" && $2=="raw_count" { found=1 } END { exit found?0:1 }' "$RAW_MANIFEST"
 
-awk -F'\t' '$1=="dscale_effective_count_formula" && $2=="n_raw*posterior_prob" { found=1 } END { exit found?0:1 }' "$POST_MANIFEST"
+awk -F'\t' '$1=="dscale_effective_count_formula" && $2=="n_raw*posterior_prob^1" { found=1 } END { exit found?0:1 }' "$POST_MANIFEST"
 awk -F'\t' '$1=="dscale_probability_weighted" && $2=="1" { found=1 } END { exit found?0:1 }' "$POST_MANIFEST"
 awk -F'\t' '$1=="d_scale_mode" && $2=="posterior_count" { found=1 } END { exit found?0:1 }' "$POST_MANIFEST"
+awk -F'\t' '$1=="d_scale_posterior_gamma" && ($2+0)==1 { found=1 } END { exit found?0:1 }' "$POST_MANIFEST"
 awk -F'\t' '$1=="legacy_expected_count_alias_used" && $2=="0" { found=1 } END { exit found?0:1 }' "$POST_MANIFEST"
 
 echo "DSCALE_MODE_SMOKE_OK root=$ROOT"

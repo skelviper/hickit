@@ -449,6 +449,7 @@ static int manifest_optional_current_key(const char *key)
 				   strcmp(key, "dscale_mode") == 0 ||
 				   strcmp(key, "d_scale_mode_input_string") == 0 ||
 				   strcmp(key, "d_scale_posterior_gamma") == 0 ||
+				   strcmp(key, "dscale_posterior_gamma") == 0 ||
 				   strcmp(key, "dscale_effective_count_formula") == 0 ||
 				   strcmp(key, "dscale_probability_weighted") == 0 ||
 				   strcmp(key, "legacy_expected_count_alias_used") == 0 ||
