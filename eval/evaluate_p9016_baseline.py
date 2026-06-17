@@ -197,9 +197,9 @@ def manifest_int(manifest: dict[str, str], key: str) -> int:
         raise ValueError(f"training manifest {key} is not an integer: {manifest[key]}") from exc
 
 
-def validate_train_manifest(manifest: dict[str, str], bin_size: int) -> None:
+def validate_train_manifest(manifest: dict[str, str], bin_size: int, expected_sample: str) -> None:
     required = {
-        "sample": "P9016",
+        "sample": expected_sample,
         "runner_family": "p9016_minimal",
         "baseline": "softall",
         "mstep_graph_mode": "raw_expected_soft_all",
@@ -1556,7 +1556,7 @@ def write_readme(
         fh.write(f"- reconstruction: `{args.reconstruction}`\n")
         fh.write(f"- CHARM/3DG eval reference: `{args.reference_3dg}`\n")
         fh.write(f"- train manifest: `{args.train_manifest}`\n")
-        fh.write("- boundary: training used raw P9016 contact information only; phase labels and CHARM/3DG were read only by this post-training evaluator.\n")
+        fh.write(f"- boundary: training used raw {args.expected_sample} contact information only; phase labels and CHARM/3DG were read only by this post-training evaluator.\n")
         fh.write("- copy gauge: structure plots and distance metrics use per-chromosome cis distance-matrix Spearman correlation to select a geometry gauge. Contact identity metrics report the reconstruction under a whole-chromosome SNP cis-top1 oracle gauge, which is eval-only and exists because copy0/copy1 are gauge labels that can be swapped independently per chromosome.\n")
         fh.write("- contact denominator: contact accuracy uses eval-only raw contacts with both `phase0` and `phase1`, excluding same-bin contacts, and requiring a matching posterior bpair.\n")
         fh.write("- alignment: 3D scatter plots and Procrustes RMSD use rigid alignment only: translation and rotation are fitted, reconstruction scale is not fitted to CHARM/3DG. The reported similarity scale is diagnostic only and is not applied.\n\n")
@@ -1608,7 +1608,7 @@ def write_readme(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--pairs", type=Path, required=True, help="P9016 pairs file; phase columns are eval-only.")
+    parser.add_argument("--pairs", type=Path, required=True, help="Pairs file; phase columns are eval-only.")
     parser.add_argument("--reference-3dg", type=Path, required=True, help="CHARM/3DG reference coordinates.")
     parser.add_argument("--reconstruction", type=Path, required=True, help="Baseline reconstruction coords TSV.")
     parser.add_argument("--posterior", type=Path, default=None, help="Baseline bpair posterior TSV. Defaults to p9016_full.bpair_posterior.tsv next to reconstruction.")
@@ -1616,6 +1616,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--outdir", type=Path, required=True, help="Experiment output directory.")
     parser.add_argument("--bin-size", type=int, default=4_000_000, help="Evaluation bin size in bp.")
     parser.add_argument("--label", default="P9016 softall baseline", help="Human-readable run label.")
+    parser.add_argument("--expected-sample", default="P9016", help="Expected sample name in the training manifest.")
     return parser.parse_args()
 
 
@@ -1632,7 +1633,7 @@ def main() -> int:
     posterior = read_posterior(posterior_path)
     contact_counts = read_contact_truth_counts(args.pairs, args.bin_size, posterior)
     train_manifest = read_train_manifest(args.train_manifest)
-    validate_train_manifest(train_manifest, args.bin_size)
+    validate_train_manifest(train_manifest, args.bin_size, args.expected_sample)
     chroms = sorted({key[0] for key in reference} | {key[0] for key in reconstruction}, key=chrom_sort_key)
 
     distance_swaps, cis_rows = choose_distance_swaps(chroms, reference, reconstruction)
@@ -1695,6 +1696,7 @@ def main() -> int:
     summary: dict[str, object] = {
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "label": args.label,
+        "sample": args.expected_sample,
         "bin_size_bp": args.bin_size,
         "pairs_path": str(args.pairs),
         "reference_3dg_path": str(args.reference_3dg),

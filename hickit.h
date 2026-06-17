@@ -45,9 +45,11 @@ enum hk_blind_contact_class {
 
 enum hk_blind_d_scale_mode {
 	HK_BLIND_D_SCALE_RAW_COUNT = 0,
-	HK_BLIND_D_SCALE_EXPECTED_COUNT = 1,
+	HK_BLIND_D_SCALE_POSTERIOR_COUNT = 1,
+	HK_BLIND_D_SCALE_EXPECTED_COUNT = HK_BLIND_D_SCALE_POSTERIOR_COUNT,
 	HK_BLIND_D_SCALE_DENSITY_NORMALIZED_RAW_COUNT = 2,
-	HK_BLIND_D_SCALE_CAPPED_DENSITY_RAW_COUNT = 3
+	HK_BLIND_D_SCALE_CAPPED_DENSITY_RAW_COUNT = 3,
+	HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT = 4
 };
 
 #define HK_BLIND_D_SCALE_DEFAULT_COUNT_CAP 64.0f
@@ -439,6 +441,7 @@ struct hk_blind_single_iter_conf {
 	int rho_train_mode;
 	int d_scale_mode;
 	float d_scale_eps_count;
+	float d_scale_posterior_gamma;
 	int estep_score_mode;
 };
 
@@ -643,6 +646,7 @@ const char *hk_blind_init_mode_name(int mode);
 const char *hk_blind_prior_mode_name(int mode);
 const char *hk_blind_rho_train_mode_name(int mode);
 const char *hk_blind_d_scale_mode_name(int mode);
+const char *hk_blind_d_scale_effective_count_formula(int mode, float gamma);
 const char *hk_blind_estep_score_mode_name(int mode);
 const char *hk_blind_base_k_mode_name(int mode);
 const char *hk_blind_contact_class_name(int contact_class);
@@ -737,6 +741,11 @@ void hk_blind_bpair_expand_weighted_edges_mode_ex(const struct hk_blind_bpair *b
 												  float rho_train, int rho_train_mode, float rho_train_floor,
 												  int d_scale_mode, float d_scale_eps_count,
 												  struct hk_blind_wedge out_edges[HK_BLIND_N_STATE]);
+void hk_blind_bpair_expand_weighted_edges_mode_gamma_ex(const struct hk_blind_bpair *bp, float base_k, float base_d_scale,
+														float rho_train, int rho_train_mode, float rho_train_floor,
+														int d_scale_mode, float d_scale_eps_count,
+														float d_scale_posterior_gamma,
+														struct hk_blind_wedge out_edges[HK_BLIND_N_STATE]);
 float hk_blind_wedge_contact_energy(const struct hk_fdg_conf *conf, const struct hk_blind_wedge *edge, float distance, float unit);
 float hk_blind_wedge_list_accumulate_contact_force_cpu(const struct hk_fdg_conf *conf, const struct hk_blind_wedge_list *edges,
 													   const fvec3_t *coords, int32_t n_diploid, float unit,
@@ -812,6 +821,12 @@ int hk_blind_wedge_list_build_softall_mode(struct hk_blind_wedge_list *out,
 										   const struct hk_blind_bpair_set *set,
 										   int d_scale_mode,
 										   float d_scale_eps_count);
+int hk_blind_wedge_list_build_softall_mode_gamma(struct hk_blind_wedge_list *out,
+												 const struct hk_bmap *bmap,
+												 const struct hk_blind_bpair_set *set,
+												 int d_scale_mode,
+												 float d_scale_eps_count,
+												 float d_scale_posterior_gamma);
 int hk_blind_wedge_list_aggregate_exact(struct hk_blind_wedge_list *list);
 void hk_blind_iter_diag_init(struct hk_blind_iter_diag *diag);
 void hk_blind_iter_diag_validate_bpair_set(const struct hk_blind_bpair_set *set, struct hk_blind_iter_diag *diag);

@@ -107,8 +107,11 @@ struct hk_p9016_minimal_params {
 	float lambda_sep;
 	int d_scale_mode;
 	float d_scale_eps_count;
+	float d_scale_posterior_gamma;
+	int legacy_expected_count_alias_used;
 	uint64_t init_seed;
 	char config_name[128];
+	char d_scale_mode_input_string[64];
 };
 
 struct hk_p9016_sep_distribution {
@@ -261,7 +264,9 @@ static int load_minimal_params(struct hk_p9016_minimal_params *p)
 						  0.0f, 0.0f, &p->lambda_sep) != 0 ||
 		env_float_checked("HK_BLIND_P9016_D_SCALE_EPS_COUNT",
 						  HK_P9016_D_SCALE_EPS_COUNT, 0.0f,
-						  &p->d_scale_eps_count) != 0)
+						  &p->d_scale_eps_count) != 0 ||
+		env_float_checked("HK_BLIND_P9016_D_SCALE_POSTERIOR_GAMMA",
+						  1.0f, 0.0f, &p->d_scale_posterior_gamma) != 0)
 		return -1;
 	if (p->d_scale_eps_count <= 0.0f) {
 		fprintf(stderr, "HK_BLIND_P9016_D_SCALE_EPS_COUNT must be > 0\n");
@@ -270,12 +275,27 @@ static int load_minimal_params(struct hk_p9016_minimal_params *p)
 	p->init_seed = env_u64_or_default("HK_BLIND_P9016_INIT_SEED",
 									  HK_P9016_INIT_SEED);
 	config_env = getenv("HK_BLIND_P9016_D_SCALE_MODE");
-	if (config_env == 0 || config_env[0] == 0 || strcmp(config_env, "raw_count") == 0)
+	if (config_env == 0 || config_env[0] == 0)
+		config_env = "raw_count";
+	n = snprintf(p->d_scale_mode_input_string, sizeof(p->d_scale_mode_input_string), "%s", config_env);
+	if (n < 0 || (size_t)n >= sizeof(p->d_scale_mode_input_string)) {
+		fprintf(stderr, "HK_BLIND_P9016_D_SCALE_MODE is too long\n");
+		return -1;
+	}
+	if (strcmp(config_env, "raw_count") == 0) {
 		p->d_scale_mode = HK_BLIND_D_SCALE_RAW_COUNT;
-	else if (strcmp(config_env, "expected_count") == 0)
-		p->d_scale_mode = HK_BLIND_D_SCALE_EXPECTED_COUNT;
-	else {
-		fprintf(stderr, "invalid HK_BLIND_P9016_D_SCALE_MODE=%s; expected raw_count or expected_count\n",
+		p->d_scale_posterior_gamma = 1.0f;
+	} else if (strcmp(config_env, "posterior_count") == 0) {
+		p->d_scale_mode = HK_BLIND_D_SCALE_POSTERIOR_COUNT;
+		p->d_scale_posterior_gamma = 1.0f;
+	} else if (strcmp(config_env, "expected_count") == 0) {
+		p->d_scale_mode = HK_BLIND_D_SCALE_POSTERIOR_COUNT;
+		p->d_scale_posterior_gamma = 1.0f;
+		p->legacy_expected_count_alias_used = 1;
+	} else if (strcmp(config_env, "tempered_posterior_count") == 0) {
+		p->d_scale_mode = HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT;
+	} else {
+		fprintf(stderr, "invalid HK_BLIND_P9016_D_SCALE_MODE=%s; expected raw_count, posterior_count, expected_count, or tempered_posterior_count\n",
 				config_env);
 		return -1;
 	}
@@ -638,6 +658,7 @@ static void set_minimal_schedule(struct hk_blind_iter_schedule_conf *conf, int n
 	conf->base_conf.rho_train_mode = HK_BLIND_RHO_TRAIN_CONSTANT;
 	conf->base_conf.d_scale_mode = p->d_scale_mode;
 	conf->base_conf.d_scale_eps_count = p->d_scale_eps_count;
+	conf->base_conf.d_scale_posterior_gamma = p->d_scale_posterior_gamma;
 	conf->base_conf.estep_score_mode = HK_BLIND_ESTEP_SCORE_FDG_FLAT;
 	conf->temperature_start = 1.0f;
 	conf->temperature_end = 1.0f;
@@ -829,6 +850,7 @@ static int write_force_class_diag(const char *force_path, const struct hk_fdg_co
 								  const fvec3_t *coords,
 								  const struct hk_blind_relax_diag *relax_diag,
 								  int d_scale_mode, float d_scale_eps_count,
+								  float d_scale_posterior_gamma,
 								  struct hk_blind_contact_class_diag *diag_out)
 {
 	struct hk_blind_wedge_list wedges;
@@ -836,8 +858,9 @@ static int write_force_class_diag(const char *force_path, const struct hk_fdg_co
 	FILE *fp;
 	int ret;
 	hk_blind_wedge_list_init(&wedges);
-	ret = hk_blind_wedge_list_build_softall_mode(&wedges, bmap, set,
-												 d_scale_mode, d_scale_eps_count);
+	ret = hk_blind_wedge_list_build_softall_mode_gamma(&wedges, bmap, set,
+													   d_scale_mode, d_scale_eps_count,
+													   d_scale_posterior_gamma);
 	if (ret == 0)
 		ret = hk_blind_wedge_list_aggregate_exact(&wedges);
 	if (ret == 0)
@@ -898,6 +921,10 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 {
 	FILE *fp = fopen(manifest_path, "w");
 	const char *status;
+	const char *git_commit;
+	const char *git_dirty_count;
+	const char *binary_hash;
+	const char *sample_name;
 	double final_refreshed_sum_wedge_k;
 	int64_t final_refreshed_n_wedges;
 	char label[32];
@@ -912,13 +939,20 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 	status = (loop_diag->n_bad_iter == 0 &&
 			  loop_diag->n_relax_nonfinite_iter == 0 &&
 			  loop_diag->n_coord_nonfinite == 0)? "OK" : "WARN";
+	git_commit = env_or_default("HK_BLIND_GIT_COMMIT", "NA");
+	git_dirty_count = env_or_default("HK_BLIND_GIT_DIRTY_COUNT", "NA");
+	binary_hash = env_or_default("HK_BLIND_BINARY_HASH", "NA");
+	sample_name = env_or_default("HK_BLIND_SAMPLE", env_or_default("HK_BLIND_P9016_SAMPLE", "P9016"));
 	if (fprintf(fp,
 				"key\tvalue\n"
-				"sample\tP9016\n"
+				"sample\t%s\n"
 				"runner_family\tp9016_minimal\n"
 				"runner_version\t2026-06-15\n"
 				"default_profile\tp9016_softall_minimal_v2\n"
 				"config_name\t%s\n"
+				"git_commit\t%s\n"
+				"git_dirty_count\t%s\n"
+				"binary_hash\t%s\n"
 				"input_path\t%s\n"
 				"input_contact_source\t%s\n"
 				"output_dir\t%s\n"
@@ -980,7 +1014,11 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"training_graph_probability_weighted\t1\n"
 				"edge_k_probability_weighted\t1\n"
 				"dscale_mode\t%s\n"
+				"d_scale_mode_input_string\t%s\n"
+				"d_scale_posterior_gamma\t%.9g\n"
+				"dscale_effective_count_formula\t%s\n"
 				"dscale_probability_weighted\t%d\n"
+				"legacy_expected_count_alias_used\t%d\n"
 				"training_graph_dscale_probability_weighted\t%d\n"
 				"estep_score_mode\tfdg_flat\n"
 				"d_scale_mode\t%s\n"
@@ -1019,7 +1057,8 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				"output_loop_diag\t%s\n"
 				"output_force_class_diag\t%s\n"
 				"output_sep_diag\t%s\n",
-					p->config_name, pairs_path, input_contact_source, out_dir,
+					sample_name, p->config_name, git_commit, git_dirty_count, binary_hash,
+					pairs_path, input_contact_source, out_dir,
 					set->n_raw, set->n_bpairs, bmap->n_beads,
 					bin_size_bp, n_iter, bin_size_bp, label,
 						stage_name, stage_index, n_stages, parent_bin_size_bp,
@@ -1036,8 +1075,14 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
 				init_scaffold_fdg_n_iter(init_mode),
 				HK_P9016_PRIOR_EPS, HK_P9016_PRIOR_ALPHA_CLAMP_MIN,
 				hk_blind_d_scale_mode_name(p->d_scale_mode),
-				p->d_scale_mode == HK_BLIND_D_SCALE_EXPECTED_COUNT? 1 : 0,
-				p->d_scale_mode == HK_BLIND_D_SCALE_EXPECTED_COUNT? 1 : 0,
+				p->d_scale_mode_input_string,
+				p->d_scale_posterior_gamma,
+				hk_blind_d_scale_effective_count_formula(p->d_scale_mode, p->d_scale_posterior_gamma),
+				(p->d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT ||
+				 p->d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT)? 1 : 0,
+				p->legacy_expected_count_alias_used,
+				(p->d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT ||
+				 p->d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT)? 1 : 0,
 				hk_blind_d_scale_mode_name(p->d_scale_mode),
 				p->d_scale_eps_count, set->same_bin_filter_enabled,
 				(long long)set->n_raw_same_bin_excluded,
@@ -1324,6 +1369,7 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
 						write_force_class_diag(force_diag_path, &fdg_conf, bmap, set, diploid,
 											   n_iter > 0? &per_iter[n_iter - 1].relax_diag : 0,
 											   p->d_scale_mode, p->d_scale_eps_count,
+											   p->d_scale_posterior_gamma,
 											   &final_graph_diag), 0);
 	failed |= check_i32("write sep diag",
 						write_sep_diag(sep_diag_path, bmap, diploid, p->min_sep_unit,
@@ -1488,12 +1534,16 @@ int main(void)
 		relax_backend = hk_fdg_gpu_is_available()? HK_FDG_BACKEND_GPU : HK_FDG_BACKEND_CPU;
 	}
 	fprintf(stderr,
-			"minimal P9016: input=%s output_root=%s config=%s baseline=softall n_iter=%d relax_steps=%d relax_step=%.8g chain=%d init_mode=%s init_eps=%.8g init_noise=%.8g init_scale=%.8g init_seed=%llu min_sep=%.8g lambda_sep=%.8g d_scale_mode=%s d_scale_eps=%.8g relax_backend=%s\n",
+			"minimal P9016: input=%s output_root=%s config=%s baseline=softall n_iter=%d relax_steps=%d relax_step=%.8g chain=%d init_mode=%s init_eps=%.8g init_noise=%.8g init_scale=%.8g init_seed=%llu min_sep=%.8g lambda_sep=%.8g d_scale_mode=%s d_scale_input=%s d_scale_formula=%s d_scale_gamma=%.8g d_scale_eps=%.8g relax_backend=%s\n",
 			pairs_path, root_dir, params.config_name, n_iter, relax_steps, relax_step,
 			run_chain, hk_blind_init_mode_name(init_mode),
 			params.init_eps, params.init_noise_scale, params.init_scale,
 			(unsigned long long)params.init_seed, params.min_sep_unit,
 			params.lambda_sep, hk_blind_d_scale_mode_name(params.d_scale_mode),
+			params.d_scale_mode_input_string,
+			hk_blind_d_scale_effective_count_formula(params.d_scale_mode,
+													 params.d_scale_posterior_gamma),
+			params.d_scale_posterior_gamma,
 			params.d_scale_eps_count, relax_backend_name(relax_backend));
 	path_join(summary_path, sizeof(summary_path), root_dir, "matrix_summary.tsv");
 	summary_fp = fopen(summary_path, "w");

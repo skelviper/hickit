@@ -4,11 +4,11 @@ This is a controlled P9016 blind-diploid infrastructure and regression audit. It
 
 ## Paths
 
-- full result root: `/mnt/shared/zliu/CHARM/CHARM_mesc/test_res/011-20260617_014152-p9016_regression_copytrack_1m`
+- full result root: `/mnt/ssd/zliu/phase3/test_res/011-20260617_014152-p9016_regression_copytrack_1m`
 - lightweight hickit result: `/mnt/ssd/zliu/phase3/hickit/result/011-20260617_014152-p9016_regression_copytrack_1m`
-- summary TSV: `/mnt/shared/zliu/CHARM/CHARM_mesc/test_res/011-20260617_014152-p9016_regression_copytrack_1m/summary.tsv`
-- regression audit TSV: `/mnt/shared/zliu/CHARM/CHARM_mesc/test_res/011-20260617_014152-p9016_regression_copytrack_1m/regression_audit.tsv`
-- copytrack summary TSV: `/mnt/shared/zliu/CHARM/CHARM_mesc/test_res/011-20260617_014152-p9016_regression_copytrack_1m/copytrack_summary.tsv`
+- summary TSV: `/mnt/ssd/zliu/phase3/test_res/011-20260617_014152-p9016_regression_copytrack_1m/summary.tsv`
+- regression audit TSV: `/mnt/ssd/zliu/phase3/test_res/011-20260617_014152-p9016_regression_copytrack_1m/regression_audit.tsv`
+- copytrack summary TSV: `/mnt/ssd/zliu/phase3/test_res/011-20260617_014152-p9016_regression_copytrack_1m/copytrack_summary.tsv`
 
 ## Training Boundary
 

@@ -1,0 +1,55 @@
+FULL_RESULT_ROOT=/mnt/ssd/zliu/phase3/test_res/012-20260617_111813-p9016_dscale_semantics_regression_1m
+OUTPUT_ROOT=/mnt/ssd/zliu/phase3/test_res/012-20260617_111813-p9016_dscale_semantics_regression_1m/outputs
+WORK_OUTPUT_ROOT=/mnt/ssd/zliu/phase3/test_res/012-20260617_111813-p9016_dscale_semantics_regression_1m/work_outputs
+LIGHT_RESULT_ROOT=/mnt/ssd/zliu/phase3/hickit/result/012-20260617_111813-p9016_dscale_semantics_regression_1m
+cc -g -Wall -O2 -Wc++-compat -fno-fast-math -fno-unsafe-math-optimizations    run_blind_p9016_minimal.c sdict.o io.o pair.o count.o phase.o bin.o blind.o fdg.o image.o view3d.o fdg_gpu_stub.o -o run_blind_p9016_minimal.bin -L/usr/local/cuda/targets/x86_64-linux/lib -Wl,-rpath,/usr/local/cuda/targets/x86_64-linux/lib -lm -lz
+make: 'audit_blind_p9016_full_cpu_output.bin' is up to date.
+rm -rf /tmp/hk_blind_p9016_minimal_audit_smoke
+env -i PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+HK_BLIND_P9016_PAIRS=testdata/p9016_blind_smoke.pairs \
+HK_BLIND_P9016_ALLOW_CUSTOM_PAIRS=1 \
+HK_BLIND_P9016_OUTPUT_ROOT=/tmp/hk_blind_p9016_minimal_audit_smoke \
+HK_BLIND_P9016_CONFIG_NAME=minimal_soft_sep_off \
+HK_BLIND_P9016_BIN_SIZE_BP=1000000 \
+HK_BLIND_P9016_MINIMAL_N_ITER=1 \
+HK_BLIND_P9016_MINIMAL_RELAX_STEPS=1 \
+HK_BLIND_P9016_INIT_EPS=0.5 \
+HK_BLIND_P9016_INIT_NOISE_SCALE=0.0 \
+HK_BLIND_P9016_MIN_SEP_UNIT=0.0 \
+HK_BLIND_P9016_LAMBDA_SEP=0.0 \
+HK_BLIND_P9016_INIT_SEED=17 \
+./run_blind_p9016_minimal.bin
+./audit_blind_p9016_full_cpu_output.bin /tmp/hk_blind_p9016_minimal_audit_smoke/minimal_soft_sep_off
+make: 'run_blind_p9016_minimal.bin' is up to date.
+make: 'audit_blind_p9016_full_cpu_output.bin' is up to date.
+DSCALE_MODE_SMOKE_OK root=/tmp/hk_blind_p9016_dscale_modes_smoke
+cc -g -Wall -O2 -Wc++-compat -fno-fast-math -fno-unsafe-math-optimizations    run_blind_p9016_minimal.c sdict.o io.o pair.o count.o phase.o bin.o blind.o fdg.o image.o view3d.o fdg_gpu.o -o run_blind_p9016_minimal.bin -L/usr/local/cuda/targets/x86_64-linux/lib -Wl,-rpath,/usr/local/cuda/targets/x86_64-linux/lib -lm -lz -lcudart -lstdc++
+make: 'audit_blind_p9016_full_cpu_output.bin' is up to date.
+CONFIG_START=current_raw_cpu_exact_ieps0p5_noise0_seed17
+CONFIG_START=posterior_count_cpu_exact_ieps0p5_noise0_seed17
+CONFIG_START=current_raw_gpu_exact_ieps0p5_noise0_seed17
+CONFIG_START=posterior_count_gpu_exact_ieps0p5_noise0_seed17
+CONFIG_START=posterior_count_common_sep_off_ieps1_noise0p05_seed17
+CONFIG_START=posterior_count_common_msep1p5_lsep1_ieps1_noise0p05_seed17
+CONFIG_DONE=posterior_count_gpu_exact_ieps0p5_noise0_seed17
+CONFIG_DONE=posterior_count_common_msep1p5_lsep1_ieps1_noise0p05_seed17
+CONFIG_DONE=posterior_count_common_sep_off_ieps1_noise0p05_seed17
+CONFIG_DONE=current_raw_gpu_exact_ieps0p5_noise0_seed17
+CONFIG_DONE=posterior_count_cpu_exact_ieps0p5_noise0_seed17
+CONFIG_DONE=current_raw_cpu_exact_ieps0p5_noise0_seed17
+CONFIG_STATUS=current_raw_cpu_exact_ieps0p5_noise0_seed17 OK
+CONFIG_STATUS=posterior_count_cpu_exact_ieps0p5_noise0_seed17 OK
+CONFIG_STATUS=current_raw_gpu_exact_ieps0p5_noise0_seed17 OK
+CONFIG_STATUS=posterior_count_gpu_exact_ieps0p5_noise0_seed17 OK
+CONFIG_STATUS=posterior_count_common_sep_off_ieps1_noise0p05_seed17 OK
+CONFIG_STATUS=posterior_count_common_msep1p5_lsep1_ieps1_noise0p05_seed17 OK
+FULL_RESULT_ROOT=/mnt/ssd/zliu/phase3/test_res/012-20260617_111813-p9016_dscale_semantics_regression_1m
+LIGHT_RESULT_ROOT=/mnt/ssd/zliu/phase3/hickit/result/012-20260617_111813-p9016_dscale_semantics_regression_1m
+SUMMARY_TSV=/mnt/ssd/zliu/phase3/test_res/012-20260617_111813-p9016_dscale_semantics_regression_1m/summary.tsv
+DSCALE_SEMANTICS_AUDIT_TSV=/mnt/ssd/zliu/phase3/test_res/012-20260617_111813-p9016_dscale_semantics_regression_1m/dscale_semantics_audit.tsv
+DSCALE_SEMANTICS_HEADLINE=HISTORICAL_D_SCALE_SEMANTICS_CONFIRMED
+FULL_RESULT_ROOT=/mnt/ssd/zliu/phase3/test_res/012-20260617_111813-p9016_dscale_semantics_regression_1m
+LIGHT_RESULT_ROOT=/mnt/ssd/zliu/phase3/hickit/result/012-20260617_111813-p9016_dscale_semantics_regression_1m
+SUMMARY_TSV=/mnt/ssd/zliu/phase3/test_res/012-20260617_111813-p9016_dscale_semantics_regression_1m/summary.tsv
+DSCALE_SEMANTICS_AUDIT_TSV=/mnt/ssd/zliu/phase3/test_res/012-20260617_111813-p9016_dscale_semantics_regression_1m/dscale_semantics_audit.tsv
+DSCALE_SEMANTICS_HEADLINE=HISTORICAL_D_SCALE_SEMANTICS_CONFIRMED

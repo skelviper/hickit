@@ -445,11 +445,15 @@ static int manifest_optional_current_key(const char *key)
 		   strcmp(key, "scaffold_fdg_n_iter") == 0 ||
 			   strcmp(key, "training_graph_weighted_filter") == 0 ||
 			   strcmp(key, "training_graph_probability_weighted") == 0 ||
-			   strcmp(key, "edge_k_probability_weighted") == 0 ||
-			   strcmp(key, "dscale_mode") == 0 ||
-			   strcmp(key, "dscale_probability_weighted") == 0 ||
-			   strcmp(key, "training_graph_dscale_probability_weighted") == 0 ||
-			   strcmp(key, "training_graph_mode") == 0 ||
+				   strcmp(key, "edge_k_probability_weighted") == 0 ||
+				   strcmp(key, "dscale_mode") == 0 ||
+				   strcmp(key, "d_scale_mode_input_string") == 0 ||
+				   strcmp(key, "d_scale_posterior_gamma") == 0 ||
+				   strcmp(key, "dscale_effective_count_formula") == 0 ||
+				   strcmp(key, "dscale_probability_weighted") == 0 ||
+				   strcmp(key, "legacy_expected_count_alias_used") == 0 ||
+				   strcmp(key, "training_graph_dscale_probability_weighted") == 0 ||
+				   strcmp(key, "training_graph_mode") == 0 ||
 		   strcmp(key, "softall_mode") == 0 ||
 		   strcmp(key, "estep_score_mode") == 0 ||
 		   strcmp(key, "copy_labels_are_gauge_only") == 0 ||
@@ -476,6 +480,7 @@ static int manifest_optional_current_key(const char *key)
 			   strcmp(key, "final_sep_energy") == 0 ||
 			   strcmp(key, "final_sep_force_l1") == 0 ||
 			   strcmp(key, "git_commit") == 0 ||
+			   strcmp(key, "git_dirty_count") == 0 ||
 			   strcmp(key, "binary_hash") == 0;
 		}
 
@@ -675,6 +680,7 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 	int failed = 0;
 	int64_t line_no = 0;
 	int i;
+	const char *expected_sample;
 
 	memset(info, 0, sizeof(*info));
 	info->rho_train_floor = HK_BLIND_RHO_TRAIN_DEFAULT_FLOOR;
@@ -730,8 +736,11 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 			failed = 1;
 		}
 	}
-	if (strcmp(info->sample, "P9016") != 0) {
-		add_example(audit, "manifest sample is not P9016");
+	expected_sample = getenv("HK_BLIND_SAMPLE");
+	if (expected_sample == 0 || expected_sample[0] == 0)
+		expected_sample = "P9016";
+	if (strcmp(info->sample, expected_sample) != 0) {
+		add_example(audit, "manifest sample differs from HK_BLIND_SAMPLE/P9016 expectation");
 		failed = 1;
 	}
 	if (info->runner_family[0] == 0 || info->runner_version[0] == 0 ||
@@ -834,7 +843,9 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		failed = 1;
 	}
 	if (strcmp(info->d_scale_mode, "raw_count") != 0 &&
-		strcmp(info->d_scale_mode, "expected_count") != 0) {
+		strcmp(info->d_scale_mode, "posterior_count") != 0 &&
+		strcmp(info->d_scale_mode, "expected_count") != 0 &&
+		strcmp(info->d_scale_mode, "tempered_posterior_count") != 0) {
 		add_example(audit, "manifest d_scale_mode is not recognized");
 		failed = 1;
 	}

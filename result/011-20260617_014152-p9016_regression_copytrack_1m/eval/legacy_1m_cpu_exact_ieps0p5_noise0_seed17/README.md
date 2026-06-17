@@ -3,9 +3,9 @@
 - label: `legacy_1m_cpu_exact_ieps0p5_noise0_seed17`
 - created_at: `2026-06-17T02:31:28`
 - training input: `/shared/zliu/CHARM/CHARM_mesc/data/pairs/P9016.pairs.gz`
-- reconstruction: `/mnt/shared/zliu/CHARM/CHARM_mesc/test_res/011-20260617_014152-p9016_regression_copytrack_1m/outputs/legacy_1m_cpu_exact_ieps0p5_noise0_seed17/p9016_full.coords.tsv`
+- reconstruction: `/mnt/ssd/zliu/phase3/test_res/011-20260617_014152-p9016_regression_copytrack_1m/outputs/legacy_1m_cpu_exact_ieps0p5_noise0_seed17/p9016_full.coords.tsv`
 - CHARM/3DG eval reference: `/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz`
-- train manifest: `/mnt/shared/zliu/CHARM/CHARM_mesc/test_res/011-20260617_014152-p9016_regression_copytrack_1m/outputs/legacy_1m_cpu_exact_ieps0p5_noise0_seed17/p9016_full.manifest.tsv`
+- train manifest: `/mnt/ssd/zliu/phase3/test_res/011-20260617_014152-p9016_regression_copytrack_1m/outputs/legacy_1m_cpu_exact_ieps0p5_noise0_seed17/p9016_full.manifest.tsv`
 - boundary: training used raw P9016 contact information only; phase labels and CHARM/3DG were read only by this post-training evaluator.
 - copy gauge: structure plots and distance metrics use per-chromosome cis distance-matrix Spearman correlation to select a geometry gauge. Contact identity metrics report the reconstruction under a whole-chromosome SNP cis-top1 oracle gauge, which is eval-only and exists because copy0/copy1 are gauge labels that can be swapped independently per chromosome.
 - contact denominator: contact accuracy uses eval-only raw contacts with both `phase0` and `phase1`, excluding same-bin contacts, and requiring a matching posterior bpair.

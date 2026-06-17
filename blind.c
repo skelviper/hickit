@@ -130,10 +130,31 @@ const char *hk_blind_d_scale_mode_name(int mode)
 {
 	switch (mode) {
 	case HK_BLIND_D_SCALE_RAW_COUNT: return "raw_count";
-	case HK_BLIND_D_SCALE_EXPECTED_COUNT: return "expected_count";
+	case HK_BLIND_D_SCALE_POSTERIOR_COUNT: return "posterior_count";
 	case HK_BLIND_D_SCALE_DENSITY_NORMALIZED_RAW_COUNT: return "density_normalized_raw_count";
 	case HK_BLIND_D_SCALE_CAPPED_DENSITY_RAW_COUNT: return "capped_density_raw_count";
+	case HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT: return "tempered_posterior_count";
 	default: return "unknown";
+	}
+}
+
+const char *hk_blind_d_scale_effective_count_formula(int mode, float gamma)
+{
+	static char buf[64];
+	switch (mode) {
+	case HK_BLIND_D_SCALE_RAW_COUNT:
+		return "n_raw";
+	case HK_BLIND_D_SCALE_POSTERIOR_COUNT:
+		return "n_raw*posterior_prob";
+	case HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT:
+		snprintf(buf, sizeof(buf), "n_raw*posterior_prob^%.9g", gamma);
+		return buf;
+	case HK_BLIND_D_SCALE_DENSITY_NORMALIZED_RAW_COUNT:
+		return "density_normalized_n_raw";
+	case HK_BLIND_D_SCALE_CAPPED_DENSITY_RAW_COUNT:
+		return "min(density_normalized_n_raw,count_cap)";
+	default:
+		return "unknown";
 	}
 }
 
@@ -191,7 +212,8 @@ int hk_blind_rho_train_mode_valid(int mode)
 int hk_blind_d_scale_mode_valid(int mode)
 {
 	return mode == HK_BLIND_D_SCALE_RAW_COUNT ||
-		mode == HK_BLIND_D_SCALE_EXPECTED_COUNT ||
+		mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT ||
+		mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT ||
 		mode == HK_BLIND_D_SCALE_DENSITY_NORMALIZED_RAW_COUNT ||
 		mode == HK_BLIND_D_SCALE_CAPPED_DENSITY_RAW_COUNT;
 }
@@ -1525,6 +1547,18 @@ void hk_blind_bpair_expand_weighted_edges_mode_ex(const struct hk_blind_bpair *b
 												  int d_scale_mode, float d_scale_eps_count,
 												  struct hk_blind_wedge out_edges[HK_BLIND_N_STATE])
 {
+	hk_blind_bpair_expand_weighted_edges_mode_gamma_ex(bp, base_k, base_d_scale,
+													   rho_train, rho_train_mode, rho_train_floor,
+													   d_scale_mode, d_scale_eps_count, 1.0f,
+													   out_edges);
+}
+
+void hk_blind_bpair_expand_weighted_edges_mode_gamma_ex(const struct hk_blind_bpair *bp, float base_k, float base_d_scale,
+														float rho_train, int rho_train_mode, float rho_train_floor,
+														int d_scale_mode, float d_scale_eps_count,
+														float d_scale_posterior_gamma,
+														struct hk_blind_wedge out_edges[HK_BLIND_N_STATE])
+{
 	int32_t i, j, i0, i1, j0, j1;
 	float rho_eff;
 	int s;
@@ -1540,6 +1574,8 @@ void hk_blind_bpair_expand_weighted_edges_mode_ex(const struct hk_blind_bpair *b
 	assert(hk_blind_d_scale_mode_valid(d_scale_mode));
 	assert(isfinite(d_scale_eps_count));
 	assert(d_scale_eps_count > 0.0f);
+	assert(isfinite(d_scale_posterior_gamma));
+	assert(d_scale_posterior_gamma >= 0.0f);
 	assert(bp->n_raw > 0);
 	for (s = 0; s < HK_BLIND_N_STATE; ++s) {
 		assert(isfinite(bp->p4[s]));
@@ -1557,8 +1593,19 @@ void hk_blind_bpair_expand_weighted_edges_mode_ex(const struct hk_blind_bpair *b
 	for (s = 0; s < HK_BLIND_N_STATE; ++s) {
 		float d_scale = base_d_scale;
 		float k = base_k * rho_eff * bp->p4[s];
-		if (d_scale_mode == HK_BLIND_D_SCALE_EXPECTED_COUNT) {
+		/*
+		 * edge k is posterior-weighted in all d_scale modes.
+		 * raw_count: dscale_effective_count = n_raw.
+		 * posterior_count / legacy expected_count:
+		 *   dscale_effective_count = n_raw * posterior_prob.
+		 */
+		if (d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT) {
 			float n_eff = (float)bp->n_raw * bp->p4[s];
+			if (n_eff < d_scale_eps_count) n_eff = d_scale_eps_count;
+			d_scale = powf(n_eff, -1.0f / 3.0f);
+		} else if (d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT) {
+			float p_eff = powf(bp->p4[s], d_scale_posterior_gamma);
+			float n_eff = (float)bp->n_raw * p_eff;
 			if (n_eff < d_scale_eps_count) n_eff = d_scale_eps_count;
 			d_scale = powf(n_eff, -1.0f / 3.0f);
 		} else if (d_scale_mode == HK_BLIND_D_SCALE_DENSITY_NORMALIZED_RAW_COUNT) {
@@ -3959,7 +4006,8 @@ static int hk_blind_softall_apply_final_prob_to_filtered_pairs(struct hk_map *m,
 static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list *out,
 											  const struct hk_bmap *bmap,
 											  struct hk_blind_softall_aux *aux,
-											  int d_scale_mode, float d_scale_eps_count)
+											  int d_scale_mode, float d_scale_eps_count,
+											  float d_scale_posterior_gamma)
 {
 	struct hk_bmap *split_bmap = 0;
 	int32_t *split_to_diploid = 0;
@@ -3975,6 +4023,8 @@ static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list
 	assert(hk_blind_d_scale_mode_valid(d_scale_mode));
 	assert(isfinite(d_scale_eps_count));
 	assert(d_scale_eps_count > 0.0f);
+	assert(isfinite(d_scale_posterior_gamma));
+	assert(d_scale_posterior_gamma >= 0.0f);
 
 	out->n_softall_selected_raw = aux->n_selected_raw;
 	out->n_softall_gate_skip_raw = aux->n_gate_skip_raw;
@@ -4044,8 +4094,16 @@ static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list
 		if (k <= 0.0f)
 			continue;
 		effective_n = (float)p->n;
-		if (d_scale_mode == HK_BLIND_D_SCALE_EXPECTED_COUNT)
+		/*
+		 * softall always keeps edge k posterior-weighted.
+		 * raw_count: dscale_effective_count = n_raw.
+		 * posterior_count / legacy expected_count:
+		 *   dscale_effective_count = n_raw * posterior_prob.
+		 */
+		if (d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT)
 			effective_n *= prob;
+		else if (d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT)
+			effective_n *= powf(prob, d_scale_posterior_gamma);
 		if (!isfinite(effective_n) || effective_n < d_scale_eps_count)
 			effective_n = d_scale_eps_count;
 		d_scale = powf(effective_n, -1.0f / 3.0f);
@@ -4090,6 +4148,18 @@ int hk_blind_wedge_list_build_softall_mode(struct hk_blind_wedge_list *out,
 										   int d_scale_mode,
 										   float d_scale_eps_count)
 {
+	return hk_blind_wedge_list_build_softall_mode_gamma(out, bmap, set,
+														d_scale_mode, d_scale_eps_count,
+														1.0f);
+}
+
+int hk_blind_wedge_list_build_softall_mode_gamma(struct hk_blind_wedge_list *out,
+												 const struct hk_bmap *bmap,
+												 const struct hk_blind_bpair_set *set,
+												 int d_scale_mode,
+												 float d_scale_eps_count,
+												 float d_scale_posterior_gamma)
+{
 	struct hk_blind_softall_aux aux;
 	int ret = -1;
 	assert(out);
@@ -4098,6 +4168,8 @@ int hk_blind_wedge_list_build_softall_mode(struct hk_blind_wedge_list *out,
 	assert(hk_blind_d_scale_mode_valid(d_scale_mode));
 	assert(isfinite(d_scale_eps_count));
 	assert(d_scale_eps_count > 0.0f);
+	assert(isfinite(d_scale_posterior_gamma));
+	assert(d_scale_posterior_gamma >= 0.0f);
 	memset(&aux, 0, sizeof(aux));
 
 	out->n_edges = 0;
@@ -4123,7 +4195,8 @@ int hk_blind_wedge_list_build_softall_mode(struct hk_blind_wedge_list *out,
 	if (hk_blind_build_softall_map(bmap, set, &aux) != 0)
 		goto cleanup;
 	ret = hk_blind_wedge_list_build_softall_from_map(out, bmap, &aux,
-													 d_scale_mode, d_scale_eps_count);
+													 d_scale_mode, d_scale_eps_count,
+													 d_scale_posterior_gamma);
 
 cleanup:
 	free(aux.final_phased_prob);
@@ -4638,6 +4711,8 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct 
 	assert(hk_blind_d_scale_mode_valid(iter_conf->d_scale_mode));
 	assert(isfinite(iter_conf->d_scale_eps_count));
 	assert(iter_conf->d_scale_eps_count > 0.0f);
+	assert(isfinite(iter_conf->d_scale_posterior_gamma));
+	assert(iter_conf->d_scale_posterior_gamma >= 0.0f);
 	assert(hk_blind_estep_score_mode_valid(iter_conf->estep_score_mode));
 	assert(isfinite(anchor_k));
 	assert(anchor_k >= 0.0f);
@@ -4687,9 +4762,10 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct 
 	free(sep_force);
 
 	hk_blind_wedge_list_init(&wedges);
-	ret = hk_blind_wedge_list_build_softall_mode(&wedges, bmap, set,
-												 iter_conf->d_scale_mode,
-												 iter_conf->d_scale_eps_count);
+	ret = hk_blind_wedge_list_build_softall_mode_gamma(&wedges, bmap, set,
+													   iter_conf->d_scale_mode,
+													   iter_conf->d_scale_eps_count,
+													   iter_conf->d_scale_posterior_gamma);
 	if (ret != 0) {
 		hk_blind_wedge_list_destroy(&wedges);
 		free(prev_coords);
@@ -4914,6 +4990,8 @@ static void hk_blind_assert_single_iter_conf(const struct hk_blind_single_iter_c
 	assert(hk_blind_d_scale_mode_valid(conf->d_scale_mode));
 	assert(isfinite(conf->d_scale_eps_count));
 	assert(conf->d_scale_eps_count > 0.0f);
+	assert(isfinite(conf->d_scale_posterior_gamma));
+	assert(conf->d_scale_posterior_gamma >= 0.0f);
 	assert(hk_blind_estep_score_mode_valid(conf->estep_score_mode));
 }
 
