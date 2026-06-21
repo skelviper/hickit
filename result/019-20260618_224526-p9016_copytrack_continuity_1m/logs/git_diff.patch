@@ -1,0 +1,1224 @@
+diff --git a/Makefile b/Makefile
+index 09718cb..564430b 100644
+--- a/Makefile
++++ b/Makefile
+@@ -68,6 +68,9 @@ test: smoke_blind_p9016_minimal
+ run_blind_p9016_minimal.bin: run_blind_p9016_minimal.c $(BLIND_COMMON_OBJS) $(FDG_GPU_STAMP) hickit.h hkpriv.h krng.h
+ 	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) run_blind_p9016_minimal.c $(BLIND_COMMON_OBJS) -o $@ $(LDFLAGS) $(LIBS)
+ 
++run_blind_p9016_fixed_posterior_relax.bin: run_blind_p9016_fixed_posterior_relax.c $(BLIND_COMMON_OBJS) $(FDG_GPU_STAMP) hickit.h hkpriv.h krng.h
++	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) run_blind_p9016_fixed_posterior_relax.c $(BLIND_COMMON_OBJS) -o $@ $(LDFLAGS) $(LIBS)
++
+ smoke_blind_p9016_minimal: run_blind_p9016_minimal.bin audit_blind_p9016_full_cpu_output.bin testdata/p9016_blind_smoke.pairs
+ 	rm -rf $(P9016_MINIMAL_SMOKE_ROOT)
+ 	mkdir -p $(SMOKE_RES_ROOT)
+diff --git a/audit_blind_p9016_full_cpu_output.c b/audit_blind_p9016_full_cpu_output.c
+index fcfeaf2..131f3d4 100644
+--- a/audit_blind_p9016_full_cpu_output.c
++++ b/audit_blind_p9016_full_cpu_output.c
+@@ -103,6 +103,7 @@ enum manifest_key {
+ 	MK_INIT_SCALE,
+ 	MK_CHR_SEP_UNIT,
+ 	MK_LAMBDA_CHR_SEP,
++	MK_LAMBDA_COPYTRACK,
+ 	MK_N_KEYS
+ };
+ 
+@@ -152,6 +153,7 @@ struct manifest_info {
+ 	double d_scale_eps_count;
+ 	double min_sep_unit;
+ 	double lambda_sep;
++	double lambda_copytrack;
+ 	double relax_step;
+ 	double temperature_start;
+ 	double temperature_end;
+@@ -403,6 +405,7 @@ static int manifest_key_index(const char *key)
+ 	if (strcmp(key, "init_scale") == 0) return MK_INIT_SCALE;
+ 	if (strcmp(key, "chr_sep_unit") == 0) return MK_CHR_SEP_UNIT;
+ 	if (strcmp(key, "lambda_chr_sep") == 0) return MK_LAMBDA_CHR_SEP;
++	if (strcmp(key, "lambda_copytrack") == 0) return MK_LAMBDA_COPYTRACK;
+ 	if (strcmp(key, "init_seed") == 0) return MK_INIT_SEED;
+ 	if (strcmp(key, "enable_repulsion") == 0) return MK_ENABLE_REPULSION;
+ 	if (strcmp(key, "repulsion_mode") == 0) return MK_REPULSION_MODE;
+@@ -460,6 +463,8 @@ static int manifest_optional_current_key(const char *key)
+ 		   strcmp(key, "copy_labels_are_gauge_only") == 0 ||
+ 		   strcmp(key, "uses_charm_or_reference") == 0 ||
+ 		   strcmp(key, "uses_charm_for_training") == 0 ||
++		   strcmp(key, "reference_derived_positive_control") == 0 ||
++		   strcmp(key, "reference_training_source_3dg") == 0 ||
+ 		   strcmp(key, "repulsion_multiplier") == 0 ||
+ 		   strcmp(key, "k_rel_rep_effective") == 0 ||
+ 		   strcmp(key, "output_coords_gz") == 0 ||
+@@ -480,6 +485,14 @@ static int manifest_optional_current_key(const char *key)
+ 			   strcmp(key, "final_backbone_energy") == 0 ||
+ 			   strcmp(key, "final_sep_energy") == 0 ||
+ 			   strcmp(key, "final_sep_force_l1") == 0 ||
++			   strcmp(key, "copytrack_prior_mode") == 0 ||
++			   strcmp(key, "copytrack_scope") == 0 ||
++			   strcmp(key, "copytrack_vector_definition") == 0 ||
++			   strcmp(key, "copytrack_uses_phase_labels") == 0 ||
++			   strcmp(key, "copytrack_uses_charm_or_reference") == 0 ||
++			   strcmp(key, "final_copytrack_energy") == 0 ||
++			   strcmp(key, "final_copytrack_force_l1") == 0 ||
++			   strcmp(key, "n_copytrack_nonfinite_step") == 0 ||
+ 			   strcmp(key, "git_commit") == 0 ||
+ 			   strcmp(key, "git_dirty_count") == 0 ||
+ 			   strcmp(key, "binary_hash") == 0;
+@@ -627,6 +640,7 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
+ 	case MK_D_SCALE_EPS_COUNT: return parse_double_value(value, &info->d_scale_eps_count);
+ 	case MK_MIN_SEP_UNIT: return parse_double_value(value, &info->min_sep_unit);
+ 	case MK_LAMBDA_SEP: return parse_double_value(value, &info->lambda_sep);
++	case MK_LAMBDA_COPYTRACK: return parse_double_value(value, &info->lambda_copytrack);
+ 	case MK_RELAX_STEP: return parse_double_value(value, &info->relax_step);
+ 	case MK_TEMPERATURE_START: return parse_double_value(value, &info->temperature_start);
+ 	case MK_TEMPERATURE_END: return parse_double_value(value, &info->temperature_end);
+@@ -691,6 +705,7 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
+ 	info->init_scale = NAN;
+ 	info->chr_sep_unit = NAN;
+ 	info->lambda_chr_sep = NAN;
++	info->lambda_copytrack = 0.0;
+ 	audit_init(audit);
+ 	if (fp == 0) {
+ 		add_example(audit, "manifest open failed");
+@@ -861,6 +876,7 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
+ 	}
+ 	if (!isfinite(info->min_sep_unit) || info->min_sep_unit < 0.0 ||
+ 		!isfinite(info->lambda_sep) || info->lambda_sep < 0.0 ||
++		!isfinite(info->lambda_copytrack) || info->lambda_copytrack < 0.0 ||
+ 		!isfinite(info->relax_step) || info->relax_step < 0.0) {
+ 		add_example(audit, "manifest separation/relax value out of range");
+ 		failed = 1;
+diff --git a/blind.c b/blind.c
+index 9df7aeb..08a3c32 100644
+--- a/blind.c
++++ b/blind.c
+@@ -1059,6 +1059,75 @@ float hk_blind_homolog_sep_accumulate_force(int32_t n_haploid, const fvec3_t *co
+ 													min_sep_unit, lambda_sep, 0, 0);
+ }
+ 
++float hk_blind_copytrack_accumulate_force(const struct hk_bmap *bmap, const fvec3_t *coords,
++										  fvec3_t *force, float unit, float lambda_copytrack,
++										  float *force_l1, int32_t *n_nonfinite)
++{
++	double total = 0.0, l1 = 0.0;
++	int32_t n_bad = 0;
++	int32_t i;
++	int a;
++
++	assert(bmap);
++	assert(bmap->n_beads >= 0);
++	assert(bmap->n_beads == 0 || bmap->beads);
++	assert(isfinite(unit));
++	assert(unit > 0.0f);
++	assert(isfinite(lambda_copytrack));
++	assert(lambda_copytrack >= 0.0f);
++	if (force_l1) *force_l1 = 0.0f;
++	if (n_nonfinite) *n_nonfinite = 0;
++	if (bmap->n_beads <= 1 || lambda_copytrack <= 0.0f)
++		return 0.0f;
++	assert(coords);
++	assert(force);
++
++	for (i = 1; i < bmap->n_beads; ++i) {
++		int32_t prev = i - 1;
++		int32_t cur = i;
++		int32_t prev0, prev1, cur0, cur1;
++		fvec3_t delta, f;
++		int edge_bad = 0;
++		if (bmap->beads[prev].chr != bmap->beads[cur].chr)
++			continue;
++		prev0 = hk_diploid_bid(prev, HK_DIPLOID_COPY0);
++		prev1 = hk_diploid_bid(prev, HK_DIPLOID_COPY1);
++		cur0 = hk_diploid_bid(cur, HK_DIPLOID_COPY0);
++		cur1 = hk_diploid_bid(cur, HK_DIPLOID_COPY1);
++		for (a = 0; a < 3; ++a) {
++			float v_prev = coords[prev1][a] - coords[prev0][a];
++			float v_cur = coords[cur1][a] - coords[cur0][a];
++			delta[a] = v_cur - v_prev;
++			if (!isfinite(delta[a])) {
++				++n_bad;
++				edge_bad = 1;
++			}
++		}
++		if (edge_bad)
++			continue;
++		for (a = 0; a < 3; ++a) {
++			float d_unit = delta[a] / unit;
++			total += (double)lambda_copytrack * (double)d_unit * (double)d_unit;
++			f[a] = -2.0f * lambda_copytrack * delta[a] / (unit * unit);
++		}
++		for (a = 0; a < 3; ++a) {
++			force[cur1][a] += f[a];
++			force[cur0][a] -= f[a];
++			force[prev1][a] -= f[a];
++			force[prev0][a] += f[a];
++			if (isfinite(f[a])) l1 += 4.0 * fabs((double)f[a]);
++			else n_bad += 4;
++			assert(isfinite(force[cur1][a]));
++			assert(isfinite(force[cur0][a]));
++			assert(isfinite(force[prev1][a]));
++			assert(isfinite(force[prev0][a]));
++		}
++	}
++	if (force_l1) *force_l1 = (float)l1;
++	if (n_nonfinite) *n_nonfinite = n_bad;
++	return (float)total;
++}
++
+ static float hk_blind_chr_centroid_sep_accumulate_force(const struct hk_bmap *bmap,
+ 														const fvec3_t *coords,
+ 														fvec3_t *force,
+@@ -2530,18 +2599,21 @@ void hk_blind_step_diag_init(struct hk_blind_step_diag *diag)
+ 	diag->backbone_energy = 0.0f;
+ 	diag->repulsion_energy = 0.0f;
+ 	diag->sep_energy = 0.0f;
++	diag->copytrack_energy = 0.0f;
+ 	diag->anchor_energy = 0.0f;
+ 	diag->total_energy = 0.0f;
+ 	diag->force_l1 = 0.0f;
+ 	diag->backbone_force_l1 = 0.0f;
+ 	diag->repulsion_force_l1 = 0.0f;
+ 	diag->sep_force_l1 = 0.0f;
++	diag->copytrack_force_l1 = 0.0f;
+ 	diag->anchor_force_l1 = 0.0f;
+ 	diag->n_force_nonfinite = 0;
+ 	diag->n_contact_nonfinite = 0;
+ 	diag->n_backbone_nonfinite = 0;
+ 	diag->n_repulsion_nonfinite = 0;
+ 	diag->n_sep_nonfinite = 0;
++	diag->n_copytrack_nonfinite = 0;
+ 	diag->n_anchor_nonfinite = 0;
+ 	diag->n_backbone_edges = 0;
+ 	diag->n_repulsion_pairs_considered = 0;
+@@ -2554,7 +2626,7 @@ static int hk_blind_relax_step_cpu_impl(const struct hk_fdg_conf *conf, const st
+ 										const struct hk_bmap *bmap_or_null, int32_t n_haploid, fvec3_t *coords, float unit, float step,
+ 										float min_sep_unit, float lambda_sep, int enable_repulsion, int repulsion_mode, float rel_rep_k,
+ 										float repulsion_block_k_min,
+-										float chr_sep_unit, float lambda_chr_sep,
++										float chr_sep_unit, float lambda_chr_sep, float lambda_copytrack,
+ 										const struct hk_blind_coarse_to_fine_map *anchor_map,
+ 										const fvec3_t *coarse_diploid_coords, float anchor_k,
+ 										struct hk_blind_step_diag *diag)
+@@ -2563,11 +2635,13 @@ static int hk_blind_relax_step_cpu_impl(const struct hk_fdg_conf *conf, const st
+ 	struct hk_blind_backbone_diag backbone_diag;
+ 	struct hk_blind_repulsion_diag repulsion_diag;
+ 	float contact_energy, backbone_energy = 0.0f, repulsion_energy = 0.0f, sep_energy;
++	float copytrack_energy = 0.0f, copytrack_force_l1 = 0.0f;
+ 	float sep_force_l1 = 0.0f, anchor_energy = 0.0f, anchor_force_l1 = 0.0f;
+ 	double force_l1 = 0.0;
+ 	int32_t n_diploid;
+ 	int32_t n_contact_nonfinite = 0;
+ 	int32_t n_sep_nonfinite = 0;
++	int32_t n_copytrack_nonfinite = 0;
+ 	int32_t n_anchor_nonfinite = 0;
+ 	int32_t n_force_nonfinite = 0;
+ 	int32_t i;
+@@ -2597,6 +2671,8 @@ static int hk_blind_relax_step_cpu_impl(const struct hk_fdg_conf *conf, const st
+ 	assert(chr_sep_unit >= 0.0f);
+ 	assert(isfinite(lambda_chr_sep));
+ 	assert(lambda_chr_sep >= 0.0f);
++	assert(isfinite(lambda_copytrack));
++	assert(lambda_copytrack >= 0.0f);
+ 	assert(isfinite(anchor_k));
+ 	assert(anchor_k >= 0.0f);
+ 	if (bmap_or_null) {
+@@ -2652,6 +2728,12 @@ static int hk_blind_relax_step_cpu_impl(const struct hk_fdg_conf *conf, const st
+ 		sep_force_l1 += chr_sep_force_l1;
+ 		n_sep_nonfinite += chr_sep_nonfinite;
+ 	}
++	if (bmap_or_null && lambda_copytrack > 0.0f) {
++		copytrack_energy = hk_blind_copytrack_accumulate_force(bmap_or_null, coords, force,
++															   unit, lambda_copytrack,
++															   &copytrack_force_l1,
++															   &n_copytrack_nonfinite);
++	}
+ 	if (anchor_map && anchor_k > 0.0f)
+ 		anchor_energy = hk_blind_parent_centroid_anchor_accumulate_force(anchor_map, coords, coarse_diploid_coords,
+ 																		 anchor_k, force, &n_anchor_nonfinite,
+@@ -2675,19 +2757,23 @@ static int hk_blind_relax_step_cpu_impl(const struct hk_fdg_conf *conf, const st
+ 		diag->backbone_energy = backbone_energy;
+ 		diag->repulsion_energy = repulsion_energy;
+ 		diag->sep_energy = sep_energy;
++		diag->copytrack_energy = copytrack_energy;
+ 		diag->anchor_energy = anchor_energy;
+-		diag->total_energy = contact_energy + backbone_energy + repulsion_energy + sep_energy + anchor_energy;
+-			diag->force_l1 = (float)force_l1;
+-			diag->backbone_force_l1 = backbone_diag.force_l1;
+-			diag->repulsion_force_l1 = repulsion_diag.force_l1;
+-			diag->sep_force_l1 = sep_force_l1;
+-			diag->anchor_force_l1 = anchor_force_l1;
+-			diag->n_force_nonfinite = n_force_nonfinite;
+-			diag->n_contact_nonfinite = n_contact_nonfinite;
+-			diag->n_backbone_nonfinite = backbone_diag.n_nonfinite;
+-			diag->n_repulsion_nonfinite = repulsion_diag.n_nonfinite;
+-			diag->n_sep_nonfinite = n_sep_nonfinite;
+-			diag->n_anchor_nonfinite = n_anchor_nonfinite;
++		diag->total_energy = contact_energy + backbone_energy + repulsion_energy +
++			sep_energy + copytrack_energy + anchor_energy;
++		diag->force_l1 = (float)force_l1;
++		diag->backbone_force_l1 = backbone_diag.force_l1;
++		diag->repulsion_force_l1 = repulsion_diag.force_l1;
++		diag->sep_force_l1 = sep_force_l1;
++		diag->copytrack_force_l1 = copytrack_force_l1;
++		diag->anchor_force_l1 = anchor_force_l1;
++		diag->n_force_nonfinite = n_force_nonfinite;
++		diag->n_contact_nonfinite = n_contact_nonfinite;
++		diag->n_backbone_nonfinite = backbone_diag.n_nonfinite;
++		diag->n_repulsion_nonfinite = repulsion_diag.n_nonfinite;
++		diag->n_sep_nonfinite = n_sep_nonfinite;
++		diag->n_copytrack_nonfinite = n_copytrack_nonfinite;
++		diag->n_anchor_nonfinite = n_anchor_nonfinite;
+ 		diag->n_backbone_edges = backbone_diag.n_edges;
+ 		diag->n_repulsion_pairs_considered = repulsion_diag.n_pairs_considered;
+ 		diag->n_repulsion_pairs_blocked = repulsion_diag.n_pairs_blocked;
+@@ -2705,7 +2791,7 @@ int hk_blind_relax_step_cpu(const struct hk_fdg_conf *conf, const struct hk_blin
+ {
+ 	return hk_blind_relax_step_cpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step,
+ 										min_sep_unit, lambda_sep, enable_repulsion, repulsion_mode, rel_rep_k,
+-										0.0f, 0.0f, 0.0f, 0, 0, 0.0f, diag);
++										0.0f, 0.0f, 0.0f, 0.0f, 0, 0, 0.0f, diag);
+ }
+ 
+ int hk_blind_relax_step_parent_anchor_cpu(const struct hk_fdg_conf *conf, const struct hk_blind_wedge_list *edges,
+@@ -2718,7 +2804,7 @@ int hk_blind_relax_step_parent_anchor_cpu(const struct hk_fdg_conf *conf, const
+ {
+ 	return hk_blind_relax_step_cpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step,
+ 										min_sep_unit, lambda_sep, enable_repulsion, repulsion_mode, rel_rep_k,
+-										0.0f, 0.0f, 0.0f, anchor_map, coarse_diploid_coords, anchor_k, diag);
++										0.0f, 0.0f, 0.0f, 0.0f, anchor_map, coarse_diploid_coords, anchor_k, diag);
+ }
+ 
+ void hk_blind_relax_diag_init(struct hk_blind_relax_diag *diag)
+@@ -2736,6 +2822,8 @@ void hk_blind_relax_diag_init(struct hk_blind_relax_diag *diag)
+ 	diag->final_repulsion_energy = 0.0f;
+ 	diag->initial_sep_energy = 0.0f;
+ 	diag->final_sep_energy = 0.0f;
++	diag->initial_copytrack_energy = 0.0f;
++	diag->final_copytrack_energy = 0.0f;
+ 	diag->initial_anchor_energy = 0.0f;
+ 	diag->final_anchor_energy = 0.0f;
+ 	diag->max_force_l1 = 0.0f;
+@@ -2746,6 +2834,8 @@ void hk_blind_relax_diag_init(struct hk_blind_relax_diag *diag)
+ 	diag->final_repulsion_force_l1 = 0.0f;
+ 	diag->max_sep_force_l1 = 0.0f;
+ 	diag->final_sep_force_l1 = 0.0f;
++	diag->max_copytrack_force_l1 = 0.0f;
++	diag->final_copytrack_force_l1 = 0.0f;
+ 	diag->max_anchor_force_l1 = 0.0f;
+ 	diag->final_anchor_force_l1 = 0.0f;
+ 	diag->final_n_repulsion_pairs_considered = 0;
+@@ -2755,6 +2845,7 @@ void hk_blind_relax_diag_init(struct hk_blind_relax_diag *diag)
+ 	diag->n_backbone_nonfinite_step = 0;
+ 	diag->n_repulsion_nonfinite_step = 0;
+ 	diag->n_sep_nonfinite_step = 0;
++	diag->n_copytrack_nonfinite_step = 0;
+ 	diag->n_anchor_nonfinite_step = 0;
+ 	diag->n_coord_nonfinite = 0;
+ 	diag->repulsion_mode = HK_BLIND_REPULSION_NONE;
+@@ -2784,17 +2875,20 @@ static int hk_blind_step_diag_has_nonfinite(const struct hk_blind_step_diag *dia
+ 		   diag->n_backbone_nonfinite != 0 ||
+ 		   diag->n_repulsion_nonfinite != 0 ||
+ 		   diag->n_sep_nonfinite != 0 ||
++		   diag->n_copytrack_nonfinite != 0 ||
+ 		   diag->n_anchor_nonfinite != 0 ||
+ 		   diag->n_force_nonfinite != 0 ||
+ 		   !hk_blind_float_isfinite(diag->contact_energy) ||
+ 		   !hk_blind_float_isfinite(diag->backbone_energy) ||
+ 		   !hk_blind_float_isfinite(diag->repulsion_energy) ||
+ 		   !hk_blind_float_isfinite(diag->sep_energy) ||
++		   !hk_blind_float_isfinite(diag->copytrack_energy) ||
+ 		   !hk_blind_float_isfinite(diag->anchor_energy) ||
+ 		   !hk_blind_float_isfinite(diag->total_energy) ||
+ 		   !hk_blind_float_isfinite(diag->backbone_force_l1) ||
+ 		   !hk_blind_float_isfinite(diag->repulsion_force_l1) ||
+ 		   !hk_blind_float_isfinite(diag->sep_force_l1) ||
++		   !hk_blind_float_isfinite(diag->copytrack_force_l1) ||
+ 		   !hk_blind_float_isfinite(diag->anchor_force_l1) ||
+ 		   !hk_blind_float_isfinite(diag->force_l1);
+ }
+@@ -2803,7 +2897,7 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct
+ 								   const struct hk_bmap *bmap_or_null, int32_t n_haploid, fvec3_t *coords,
+ 								   float unit, float step, int32_t n_steps, float min_sep_unit, float lambda_sep,
+ 								   int enable_repulsion, int repulsion_mode, float repulsion_block_k_min,
+-								   float chr_sep_unit, float lambda_chr_sep,
++								   float chr_sep_unit, float lambda_chr_sep, float lambda_copytrack,
+ 								   const struct hk_blind_coarse_to_fine_map *anchor_map,
+ 								   const fvec3_t *coarse_diploid_coords, float anchor_k,
+ 								   struct hk_blind_relax_diag *diag)
+@@ -2835,6 +2929,8 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct
+ 	assert(chr_sep_unit >= 0.0f);
+ 	assert(isfinite(lambda_chr_sep));
+ 	assert(lambda_chr_sep >= 0.0f);
++	assert(isfinite(lambda_copytrack));
++	assert(lambda_copytrack >= 0.0f);
+ 	assert(isfinite(anchor_k));
+ 	assert(anchor_k >= 0.0f);
+ 	assert(diag);
+@@ -2875,6 +2971,7 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct
+ 											   enable_repulsion? hk_blind_rel_rep_schedule_at(t, n_steps) : 0.0f,
+ 											   repulsion_block_k_min,
+ 											   chr_sep_unit, lambda_chr_sep,
++											   lambda_copytrack,
+ 											   anchor_map, coarse_diploid_coords, anchor_k,
+ 											   &step_diag);
+ 		if (t == 0) {
+@@ -2883,6 +2980,7 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct
+ 			diag->initial_backbone_energy = step_diag.backbone_energy;
+ 			diag->initial_repulsion_energy = step_diag.repulsion_energy;
+ 			diag->initial_sep_energy = step_diag.sep_energy;
++			diag->initial_copytrack_energy = step_diag.copytrack_energy;
+ 			diag->initial_anchor_energy = step_diag.anchor_energy;
+ 		}
+ 		diag->final_total_energy = step_diag.total_energy;
+@@ -2890,11 +2988,13 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct
+ 		diag->final_backbone_energy = step_diag.backbone_energy;
+ 		diag->final_repulsion_energy = step_diag.repulsion_energy;
+ 		diag->final_sep_energy = step_diag.sep_energy;
++		diag->final_copytrack_energy = step_diag.copytrack_energy;
+ 		diag->final_anchor_energy = step_diag.anchor_energy;
+ 		diag->final_force_l1 = step_diag.force_l1;
+ 		diag->final_backbone_force_l1 = step_diag.backbone_force_l1;
+ 		diag->final_repulsion_force_l1 = step_diag.repulsion_force_l1;
+ 		diag->final_sep_force_l1 = step_diag.sep_force_l1;
++		diag->final_copytrack_force_l1 = step_diag.copytrack_force_l1;
+ 		diag->final_anchor_force_l1 = step_diag.anchor_force_l1;
+ 		diag->final_n_repulsion_pairs_considered = step_diag.n_repulsion_pairs_considered;
+ 		diag->final_n_repulsion_pairs_blocked = step_diag.n_repulsion_pairs_blocked;
+@@ -2907,6 +3007,8 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct
+ 			diag->max_repulsion_force_l1 = step_diag.repulsion_force_l1;
+ 		if (hk_blind_float_isfinite(step_diag.sep_force_l1) && step_diag.sep_force_l1 > diag->max_sep_force_l1)
+ 			diag->max_sep_force_l1 = step_diag.sep_force_l1;
++		if (hk_blind_float_isfinite(step_diag.copytrack_force_l1) && step_diag.copytrack_force_l1 > diag->max_copytrack_force_l1)
++			diag->max_copytrack_force_l1 = step_diag.copytrack_force_l1;
+ 		if (hk_blind_float_isfinite(step_diag.anchor_force_l1) && step_diag.anchor_force_l1 > diag->max_anchor_force_l1)
+ 			diag->max_anchor_force_l1 = step_diag.anchor_force_l1;
+ 		if (step_diag.n_backbone_nonfinite != 0)
+@@ -2915,6 +3017,8 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct
+ 			++diag->n_repulsion_nonfinite_step;
+ 		if (step_diag.n_sep_nonfinite != 0)
+ 			++diag->n_sep_nonfinite_step;
++		if (step_diag.n_copytrack_nonfinite != 0)
++			++diag->n_copytrack_nonfinite_step;
+ 		if (step_diag.n_anchor_nonfinite != 0)
+ 			++diag->n_anchor_nonfinite_step;
+ 
+@@ -3040,14 +3144,15 @@ fail:
+ 	return -1;
+ }
+ 
+-static int hk_blind_apply_extra_cpu_forces(const struct hk_blind_coarse_to_fine_map *anchor_map,
++static int hk_blind_apply_extra_cpu_forces(const struct hk_bmap *bmap_or_null,
++										   const struct hk_blind_coarse_to_fine_map *anchor_map,
+ 										   const fvec3_t *coarse_diploid_coords, float anchor_k,
+ 										   int32_t n_haploid, fvec3_t *coords, float unit, float step,
+-										   float min_sep_unit, float lambda_sep,
++										   float min_sep_unit, float lambda_sep, float lambda_copytrack,
+ 										   fvec3_t *extra_force, struct hk_blind_step_diag *step_diag)
+ {
+-	float sep_force_l1 = 0.0f, anchor_force_l1 = 0.0f;
+-	int32_t n_sep_nonfinite = 0, n_anchor_nonfinite = 0;
++	float sep_force_l1 = 0.0f, copytrack_force_l1 = 0.0f, anchor_force_l1 = 0.0f;
++	int32_t n_sep_nonfinite = 0, n_copytrack_nonfinite = 0, n_anchor_nonfinite = 0;
+ 	int32_t n_diploid = n_haploid * HK_DIPLOID_N_COPY;
+ 	int32_t i;
+ 	int a;
+@@ -3062,6 +3167,14 @@ static int hk_blind_apply_extra_cpu_forces(const struct hk_blind_coarse_to_fine_
+ 																	 &sep_force_l1, &n_sep_nonfinite);
+ 	step_diag->sep_force_l1 = sep_force_l1;
+ 	step_diag->n_sep_nonfinite = n_sep_nonfinite;
++	if (bmap_or_null && lambda_copytrack > 0.0f) {
++		step_diag->copytrack_energy = hk_blind_copytrack_accumulate_force(bmap_or_null, coords, extra_force,
++																		  unit, lambda_copytrack,
++																		  &copytrack_force_l1,
++																		  &n_copytrack_nonfinite);
++		step_diag->copytrack_force_l1 = copytrack_force_l1;
++		step_diag->n_copytrack_nonfinite = n_copytrack_nonfinite;
++	}
+ 	if (anchor_map && anchor_k > 0.0f) {
+ 		step_diag->anchor_energy = hk_blind_parent_centroid_anchor_accumulate_force(anchor_map, coords,
+ 																					coarse_diploid_coords,
+@@ -3090,6 +3203,7 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct
+ 								   const struct hk_bmap *bmap_or_null, int32_t n_haploid, fvec3_t *coords,
+ 								   float unit, float step, int32_t n_steps, float min_sep_unit, float lambda_sep,
+ 								   int enable_repulsion, int repulsion_mode, float repulsion_block_k_min,
++								   float lambda_copytrack,
+ 								   const struct hk_blind_coarse_to_fine_map *anchor_map,
+ 								   const fvec3_t *coarse_diploid_coords, float anchor_k,
+ 								   struct hk_blind_relax_diag *diag)
+@@ -3114,6 +3228,8 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct
+ 	assert(enable_repulsion == 0 || enable_repulsion == 1);
+ 	assert(repulsion_mode == HK_BLIND_REPULSION_CELL);
+ 	assert(repulsion_block_k_min == 0.0f);
++	assert(isfinite(lambda_copytrack));
++	assert(lambda_copytrack >= 0.0f);
+ 	assert(diag);
+ 	if (bmap_or_null) {
+ 		assert(bmap_or_null->n_beads == n_haploid);
+@@ -3222,13 +3338,14 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct
+ 		step_diag.n_repulsion_pairs_considered = stats.active[HK_FDG_PAIR_TYPE_REPEL];
+ 		step_diag.n_repulsion_pairs_blocked = 0;
+ 		step_diag.repulsion_mode = enable_repulsion? repulsion_mode : HK_BLIND_REPULSION_NONE;
+-		if (min_sep_unit > 0.0f || lambda_sep > 0.0f || (anchor_map && anchor_k > 0.0f)) {
++		if (min_sep_unit > 0.0f || lambda_sep > 0.0f ||
++			lambda_copytrack > 0.0f || (anchor_map && anchor_k > 0.0f)) {
+ 			extra_force = n_diploid > 0? CALLOC(fvec3_t, n_diploid) : 0;
+ 			if (n_diploid > 0 && extra_force == 0)
+ 				goto cleanup;
+-			if (hk_blind_apply_extra_cpu_forces(anchor_map, coarse_diploid_coords, anchor_k,
++			if (hk_blind_apply_extra_cpu_forces(bmap_or_null, anchor_map, coarse_diploid_coords, anchor_k,
+ 												n_haploid, coords, unit, step,
+-												min_sep_unit, lambda_sep,
++												min_sep_unit, lambda_sep, lambda_copytrack,
+ 												extra_force, &step_diag) != 0) {
+ 				free(extra_force);
+ 				goto cleanup;
+@@ -3241,13 +3358,15 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct
+ 				}
+ 		}
+ 		step_diag.total_energy = step_diag.contact_energy + step_diag.backbone_energy +
+-			step_diag.repulsion_energy + step_diag.sep_energy + step_diag.anchor_energy;
++			step_diag.repulsion_energy + step_diag.sep_energy +
++			step_diag.copytrack_energy + step_diag.anchor_energy;
+ 		if (t == 0) {
+ 			diag->initial_total_energy = step_diag.total_energy;
+ 			diag->initial_contact_energy = step_diag.contact_energy;
+ 			diag->initial_backbone_energy = step_diag.backbone_energy;
+ 			diag->initial_repulsion_energy = step_diag.repulsion_energy;
+ 			diag->initial_sep_energy = step_diag.sep_energy;
++			diag->initial_copytrack_energy = step_diag.copytrack_energy;
+ 			diag->initial_anchor_energy = step_diag.anchor_energy;
+ 		}
+ 		diag->final_total_energy = step_diag.total_energy;
+@@ -3255,17 +3374,21 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct
+ 		diag->final_backbone_energy = step_diag.backbone_energy;
+ 		diag->final_repulsion_energy = step_diag.repulsion_energy;
+ 		diag->final_sep_energy = step_diag.sep_energy;
++		diag->final_copytrack_energy = step_diag.copytrack_energy;
+ 		diag->final_anchor_energy = step_diag.anchor_energy;
+ 		diag->final_force_l1 = step_diag.force_l1;
+ 		diag->final_backbone_force_l1 = step_diag.backbone_force_l1;
+ 		diag->final_repulsion_force_l1 = step_diag.repulsion_force_l1;
+ 		diag->final_sep_force_l1 = step_diag.sep_force_l1;
++		diag->final_copytrack_force_l1 = step_diag.copytrack_force_l1;
+ 		diag->final_anchor_force_l1 = step_diag.anchor_force_l1;
+ 		diag->final_n_repulsion_pairs_considered = step_diag.n_repulsion_pairs_considered;
+ 		diag->final_n_repulsion_pairs_blocked = step_diag.n_repulsion_pairs_blocked;
+ 		diag->final_n_repulsion_pairs_active = step_diag.n_repulsion_pairs_active;
+ 		if (hk_blind_float_isfinite(step_diag.force_l1) && step_diag.force_l1 > diag->max_force_l1)
+ 			diag->max_force_l1 = step_diag.force_l1;
++		if (hk_blind_float_isfinite(step_diag.copytrack_force_l1) && step_diag.copytrack_force_l1 > diag->max_copytrack_force_l1)
++			diag->max_copytrack_force_l1 = step_diag.copytrack_force_l1;
+ 		if (hk_blind_float_isfinite(step_diag.anchor_force_l1) && step_diag.anchor_force_l1 > diag->max_anchor_force_l1)
+ 			diag->max_anchor_force_l1 = step_diag.anchor_force_l1;
+ 		if (step_diag.n_backbone_nonfinite != 0)
+@@ -3274,6 +3397,8 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct
+ 			++diag->n_repulsion_nonfinite_step;
+ 		if (step_diag.n_sep_nonfinite != 0)
+ 			++diag->n_sep_nonfinite_step;
++		if (step_diag.n_copytrack_nonfinite != 0)
++			++diag->n_copytrack_nonfinite_step;
+ 		if (step_diag.n_anchor_nonfinite != 0)
+ 			++diag->n_anchor_nonfinite_step;
+ 		diag->n_coord_nonfinite = hk_blind_count_nonfinite_coords(coords, n_diploid);
+@@ -3296,7 +3421,7 @@ static int hk_blind_relax_impl(const struct hk_fdg_conf *conf, const struct hk_b
+ 							   const struct hk_bmap *bmap_or_null, int32_t n_haploid, fvec3_t *coords,
+ 							   float unit, float step, int32_t n_steps, float min_sep_unit, float lambda_sep,
+ 							   int enable_repulsion, int repulsion_mode, float repulsion_block_k_min,
+-							   float chr_sep_unit, float lambda_chr_sep,
++							   float chr_sep_unit, float lambda_chr_sep, float lambda_copytrack,
+ 							   const struct hk_blind_coarse_to_fine_map *anchor_map,
+ 							   const fvec3_t *coarse_diploid_coords, float anchor_k,
+ 							   struct hk_blind_relax_diag *diag)
+@@ -3307,13 +3432,13 @@ static int hk_blind_relax_impl(const struct hk_fdg_conf *conf, const struct hk_b
+ 			return -1;
+ 		return hk_blind_relax_gpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step,
+ 									   n_steps, min_sep_unit, lambda_sep, enable_repulsion,
+-									   repulsion_mode, repulsion_block_k_min,
++									   repulsion_mode, repulsion_block_k_min, lambda_copytrack,
+ 									   anchor_map, coarse_diploid_coords, anchor_k, diag);
+ 	}
+ 	return hk_blind_relax_cpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step,
+ 								   n_steps, min_sep_unit, lambda_sep, enable_repulsion,
+ 								   repulsion_mode, repulsion_block_k_min, chr_sep_unit,
+-								   lambda_chr_sep, anchor_map, coarse_diploid_coords,
++								   lambda_chr_sep, lambda_copytrack, anchor_map, coarse_diploid_coords,
+ 								   anchor_k, diag);
+ }
+ 
+@@ -3323,7 +3448,7 @@ int hk_blind_relax_cpu(const struct hk_fdg_conf *conf, const struct hk_blind_wed
+ {
+ 	return hk_blind_relax_cpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step, n_steps,
+ 								   min_sep_unit, lambda_sep, enable_repulsion, repulsion_mode,
+-								   0.0f, 0.0f, 0.0f, 0, 0, 0.0f, diag);
++								   0.0f, 0.0f, 0.0f, 0.0f, 0, 0, 0.0f, diag);
+ }
+ 
+ int hk_blind_relax_parent_anchor_cpu(const struct hk_fdg_conf *conf, const struct hk_blind_wedge_list *edges,
+@@ -3336,7 +3461,7 @@ int hk_blind_relax_parent_anchor_cpu(const struct hk_fdg_conf *conf, const struc
+ {
+ 	return hk_blind_relax_cpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step, n_steps,
+ 								   min_sep_unit, lambda_sep, enable_repulsion, repulsion_mode,
+-								   0.0f, 0.0f, 0.0f, anchor_map, coarse_diploid_coords, anchor_k, diag);
++								   0.0f, 0.0f, 0.0f, 0.0f, anchor_map, coarse_diploid_coords, anchor_k, diag);
+ }
+ 
+ void hk_blind_wedge_list_init(struct hk_blind_wedge_list *list)
+@@ -4693,6 +4818,8 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct
+ 	assert(iter_conf->min_sep_unit >= 0.0f);
+ 	assert(isfinite(iter_conf->lambda_sep));
+ 	assert(iter_conf->lambda_sep >= 0.0f);
++	assert(isfinite(iter_conf->lambda_copytrack));
++	assert(iter_conf->lambda_copytrack >= 0.0f);
+ 	assert(isfinite(iter_conf->chr_sep_unit));
+ 	assert(iter_conf->chr_sep_unit >= 0.0f);
+ 	assert(isfinite(iter_conf->lambda_chr_sep));
+@@ -4817,6 +4944,7 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct
+ 							  iter_conf->lambda_sep, iter_conf->enable_repulsion,
+ 							  iter_conf->repulsion_mode, iter_conf->repulsion_block_k_min,
+ 							  iter_conf->chr_sep_unit, iter_conf->lambda_chr_sep,
++							  iter_conf->lambda_copytrack,
+ 							  anchor_map, coarse_diploid_coords, anchor_k,
+ 							  &diag->relax_diag);
+ 	hk_blind_wedge_list_destroy(&wedges);
+@@ -4909,9 +5037,12 @@ void hk_blind_iter_loop_diag_init(struct hk_blind_iter_loop_diag *diag)
+ 	diag->final_n_repulsion_pairs_considered = 0;
+ 	diag->final_n_repulsion_pairs_blocked = 0;
+ 	diag->final_n_repulsion_pairs_active = 0;
++	diag->final_copytrack_energy = 0.0f;
++	diag->final_copytrack_force_l1 = 0.0f;
+ 	diag->final_anchor_energy = 0.0f;
+ 	diag->final_anchor_force_l1 = 0.0f;
+ 	diag->n_repulsion_nonfinite_step = 0;
++	diag->n_copytrack_nonfinite_step = 0;
+ 	diag->n_anchor_nonfinite_step = 0;
+ 	diag->repulsion_mode = HK_BLIND_REPULSION_NONE;
+ 	diag->posterior_refreshed_after_final_relax = 0;
+@@ -5190,10 +5321,13 @@ int hk_blind_run_iter_loop_cpu(const struct hk_bmap *bmap, struct hk_blind_bpair
+ 		loop_diag->final_n_repulsion_pairs_considered = iter_diag->relax_diag.final_n_repulsion_pairs_considered;
+ 		loop_diag->final_n_repulsion_pairs_blocked = iter_diag->relax_diag.final_n_repulsion_pairs_blocked;
+ 		loop_diag->final_n_repulsion_pairs_active = iter_diag->relax_diag.final_n_repulsion_pairs_active;
++		loop_diag->final_copytrack_energy = iter_diag->relax_diag.final_copytrack_energy;
++		loop_diag->final_copytrack_force_l1 = iter_diag->relax_diag.final_copytrack_force_l1;
+ 		loop_diag->final_anchor_energy = iter_diag->relax_diag.final_anchor_energy;
+ 		loop_diag->final_anchor_force_l1 = iter_diag->relax_diag.final_anchor_force_l1;
+ 		loop_diag->repulsion_mode = iter_diag->relax_diag.repulsion_mode;
+ 		loop_diag->n_repulsion_nonfinite_step += iter_diag->relax_diag.n_repulsion_nonfinite_step;
++		loop_diag->n_copytrack_nonfinite_step += iter_diag->relax_diag.n_copytrack_nonfinite_step;
+ 		loop_diag->n_anchor_nonfinite_step += iter_diag->relax_diag.n_anchor_nonfinite_step;
+ 		loop_diag->total_chr_flipped += iter_diag->n_chr_flipped;
+ 		if (hk_blind_single_iter_diag_has_bad_numeric(iter_diag))
+@@ -5321,10 +5455,13 @@ static int hk_blind_run_iter_loop_scheduled_cpu_impl(const struct hk_bmap *bmap,
+ 		loop_diag->final_n_repulsion_pairs_considered = iter_diag->relax_diag.final_n_repulsion_pairs_considered;
+ 		loop_diag->final_n_repulsion_pairs_blocked = iter_diag->relax_diag.final_n_repulsion_pairs_blocked;
+ 		loop_diag->final_n_repulsion_pairs_active = iter_diag->relax_diag.final_n_repulsion_pairs_active;
++		loop_diag->final_copytrack_energy = iter_diag->relax_diag.final_copytrack_energy;
++		loop_diag->final_copytrack_force_l1 = iter_diag->relax_diag.final_copytrack_force_l1;
+ 		loop_diag->final_anchor_energy = iter_diag->relax_diag.final_anchor_energy;
+ 		loop_diag->final_anchor_force_l1 = iter_diag->relax_diag.final_anchor_force_l1;
+ 		loop_diag->repulsion_mode = iter_diag->relax_diag.repulsion_mode;
+ 		loop_diag->n_repulsion_nonfinite_step += iter_diag->relax_diag.n_repulsion_nonfinite_step;
++		loop_diag->n_copytrack_nonfinite_step += iter_diag->relax_diag.n_copytrack_nonfinite_step;
+ 		loop_diag->n_anchor_nonfinite_step += iter_diag->relax_diag.n_anchor_nonfinite_step;
+ 		loop_diag->total_chr_flipped += iter_diag->n_chr_flipped;
+ 		if (hk_blind_single_iter_diag_has_bad_numeric(iter_diag))
+@@ -5602,13 +5739,15 @@ int hk_blind_write_iter_loop_diag_tsv(FILE *fp, const struct hk_blind_iter_loop_
+ 					"n_repulsion_nonfinite_step\trepulsion_mode\t"
+ 					"posterior_refreshed_after_final_relax\tposterior_refresh_temperature\t"
+ 					"posterior_refresh_mean_kl\tposterior_refresh_top_state_switch_frac\t"
+-					"posterior_refresh_mean_pU_before\tposterior_refresh_mean_pU_after\n") < 0)
++					"posterior_refresh_mean_pU_before\tposterior_refresh_mean_pU_after\t"
++					"final_copytrack_energy\tfinal_copytrack_force_l1\t"
++					"n_copytrack_nonfinite_step\n") < 0)
+ 		return -1;
+ 	if (fprintf(fp, "%d\t%d\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t"
+ 					"%d\t%d\t%d\t%d\t%.9g\t%.9g\t%.9g\t%.17g\t%.9g\t%.9g\t%.9g\t"
+ 					"%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t"
+ 					"%lld\t%lld\t%lld\t%lld\t%.9g\t%.9g\t%lld\t%lld\t%lld\t%d\t%d\t"
+-					"%d\t%.9g\t%.17g\t%.9g\t%.9g\t%.9g\n",
++					"%d\t%.9g\t%.17g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%d\n",
+ 				diag->n_iter, diag->n_completed,
+ 				diag->initial_mean_entropy, diag->final_mean_entropy,
+ 				diag->initial_mean_pU, diag->final_mean_pU,
+@@ -5642,7 +5781,10 @@ int hk_blind_write_iter_loop_diag_tsv(FILE *fp, const struct hk_blind_iter_loop_
+ 				diag->posterior_refresh_temperature, diag->posterior_refresh_mean_kl,
+ 				diag->posterior_refresh_top_state_switch_frac,
+ 				diag->posterior_refresh_mean_pU_before,
+-				diag->posterior_refresh_mean_pU_after) < 0)
++				diag->posterior_refresh_mean_pU_after,
++				diag->final_copytrack_energy,
++				diag->final_copytrack_force_l1,
++				diag->n_copytrack_nonfinite_step) < 0)
+ 		return -1;
+ 	return ferror(fp)? -1 : 0;
+ }
+diff --git a/eval/evaluate_p9016_baseline.py b/eval/evaluate_p9016_baseline.py
+index a78ac9d..2af4afa 100644
+--- a/eval/evaluate_p9016_baseline.py
++++ b/eval/evaluate_p9016_baseline.py
+@@ -197,26 +197,61 @@ def manifest_int(manifest: dict[str, str], key: str) -> int:
+         raise ValueError(f"training manifest {key} is not an integer: {manifest[key]}") from exc
+ 
+ 
+-def validate_train_manifest(manifest: dict[str, str], bin_size: int, expected_sample: str) -> None:
+-    required = {
+-        "sample": expected_sample,
+-        "runner_family": "p9016_minimal",
+-        "baseline": "softall",
+-        "mstep_graph_mode": "raw_expected_soft_all",
+-        "input_contact_source": "raw_pairs",
+-        "status": "OK",
+-    }
++def validate_train_manifest(
++    manifest: dict[str, str],
++    bin_size: int,
++    expected_sample: str,
++    allow_reference_derived_training: bool = False,
++) -> None:
++    runner_family = manifest.get("runner_family")
++    mstep_graph_mode = manifest.get("mstep_graph_mode")
++    baseline = manifest.get("baseline")
++    is_fixed_posterior_diagnostic = (
++        runner_family == "p9016_fixed_posterior_diagnostic"
++        and mstep_graph_mode == "fixed_bpair_state_edges"
++        and baseline == "fixed_posterior_diagnostic"
++        and manifest.get("fixed_posterior") == "1"
++    )
++    if is_fixed_posterior_diagnostic and not allow_reference_derived_training:
++        raise ValueError("fixed-posterior diagnostics require --allow-reference-derived-training")
++    if is_fixed_posterior_diagnostic:
++        required = {
++            "sample": expected_sample,
++            "status": "OK",
++        }
++    else:
++        required = {
++            "sample": expected_sample,
++            "runner_family": "p9016_minimal",
++            "baseline": "softall",
++            "mstep_graph_mode": "raw_expected_soft_all",
++            "status": "OK",
++        }
+     for key, expected in required.items():
+         got = manifest.get(key)
+         if got != expected:
+             raise ValueError(f"training manifest {key}={got!r}; expected {expected!r}")
++    source = manifest.get("input_contact_source")
++    if allow_reference_derived_training:
++        allowed_sources = {"raw_pairs", "charm3dg_derived_pairs", "imputed_or_positive_control_pairs"}
++        if source not in allowed_sources:
++            raise ValueError(f"training manifest input_contact_source={source!r}; expected one of {sorted(allowed_sources)}")
++    elif source != "raw_pairs":
++        raise ValueError(f"training manifest input_contact_source={source!r}; expected 'raw_pairs'")
+     if manifest_int(manifest, "resolution") != bin_size:
+         raise ValueError("training manifest resolution disagrees with --bin-size")
+     if manifest_int(manifest, "bin_size_bp") != bin_size:
+         raise ValueError("training manifest bin_size_bp disagrees with --bin-size")
+-    for key in ("uses_phase_labels", "uses_charm_or_reference", "uses_charm_for_training"):
+-        if manifest_int(manifest, key) != 0:
+-            raise ValueError(f"training manifest {key} must be 0")
++    if manifest_int(manifest, "uses_phase_labels") != 0:
++        raise ValueError("training manifest uses_phase_labels must be 0")
++    for key in ("uses_charm_or_reference", "uses_charm_for_training"):
++        value = manifest_int(manifest, key)
++        if source == "raw_pairs" and value != 0:
++            raise ValueError(f"training manifest {key} must be 0 for raw-pairs blind training")
++        if source != "raw_pairs" and not allow_reference_derived_training:
++            raise ValueError(f"training manifest {key} is reference-derived but eval did not opt in")
++        if source != "raw_pairs" and value != 1:
++            raise ValueError(f"training manifest {key} must be 1 for reference-derived positive controls")
+     if manifest_int(manifest, "copy_labels_are_gauge_only") != 1:
+         raise ValueError("training manifest copy_labels_are_gauge_only must be 1")
+     for key in ("n_raw", "n_bpair", "n_beads"):
+@@ -1493,6 +1528,31 @@ def write_readme(
+     volume_rows_data: list[dict[str, object]],
+     contact_distance_rows: list[dict[str, object]],
+ ) -> None:
++    train_input_source = str(summary.get("train_manifest_input_contact_source", "raw_pairs"))
++    uses_reference_training = str(summary.get("train_manifest_uses_charm_for_training", "0")) == "1"
++    allow_reference_eval = int(summary.get("allow_reference_derived_training_eval", 0)) == 1
++    if train_input_source == "raw_pairs" and not uses_reference_training:
++        training_input_desc = f"raw {args.expected_sample} pairs: `{args.pairs}`"
++        boundary_desc = (
++            f"training used raw {args.expected_sample} contact information only; "
++            "phase labels and CHARM/3DG were read only by this post-training evaluator."
++        )
++    elif uses_reference_training or allow_reference_eval:
++        reference_source = summary.get("train_manifest_reference_training_source_3dg", "")
++        source_suffix = f" from `{reference_source}`" if reference_source else ""
++        training_input_desc = f"{train_input_source}{source_suffix}"
++        boundary_desc = (
++            "training used reference-derived positive-control contacts; this is not a blind baseline. "
++            "SNP phase labels were still eval-only, and CHARM/3DG was used by training only through "
++            "the pre-generated contact input recorded in the training manifest."
++        )
++    else:
++        training_input_desc = f"{train_input_source}: `{args.pairs}`"
++        boundary_desc = (
++            "training input was not recognized as the standard raw-pairs blind baseline; "
++            "interpret this report according to the training manifest."
++        )
++
+     model_all = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_all")
+     model_cis = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_cis")
+     model_trans = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_trans")
+@@ -1552,11 +1612,11 @@ def write_readme(
+         fh.write(f"# {args.outdir.name}\n\n")
+         fh.write(f"- label: `{args.label}`\n")
+         fh.write(f"- created_at: `{summary['created_at']}`\n")
+-        fh.write(f"- training input: `{args.pairs}`\n")
++        fh.write(f"- training input: {training_input_desc}\n")
+         fh.write(f"- reconstruction: `{args.reconstruction}`\n")
+         fh.write(f"- CHARM/3DG eval reference: `{args.reference_3dg}`\n")
+         fh.write(f"- train manifest: `{args.train_manifest}`\n")
+-        fh.write(f"- boundary: training used raw {args.expected_sample} contact information only; phase labels and CHARM/3DG were read only by this post-training evaluator.\n")
++        fh.write(f"- boundary: {boundary_desc}\n")
+         fh.write("- copy gauge: structure plots and distance metrics use per-chromosome cis distance-matrix Spearman correlation to select a geometry gauge. Contact identity metrics report the reconstruction under a whole-chromosome SNP cis-top1 oracle gauge, which is eval-only and exists because copy0/copy1 are gauge labels that can be swapped independently per chromosome.\n")
+         fh.write("- contact denominator: contact accuracy uses eval-only raw contacts with both `phase0` and `phase1`, excluding same-bin contacts, and requiring a matching posterior bpair.\n")
+         fh.write("- alignment: 3D scatter plots and Procrustes RMSD use rigid alignment only: translation and rotation are fitted, reconstruction scale is not fitted to CHARM/3DG. The reported similarity scale is diagnostic only and is not applied.\n\n")
+@@ -1617,6 +1677,11 @@ def parse_args() -> argparse.Namespace:
+     parser.add_argument("--bin-size", type=int, default=4_000_000, help="Evaluation bin size in bp.")
+     parser.add_argument("--label", default="P9016 softall baseline", help="Human-readable run label.")
+     parser.add_argument("--expected-sample", default="P9016", help="Expected sample name in the training manifest.")
++    parser.add_argument(
++        "--allow-reference-derived-training",
++        action="store_true",
++        help="Permit positive-control runs whose training contacts were derived from CHARM/3DG.",
++    )
+     return parser.parse_args()
+ 
+ 
+@@ -1633,7 +1698,7 @@ def main() -> int:
+     posterior = read_posterior(posterior_path)
+     contact_counts = read_contact_truth_counts(args.pairs, args.bin_size, posterior)
+     train_manifest = read_train_manifest(args.train_manifest)
+-    validate_train_manifest(train_manifest, args.bin_size, args.expected_sample)
++    validate_train_manifest(train_manifest, args.bin_size, args.expected_sample, args.allow_reference_derived_training)
+     chroms = sorted({key[0] for key in reference} | {key[0] for key in reconstruction}, key=chrom_sort_key)
+ 
+     distance_swaps, cis_rows = choose_distance_swaps(chroms, reference, reconstruction)
+@@ -1819,9 +1884,24 @@ def main() -> int:
+                 float(np.mean(values)) if values else float("nan")
+             )
+     summary.update(pair_stats)
+-    for key in ["n_raw", "n_bpair", "n_beads", "resolution", "bin_size_bp", "mstep_graph_mode", "input_contact_source", "uses_charm_or_reference", "uses_phase_labels", "copy_labels_are_gauge_only"]:
++    for key in [
++        "n_raw",
++        "n_bpair",
++        "n_beads",
++        "resolution",
++        "bin_size_bp",
++        "mstep_graph_mode",
++        "input_contact_source",
++        "uses_charm_or_reference",
++        "uses_charm_for_training",
++        "reference_derived_positive_control",
++        "reference_training_source_3dg",
++        "uses_phase_labels",
++        "copy_labels_are_gauge_only",
++    ]:
+         if key in train_manifest:
+             summary[f"train_manifest_{key}"] = train_manifest[key]
++    summary["allow_reference_derived_training_eval"] = int(args.allow_reference_derived_training)
+ 
+     write_table(args.outdir / "cis_distance_correlations.tsv", cis_rows)
+     write_table(args.outdir / "cis_distance_correlation_matrix.tsv", cis_matrix_rows)
+diff --git a/hickit.h b/hickit.h
+index 636b57c..449ea2a 100644
+--- a/hickit.h
++++ b/hickit.h
+@@ -326,18 +326,21 @@ struct hk_blind_step_diag {
+ 	float backbone_energy;
+ 	float repulsion_energy;
+ 	float sep_energy;
++	float copytrack_energy;
+ 	float anchor_energy;
+ 	float total_energy;
+ 	float force_l1;
+ 	float backbone_force_l1;
+ 	float repulsion_force_l1;
+ 	float sep_force_l1;
++	float copytrack_force_l1;
+ 	float anchor_force_l1;
+ 	int32_t n_force_nonfinite;
+ 	int32_t n_contact_nonfinite;
+ 	int32_t n_backbone_nonfinite;
+ 	int32_t n_repulsion_nonfinite;
+ 	int32_t n_sep_nonfinite;
++	int32_t n_copytrack_nonfinite;
+ 	int32_t n_anchor_nonfinite;
+ 	int64_t n_backbone_edges;
+ 	int64_t n_repulsion_pairs_considered;
+@@ -398,6 +401,8 @@ struct hk_blind_relax_diag {
+ 	float final_repulsion_energy;
+ 	float initial_sep_energy;
+ 	float final_sep_energy;
++	float initial_copytrack_energy;
++	float final_copytrack_energy;
+ 	float initial_anchor_energy;
+ 	float final_anchor_energy;
+ 	float max_force_l1;
+@@ -408,6 +413,8 @@ struct hk_blind_relax_diag {
+ 	float final_repulsion_force_l1;
+ 	float max_sep_force_l1;
+ 	float final_sep_force_l1;
++	float max_copytrack_force_l1;
++	float final_copytrack_force_l1;
+ 	float max_anchor_force_l1;
+ 	float final_anchor_force_l1;
+ 	int64_t final_n_repulsion_pairs_considered;
+@@ -417,6 +424,7 @@ struct hk_blind_relax_diag {
+ 	int32_t n_backbone_nonfinite_step;
+ 	int32_t n_repulsion_nonfinite_step;
+ 	int32_t n_sep_nonfinite_step;
++	int32_t n_copytrack_nonfinite_step;
+ 	int32_t n_anchor_nonfinite_step;
+ 	int32_t n_coord_nonfinite;
+ 	int32_t repulsion_mode;
+@@ -431,6 +439,7 @@ struct hk_blind_single_iter_conf {
+ 	float rho_train_floor;
+ 	float min_sep_unit;
+ 	float lambda_sep;
++	float lambda_copytrack;
+ 	float chr_sep_unit;
+ 	float lambda_chr_sep;
+ 	float relax_step;
+@@ -522,7 +531,10 @@ struct hk_blind_iter_loop_diag {
+ 	int64_t final_n_repulsion_pairs_active;
+ 	float final_anchor_energy;
+ 	float final_anchor_force_l1;
++	float final_copytrack_energy;
++	float final_copytrack_force_l1;
+ 	int32_t n_repulsion_nonfinite_step;
++	int32_t n_copytrack_nonfinite_step;
+ 	int32_t n_anchor_nonfinite_step;
+ 	int32_t repulsion_mode;
+ 	int posterior_refreshed_after_final_relax;
+@@ -711,6 +723,9 @@ float hk_blind_homolog_sep_accumulate_force(int32_t n_haploid, const fvec3_t *co
+ float hk_blind_homolog_sep_accumulate_force_ex(int32_t n_haploid, const fvec3_t *coords, fvec3_t *force,
+ 											  float unit, float min_sep_unit, float lambda_sep,
+ 											  float *force_l1, int32_t *n_nonfinite);
++float hk_blind_copytrack_accumulate_force(const struct hk_bmap *bmap, const fvec3_t *coords,
++										  fvec3_t *force, float unit, float lambda_copytrack,
++										  float *force_l1, int32_t *n_nonfinite);
+ void hk_blind_homolog_sep_stats_init(struct hk_blind_homolog_sep_stats *stats);
+ int hk_blind_homolog_sep_compute_stats(int32_t n_haploid, const fvec3_t *coords, float collapse_threshold,
+ 									   struct hk_blind_homolog_sep_stats *stats);
+diff --git a/run_blind_p9016_minimal.c b/run_blind_p9016_minimal.c
+index 82049a5..807cec2 100644
+--- a/run_blind_p9016_minimal.c
++++ b/run_blind_p9016_minimal.c
+@@ -79,6 +79,8 @@ struct minimal_result {
+ 	float final_contact_energy;
+ 	float final_repulsion_energy;
+ 	float final_backbone_energy;
++	float final_copytrack_energy;
++	float final_copytrack_force_l1;
+ 	int64_t final_n_repulsion_pairs_considered;
+ 	int64_t final_n_repulsion_pairs_blocked;
+ 	int64_t final_n_repulsion_pairs_active;
+@@ -105,6 +107,7 @@ struct hk_p9016_minimal_params {
+ 	float init_scale;
+ 	float min_sep_unit;
+ 	float lambda_sep;
++	float lambda_copytrack;
+ 	int d_scale_mode;
+ 	float d_scale_eps_count;
+ 	float d_scale_posterior_gamma;
+@@ -262,6 +265,8 @@ static int load_minimal_params(struct hk_p9016_minimal_params *p)
+ 						  0.0f, 0.0f, &p->min_sep_unit) != 0 ||
+ 		env_float_checked("HK_BLIND_P9016_LAMBDA_SEP",
+ 						  0.0f, 0.0f, &p->lambda_sep) != 0 ||
++		env_float_checked("HK_BLIND_P9016_LAMBDA_COPYTRACK",
++						  0.0f, 0.0f, &p->lambda_copytrack) != 0 ||
+ 		env_float_checked("HK_BLIND_P9016_D_SCALE_EPS_COUNT",
+ 						  HK_P9016_D_SCALE_EPS_COUNT, 0.0f,
+ 						  &p->d_scale_eps_count) != 0 ||
+@@ -361,14 +366,28 @@ static const char *relax_backend_name(int backend)
+ 
+ static const char *input_contact_source_from_path(const char *path)
+ {
++	const char *source_override = getenv("HK_BLIND_P9016_INPUT_CONTACT_SOURCE");
++	if (source_override && source_override[0])
++		return source_override;
+ 	if (path == 0)
+ 		return "unknown";
++	if (strstr(path, "charm3dg") || strstr(path, "charm_3dg") ||
++		strstr(path, "charm-derived") || strstr(path, "charm_derived") ||
++		strstr(path, "synthetic_charm"))
++		return "charm3dg_derived_pairs";
+ 	if (strstr(path, "impute") || strstr(path, "positive_control") ||
+ 		strstr(path, "native_hickit"))
+ 		return "imputed_or_positive_control_pairs";
+ 	return "raw_pairs";
+ }
+ 
++static int input_contact_source_uses_reference(const char *source)
++{
++	if (source == 0)
++		return 0;
++	return strcmp(source, "raw_pairs") != 0;
++}
++
+ static int approved_pairs_realpath_match(const char *pairs_path)
+ {
+ 	char approved[PATH_MAX];
+@@ -645,6 +664,7 @@ static void set_minimal_schedule(struct hk_blind_iter_schedule_conf *conf, int n
+ 	conf->base_conf.rho_train_floor = 0.0f;
+ 	conf->base_conf.min_sep_unit = p->min_sep_unit;
+ 	conf->base_conf.lambda_sep = p->lambda_sep;
++	conf->base_conf.lambda_copytrack = p->lambda_copytrack;
+ 	conf->base_conf.chr_sep_unit = 0.0f;
+ 	conf->base_conf.lambda_chr_sep = 0.0f;
+ 	conf->base_conf.relax_step = relax_step;
+@@ -873,10 +893,11 @@ static int write_force_class_diag(const char *force_path, const struct hk_fdg_co
+ 		return -1;
+ 	if (fprintf(fp,
+ 				"class\tn_wedges\tsum_wedge_k\tcontact_energy\tcontact_force_l1\t"
+-				"backbone_force_l1\trepulsion_force_l1\thomolog_sep_force_l1\tn_nonfinite\n"
+-				"cis\t%lld\t%.17g\t%.9g\t%.9g\t0\t0\t0\t%d\n"
+-				"trans\t%lld\t%.17g\t%.9g\t%.9g\t0\t0\t0\t%d\n"
+-				"total\t%lld\t%.17g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%d\n",
++				"backbone_force_l1\trepulsion_force_l1\thomolog_sep_force_l1\t"
++				"copytrack_force_l1\tn_nonfinite\n"
++				"cis\t%lld\t%.17g\t%.9g\t%.9g\t0\t0\t0\t0\t%d\n"
++				"trans\t%lld\t%.17g\t%.9g\t%.9g\t0\t0\t0\t0\t%d\n"
++				"total\t%lld\t%.17g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%d\n",
+ 				(long long)diag.n_wedges_cis, diag.sum_wedge_k_cis,
+ 				diag.contact_energy_cis, diag.contact_force_l1_cis, diag.n_nonfinite,
+ 				(long long)diag.n_wedges_trans, diag.sum_wedge_k_trans,
+@@ -888,6 +909,7 @@ static int write_force_class_diag(const char *force_path, const struct hk_fdg_co
+ 				relax_diag? relax_diag->final_backbone_force_l1 : 0.0f,
+ 				relax_diag? relax_diag->final_repulsion_force_l1 : 0.0f,
+ 				relax_diag? relax_diag->final_sep_force_l1 : 0.0f,
++				relax_diag? relax_diag->final_copytrack_force_l1 : 0.0f,
+ 				diag.n_nonfinite) < 0) {
+ 		fclose(fp);
+ 		return -1;
+@@ -924,6 +946,7 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
+ 	const char *sample_name;
+ 	double final_refreshed_sum_wedge_k;
+ 	int64_t final_refreshed_n_wedges;
++	int uses_reference_training;
+ 	char label[32];
+ 	if (fp == 0) return -1;
+ 	assert(p);
+@@ -940,6 +963,7 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
+ 	git_dirty_count = env_or_default("HK_BLIND_GIT_DIRTY_COUNT", "NA");
+ 	binary_hash = env_or_default("HK_BLIND_BINARY_HASH", "NA");
+ 	sample_name = env_or_default("HK_BLIND_SAMPLE", env_or_default("HK_BLIND_P9016_SAMPLE", "P9016"));
++	uses_reference_training = input_contact_source_uses_reference(input_contact_source);
+ 	if (fprintf(fp,
+ 				"key\tvalue\n"
+ 				"sample\t%s\n"
+@@ -1031,10 +1055,18 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
+ 				"raw_posterior_same_bin_policy\tuniform_unknown_rows\n"
+ 				"copy_labels_are_gauge_only\t1\n"
+ 				"uses_phase_labels\t0\n"
+-				"uses_charm_or_reference\t0\n"
+-				"uses_charm_for_training\t0\n"
++				"uses_charm_or_reference\t%d\n"
++				"uses_charm_for_training\t%d\n"
++				"reference_derived_positive_control\t%d\n"
++				"reference_training_source_3dg\t%s\n"
+ 				"min_sep_unit\t%.9g\n"
+ 				"lambda_sep\t%.9g\n"
++				"lambda_copytrack\t%.9g\n"
++				"copytrack_prior_mode\t%s\n"
++				"copytrack_scope\tsame_chrom_adjacent_beads\n"
++				"copytrack_vector_definition\tcopy1_minus_copy0\n"
++				"copytrack_uses_phase_labels\t0\n"
++				"copytrack_uses_charm_or_reference\t0\n"
+ 				"chr_sep_unit\t%.9g\n"
+ 				"lambda_chr_sep\t%.9g\n"
+ 				"relax_step\t%.9g\n"
+@@ -1089,7 +1121,11 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
+ 				(long long)set->n_raw_same_bin_excluded,
+ 				set->n_bpair_same_bin_excluded, (long long)set->n_raw_cis,
+ 				(long long)set->n_raw_trans, set->n_bpair_cis, set->n_bpair_trans,
+-				p->min_sep_unit, p->lambda_sep, 0.0f, 0.0f,
++				uses_reference_training, uses_reference_training, uses_reference_training,
++				env_or_default("HK_BLIND_P9016_REFERENCE_SOURCE_TDG", "NA"),
++				p->min_sep_unit, p->lambda_sep, p->lambda_copytrack,
++				p->lambda_copytrack > 0.0f? "homolog_vector_continuity" : "off",
++				0.0f, 0.0f,
+ 				relax_step, relax_steps, HK_BLIND_REPULSION_CELL,
+ 				HK_P9016_REPULSION_MULTIPLIER, k_rel_rep_effective, write_raw,
+ 				posterior_path, coords_path, coords_gz_path, diag_path,
+@@ -1124,6 +1160,9 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
+ 				"final_backbone_energy\t%.9g\n"
+ 				"final_sep_energy\t%.9g\n"
+ 				"final_sep_force_l1\t%.9g\n"
++				"final_copytrack_energy\t%.9g\n"
++				"final_copytrack_force_l1\t%.9g\n"
++				"n_copytrack_nonfinite_step\t%d\n"
+ 				"posterior_refreshed_after_final_relax\t%d\n"
+ 				"posterior_refresh_temperature\t%.9g\n"
+ 				"posterior_refresh_prior_mode\tuniform\n"
+@@ -1147,6 +1186,9 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
+ 				final_relax_diag? final_relax_diag->final_backbone_energy : 0.0f,
+ 				final_relax_diag? final_relax_diag->final_sep_energy : 0.0f,
+ 				final_relax_diag? final_relax_diag->final_sep_force_l1 : 0.0f,
++				final_relax_diag? final_relax_diag->final_copytrack_energy : loop_diag->final_copytrack_energy,
++				final_relax_diag? final_relax_diag->final_copytrack_force_l1 : loop_diag->final_copytrack_force_l1,
++				loop_diag->n_copytrack_nonfinite_step,
+ 				loop_diag->posterior_refreshed_after_final_relax,
+ 				loop_diag->posterior_refresh_temperature,
+ 				loop_diag->posterior_refresh_mean_kl,
+@@ -1178,6 +1220,7 @@ static int write_summary_header(FILE *fp)
+ 				   "final_n_softall_state00_raw\tfinal_n_softall_state01_raw\t"
+ 				   "final_n_softall_state10_raw\tfinal_n_softall_state11_raw\t"
+ 				   "final_contact_energy\tfinal_repulsion_energy\tfinal_backbone_energy\t"
++				   "final_copytrack_energy\tfinal_copytrack_force_l1\t"
+ 				   "final_n_repulsion_pairs_considered\tfinal_n_repulsion_pairs_blocked\t"
+ 				   "final_n_repulsion_pairs_active\tn_same_bin_excluded\t"
+ 				   "posterior_refreshed_after_final_relax\tn_bad_iter\t"
+@@ -1195,7 +1238,7 @@ static int append_summary_row(FILE *fp, const struct minimal_result *result, int
+ 				   "%d\t%d\t%.9g\t%d\t%d\t%d\t%lld\t%lld\t%d\t%d\t"
+ 				   "%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.17g\t%.17g\t%lld\t"
+ 				   "%.9g\t%.9g\t%.9g\t%lld\t%lld\t%lld\t%lld\t%lld\t"
+-				   "%lld\t%lld\t%lld\t%lld\t%.9g\t%.9g\t%.9g\t%lld\t%lld\t%lld\t"
++				   "%lld\t%lld\t%lld\t%lld\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%lld\t%lld\t%lld\t"
+ 				   "%lld\t%d\t%d\t%d\t%d\t%s\t%d\t%s\t%s\n",
+ 				   result->stage_name, result->stage_index, result->n_stages,
+ 				   result->bin_size_bp, result->parent_bin_size_bp,
+@@ -1221,6 +1264,7 @@ static int append_summary_row(FILE *fp, const struct minimal_result *result, int
+ 				   (long long)result->final_n_softall_state_raw_count[HK_BLIND_STATE_11],
+ 				   result->final_contact_energy, result->final_repulsion_energy,
+ 				   result->final_backbone_energy,
++				   result->final_copytrack_energy, result->final_copytrack_force_l1,
+ 				   (long long)result->final_n_repulsion_pairs_considered,
+ 				   (long long)result->final_n_repulsion_pairs_blocked,
+ 				   (long long)result->final_n_repulsion_pairs_active,
+@@ -1429,6 +1473,8 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
+ 	result->final_contact_energy = per_iter[n_iter - 1].relax_diag.final_contact_energy;
+ 	result->final_repulsion_energy = per_iter[n_iter - 1].relax_diag.final_repulsion_energy;
+ 	result->final_backbone_energy = per_iter[n_iter - 1].relax_diag.final_backbone_energy;
++	result->final_copytrack_energy = per_iter[n_iter - 1].relax_diag.final_copytrack_energy;
++	result->final_copytrack_force_l1 = per_iter[n_iter - 1].relax_diag.final_copytrack_force_l1;
+ 	result->final_n_repulsion_pairs_considered = per_iter[n_iter - 1].relax_diag.final_n_repulsion_pairs_considered;
+ 	result->final_n_repulsion_pairs_blocked = per_iter[n_iter - 1].relax_diag.final_n_repulsion_pairs_blocked;
+ 	result->final_n_repulsion_pairs_active = per_iter[n_iter - 1].relax_diag.final_n_repulsion_pairs_active;
+@@ -1507,9 +1553,11 @@ int main(void)
+ 	if (make_output_root(root_dir, sizeof(root_dir)) != 0)
+ 		return 1;
+ 	input_contact_source = input_contact_source_from_path(pairs_path);
+-	if (strcmp(input_contact_source, "raw_pairs") != 0) {
+-		fprintf(stderr, "minimal P9016 requires raw P9016 pairs, got source=%s path=%s\n",
++	if (strcmp(input_contact_source, "raw_pairs") != 0 &&
++		!env_flag_enabled("HK_BLIND_P9016_ALLOW_REFERENCE_DERIVED_PAIRS")) {
++		fprintf(stderr, "minimal P9016 blind baseline requires raw pairs, got source=%s path=%s\n",
+ 				input_contact_source, pairs_path);
++		fprintf(stderr, "set HK_BLIND_P9016_ALLOW_REFERENCE_DERIVED_PAIRS=1 only for explicit positive-control diagnostics\n");
+ 		return 1;
+ 	}
+ 	approved_pairs_realpath = approved_pairs_realpath_match(pairs_path);
+@@ -1535,12 +1583,13 @@ int main(void)
+ 		relax_backend = hk_fdg_gpu_is_available()? HK_FDG_BACKEND_GPU : HK_FDG_BACKEND_CPU;
+ 	}
+ 	fprintf(stderr,
+-			"minimal P9016: input=%s output_root=%s config=%s baseline=softall n_iter=%d relax_steps=%d relax_step=%.8g chain=%d init_mode=%s init_eps=%.8g init_noise=%.8g init_scale=%.8g init_seed=%llu min_sep=%.8g lambda_sep=%.8g d_scale_mode=%s d_scale_input=%s d_scale_formula=%s d_scale_gamma=%.8g d_scale_eps=%.8g relax_backend=%s\n",
++			"minimal P9016: input=%s output_root=%s config=%s baseline=softall n_iter=%d relax_steps=%d relax_step=%.8g chain=%d init_mode=%s init_eps=%.8g init_noise=%.8g init_scale=%.8g init_seed=%llu min_sep=%.8g lambda_sep=%.8g lambda_copytrack=%.8g d_scale_mode=%s d_scale_input=%s d_scale_formula=%s d_scale_gamma=%.8g d_scale_eps=%.8g relax_backend=%s\n",
+ 			pairs_path, root_dir, params.config_name, n_iter, relax_steps, relax_step,
+ 			run_chain, hk_blind_init_mode_name(init_mode),
+ 			params.init_eps, params.init_noise_scale, params.init_scale,
+ 			(unsigned long long)params.init_seed, params.min_sep_unit,
+-			params.lambda_sep, hk_blind_d_scale_mode_name(params.d_scale_mode),
++			params.lambda_sep, params.lambda_copytrack,
++			hk_blind_d_scale_mode_name(params.d_scale_mode),
+ 			params.d_scale_mode_input_string,
+ 			hk_blind_d_scale_effective_count_formula(params.d_scale_mode,
+ 													 params.d_scale_posterior_gamma),
+diff --git a/scripts/p9016_common_eval.sh b/scripts/p9016_common_eval.sh
+index 8c0a251..60fbe61 100755
+--- a/scripts/p9016_common_eval.sh
++++ b/scripts/p9016_common_eval.sh
+@@ -33,6 +33,9 @@ cmd=(
+ 	--label "$(basename "$CONFIG_OUTPUT_DIR")"
+ 	--expected-sample "$SAMPLE"
+ )
++if [ "${HK_BLIND_ALLOW_REFERENCE_DERIVED_TRAINING:-0}" = "1" ]; then
++	cmd+=(--allow-reference-derived-training)
++fi
+ {
+ 	for i in "${!cmd[@]}"; do
+ 		if [ "$i" -gt 0 ]; then
+diff --git a/scripts/p9016_publish_light_result.sh b/scripts/p9016_publish_light_result.sh
+index 05ea8f5..8628cb8 100755
+--- a/scripts/p9016_publish_light_result.sh
++++ b/scripts/p9016_publish_light_result.sh
+@@ -23,6 +23,7 @@ RSYNC_ARGS=(
+ 	--include='gamma_delta.tsv'
+ 	--include='sep_delta.tsv'
+ 	--include='sample_delta.tsv'
++	--include='synthetic_contact_summary.tsv'
+ 	--include='regression_audit.tsv'
+ 	--include='dscale_semantics_audit.tsv'
+ 	--include='dscale_semantics_headline.txt'
+@@ -31,6 +32,15 @@ RSYNC_ARGS=(
+ 	--include='logs/*.log'
+ 	--include='logs/*.txt'
+ 	--include='logs/*.sh'
++	--include='logs/*.patch'
++	--include='contact_matrix_qc/*.tsv'
++	--include='contact_matrix_qc/plots/*.png'
++	--include='diagnostics/*/*.tsv'
++	--include='diagnostics/*/*.md'
++	--include='diagnostics/*/*.txt'
++	--include='diagnostics/*/*.log'
++	--include='synthetic_pairs/*.metadata.tsv'
++	--include='synthetic_pairs/*.json'
+ 	--include='outputs/*/*.manifest.tsv'
+ 	--include='outputs/*/*.loop_diag.tsv'
+ 	--include='outputs/*/*.force_class_diag.tsv'
+diff --git a/scripts/summarize_p9016_model_sweep.py b/scripts/summarize_p9016_model_sweep.py
+index e30a705..6de5aec 100755
+--- a/scripts/summarize_p9016_model_sweep.py
++++ b/scripts/summarize_p9016_model_sweep.py
+@@ -33,6 +33,7 @@ COLUMNS = [
+     "temperature_end",
+     "min_sep_unit",
+     "lambda_sep",
++    "lambda_copytrack",
+     "d_scale_mode",
+     "d_scale_mode_input_string",
+     "d_scale_eps_count",
+@@ -55,8 +56,11 @@ COLUMNS = [
+     "final_backbone_energy",
+     "final_sep_energy",
+     "final_sep_force_l1",
++    "final_copytrack_energy",
++    "final_copytrack_force_l1",
+     "force_diag_total_contact_force_l1",
+     "sep_force_l1_over_contact_force_l1",
++    "copytrack_force_l1_over_contact_force_l1",
+     "model_top1_accuracy_genome_all",
+     "model_top1_accuracy_genome_cis",
+     "model_top1_accuracy_genome_trans",
+@@ -210,6 +214,7 @@ def summarize_config(root: Path, config_dir: Path) -> dict[str, str]:
+         "temperature_end",
+         "min_sep_unit",
+         "lambda_sep",
++        "lambda_copytrack",
+         "d_scale_mode",
+         "d_scale_mode_input_string",
+         "d_scale_eps_count",
+@@ -230,6 +235,8 @@ def summarize_config(root: Path, config_dir: Path) -> dict[str, str]:
+         "final_backbone_energy",
+         "final_sep_energy",
+         "final_sep_force_l1",
++        "final_copytrack_energy",
++        "final_copytrack_force_l1",
+     ]:
+         row[key] = value(manifest, loop_diag, key=key)
+ 
+@@ -241,6 +248,10 @@ def summarize_config(root: Path, config_dir: Path) -> dict[str, str]:
+         row["final_sep_force_l1"],
+         row["force_diag_total_contact_force_l1"],
+     )
++    row["copytrack_force_l1_over_contact_force_l1"] = ratio(
++        row["final_copytrack_force_l1"],
++        row["force_diag_total_contact_force_l1"],
++    )
+ 
+     for key in [
+         "model_top1_accuracy_genome_all",

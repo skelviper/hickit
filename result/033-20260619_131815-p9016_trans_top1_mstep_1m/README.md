@@ -1,0 +1,36 @@
+# 033 P9016 Trans Top1 M-step Graph 1Mb
+
+This controlled blind-training experiment tests whether trans softall is too soft by replacing high-confidence trans M-step edges with top1-hard or top1-mixed edge weights.
+
+- full result root: `/mnt/ssd/zliu/phase3/test_res/033-20260619_131815-p9016_trans_top1_mstep_1m`
+- light result root: `/mnt/ssd/zliu/phase3/hickit/result/033-20260619_131815-p9016_trans_top1_mstep_1m`
+- headline: `NO_PLUS_0P1`
+- training input: raw P9016 pairs only
+- eval-only inputs: SNP phase labels and CHARM/3DG are used only after training through the standard eval wrapper
+- top1 hard/mix is applied post-E-step and pre-softall-M-step to trans edges only; cis E-step/posterior and all eval references remain unchanged
+- unchanged model settings: uniform prior, constant rho_train, temperature 1, posterior_count gamma 1, no chromosome-pair prior, no copytrack force
+
+## Main Results
+
+| config_name | trans_top1_mstep_mode | trans_top1_mstep_min_pmax | trans_top1_mstep_min_margin | trans_top1_mstep_mix_weight | trans_dscale_multiplier | trans_k_multiplier | model_top1_accuracy_genome_all | model_top1_accuracy_genome_cis | model_top1_accuracy_genome_trans | model_same_cross_accuracy_genome_trans | mean_per_chrom_cis_distance_spearman | final_mean_entropy | final_mean_pU | final_min_sep | sep_p05 | final_mean_sep |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| p9016_pcgamma1_top1off_td0p5_sep0_ieps0p5_noise0_seed17 | off | 1 | 1 | 0 | 0.5 | 1 | 0.474345 | 0.565227 | 0.344277 | 0.538746 | 0.757987 | 0.701135278 | 0.505762219 | 0.347313583 | 2.72143793 | 4.37073612 |
+| p9016_pcgamma1_top1mix0p5_pmax0p30_m0_td1_sep0 | mix | 0.300000012 | 0 | 0.5 | 1 | 1 | 0.460258 | 0.554293 | 0.325677 | 0.53371 | 0.785996 | 0.617121935 | 0.445159376 | 1.33643878 | 3.2957921 | 4.73698473 |
+| p9016_pcgamma1_top1off_td1_sep0_ieps0p5_noise0_seed17 | off | 1 | 1 | 0 | 1 | 1 | 0.46806 | 0.569648 | 0.32267 | 0.518708 | 0.800789 | 0.607322037 | 0.438090235 | 1.53797925 | 3.71859288 | 5.01429605 |
+| p9016_pcgamma1_top1mix0p5_pmax0p35_m0p02_td0p5_sep0 | mix | 0.349999994 | 0.0199999996 | 0.5 | 0.5 | 1 | 0.460692 | 0.557817 | 0.32169 | 0.529203 | 0.771866 | 0.685512781 | 0.494492948 | 0.742758453 | 2.68062353 | 4.26424217 |
+| p9016_pcgamma1_top1mix0p5_pmax0p35_m0p02_td1_sep0 | mix | 0.349999994 | 0.0199999996 | 0.5 | 1 | 1 | 0.458078 | 0.553944 | 0.320878 | 0.522965 | 0.802735 | 0.607981801 | 0.438566148 | 1.15088403 | 3.47338462 | 4.86034441 |
+| p9016_pcgamma1_top1hard_pmax0p40_m0p05_td1_sep0 | hard | 0.400000006 | 0.0500000007 | 1 | 1 | 1 | 0.4434 | 0.531518 | 0.317287 | 0.534064 | 0.785341 | 0.756444395 | 0.545659304 | 1.8547883 | 3.12541795 | 4.02306604 |
+| p9016_pcgamma1_top1mix0p75_pmax0p35_m0p02_td1_sep0 | mix | 0.349999994 | 0.0199999996 | 0.75 | 1 | 1 | 0.454033 | 0.554075 | 0.310855 | 0.518388 | 0.808294 | 0.613705218 | 0.442694724 | 1.57519209 | 3.39007545 | 4.75071907 |
+| p9016_pcgamma1_top1mix0p75_pmax0p30_m0_td1_sep0 | mix | 0.300000012 | 0 | 0.75 | 1 | 1 | 0.447722 | 0.543782 | 0.310244 | 0.519472 | 0.788626 | 0.623587012 | 0.449822932 | 1.28207302 | 3.37991858 | 4.74695396 |
+| p9016_pcgamma1_top1hard_pmax0p30_m0p02_td1_sep0 | hard | 0.300000012 | 0.0199999996 | 1 | 1 | 1 | 0.427853 | 0.523807 | 0.290526 | 0.518361 | 0.783327 | 0.768185019 | 0.554128349 | 1.77226305 | 3.13295484 | 4.01359606 |
+| p9016_pcgamma1_top1hard_pmax0p40_m0_td1_sep0 | hard | 0.400000006 | 0 | 1 | 1 | 1 | 0.423699 | 0.520511 | 0.285143 | 0.498142 | 0.775418 | 0.768543184 | 0.554386735 | 1.97919607 | 3.09475374 | 3.98556185 |
+| p9016_pcgamma1_top1hard_pmax0p35_m0p02_td0p5_sep0 | hard | 0.349999994 | 0.0199999996 | 1 | 0.5 | 1 | 0.412954 | 0.505811 | 0.280059 | 0.508255 | 0.736093 | 0.845062494 | 0.609583735 | 1.49815571 | 2.46795845 | 3.46591735 |
+| p9016_pcgamma1_top1hard_pmax0p35_m0_td1_sep0 | hard | 0.349999994 | 0 | 1 | 1 | 1 | 0.425599 | 0.527961 | 0.2791 | 0.504004 | 0.787892 | 0.76336509 | 0.55065155 | 1.7534523 | 3.09645128 | 4.00864887 |
+| p9016_pcgamma1_top1hard_pmax0p50_m0_td1_sep0 | hard | 0.5 | 0 | 1 | 1 | 1 | 0.420016 | 0.519754 | 0.277273 | 0.502886 | 0.782778 | 0.749083221 | 0.540349364 | 2.32501578 | 3.22547245 | 4.11845303 |
+| p9016_pcgamma1_top1hard_pmax0p35_m0p02_td1_msep1_lsep1 | hard | 0.349999994 | 0.0199999996 | 1 | 1 | 1 | 0.417539 | 0.521365 | 0.268946 | 0.499753 | 0.772309 | 0.759604394 | 0.547938764 | 1.71164763 | 3.04595685 | 3.9944272 |
+| p9016_pcgamma1_top1hard_pmax0p35_m0p02_td1_sep0 | hard | 0.349999994 | 0.0199999996 | 1 | 1 | 1 | 0.418468 | 0.523768 | 0.267765 | 0.499469 | 0.770581 | 0.754505098 | 0.544260383 | 1.9199053 | 3.06598663 | 3.99637747 |
+| p9016_pcgamma1_top1hard_pmax0p30_m0_td1_sep0 | hard | 0.300000012 | 0 | 1 | 1 | 1 | 0.417537 | 0.522496 | 0.26732 | 0.496857 | 0.779285 | 0.810618281 | 0.58473748 | 1.8677901 | 3.09788251 | 3.87232137 |
+
+## Interpretation Boundary
+
+A real success requires full-denominator trans top1 accuracy to increase by at least 0.1 over the no-hardening baseline without a major cis accuracy or cis distance-Spearman collapse. This experiment tests softall M-step state softness; it does not add external priors or SNP/CHARM training labels.

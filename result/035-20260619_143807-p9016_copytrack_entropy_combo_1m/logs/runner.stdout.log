@@ -1,0 +1,56 @@
+FULL_RESULT_ROOT=/mnt/ssd/zliu/phase3/test_res/035-20260619_143807-p9016_copytrack_entropy_combo_1m
+LIGHT_RESULT_ROOT=/mnt/ssd/zliu/phase3/hickit/result/035-20260619_143807-p9016_copytrack_entropy_combo_1m
+rm -rf /mnt/ssd/zliu/phase3/test_res/smoke/hk_blind_p9016_minimal_audit_smoke
+mkdir -p /mnt/ssd/zliu/phase3/test_res/smoke
+env -i PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+HK_BLIND_P9016_PAIRS=testdata/p9016_blind_smoke.pairs \
+HK_BLIND_P9016_ALLOW_CUSTOM_PAIRS=1 \
+HK_BLIND_P9016_OUTPUT_ROOT=/mnt/ssd/zliu/phase3/test_res/smoke/hk_blind_p9016_minimal_audit_smoke \
+HK_BLIND_P9016_CONFIG_NAME=minimal_soft_sep_off \
+HK_BLIND_P9016_BIN_SIZE_BP=1000000 \
+HK_BLIND_P9016_MINIMAL_N_ITER=1 \
+HK_BLIND_P9016_MINIMAL_RELAX_STEPS=1 \
+HK_BLIND_P9016_INIT_EPS=0.5 \
+HK_BLIND_P9016_INIT_NOISE_SCALE=0.0 \
+HK_BLIND_P9016_MIN_SEP_UNIT=0.0 \
+HK_BLIND_P9016_LAMBDA_SEP=0.0 \
+HK_BLIND_P9016_INIT_SEED=17 \
+./run_blind_p9016_minimal.bin
+./audit_blind_p9016_full_cpu_output.bin /mnt/ssd/zliu/phase3/test_res/smoke/hk_blind_p9016_minimal_audit_smoke/minimal_soft_sep_off
+cc -g -Wall -O2 -Wc++-compat -fno-fast-math -fno-unsafe-math-optimizations    run_blind_p9016_minimal.c sdict.o io.o pair.o count.o phase.o bin.o blind.o fdg.o image.o view3d.o fdg_gpu.o -o run_blind_p9016_minimal.bin -L/usr/local/cuda/targets/x86_64-linux/lib -Wl,-rpath,/usr/local/cuda/targets/x86_64-linux/lib -lm -lz -lcudart -lstdc++
+make: 'audit_blind_p9016_full_cpu_output.bin' is up to date.
+CONFIG_START=p9016_pcgamma1_td1_baseline_sep0_lct0_gct0 rho_mode=constant rho_floor=0 temp=1->1 trans_dscale=1 min_sep=0 lambda_sep=0 lambda_copytrack=0 lambda_global=0
+CONFIG_START=p9016_pcgamma1_td0p5_best034_sep0_lct0_gct0 rho_mode=constant rho_floor=0 temp=1->1 trans_dscale=0.5 min_sep=0 lambda_sep=0 lambda_copytrack=0 lambda_global=0
+CONFIG_START=p9016_pcgamma1_td0p5_entropyfloor0p5_sep0_lct0_gct0 rho_mode=entropy_with_floor rho_floor=0.5 temp=1->1 trans_dscale=0.5 min_sep=0 lambda_sep=0 lambda_copytrack=0 lambda_global=0
+CONFIG_START=p9016_pcgamma1_td0p5_sep0_lct0p01_gct0 rho_mode=constant rho_floor=0 temp=1->1 trans_dscale=0.5 min_sep=0 lambda_sep=0 lambda_copytrack=0.01 lambda_global=0
+CONFIG_DONE=p9016_pcgamma1_td1_baseline_sep0_lct0_gct0
+CONFIG_START=p9016_pcgamma1_td0p5_sep0_lct0p03_gct0 rho_mode=constant rho_floor=0 temp=1->1 trans_dscale=0.5 min_sep=0 lambda_sep=0 lambda_copytrack=0.03 lambda_global=0
+CONFIG_DONE=p9016_pcgamma1_td0p5_best034_sep0_lct0_gct0
+CONFIG_START=p9016_pcgamma1_td0p5_sep0_lct0_gct0p003 rho_mode=constant rho_floor=0 temp=1->1 trans_dscale=0.5 min_sep=0 lambda_sep=0 lambda_copytrack=0 lambda_global=0.003
+CONFIG_DONE=p9016_pcgamma1_td0p5_entropyfloor0p5_sep0_lct0_gct0
+CONFIG_START=p9016_pcgamma1_td0p5_sep0_lct0_gct0p01 rho_mode=constant rho_floor=0 temp=1->1 trans_dscale=0.5 min_sep=0 lambda_sep=0 lambda_copytrack=0 lambda_global=0.01
+CONFIG_DONE=p9016_pcgamma1_td0p5_sep0_lct0p01_gct0
+CONFIG_START=p9016_pcgamma1_td0p5_sep0_lct0p01_gct0p003 rho_mode=constant rho_floor=0 temp=1->1 trans_dscale=0.5 min_sep=0 lambda_sep=0 lambda_copytrack=0.01 lambda_global=0.003
+CONFIG_DONE=p9016_pcgamma1_td0p5_sep0_lct0p01_gct0p003
+CONFIG_START=p9016_pcgamma1_td0p5_sep0_lct0p03_gct0p003 rho_mode=constant rho_floor=0 temp=1->1 trans_dscale=0.5 min_sep=0 lambda_sep=0 lambda_copytrack=0.03 lambda_global=0.003
+CONFIG_DONE=p9016_pcgamma1_td0p5_sep0_lct0p03_gct0
+CONFIG_START=p9016_pcgamma1_td0p5_msep1_lsep0p5_lct0p01_gct0p003 rho_mode=constant rho_floor=0 temp=1->1 trans_dscale=0.5 min_sep=1 lambda_sep=0.5 lambda_copytrack=0.01 lambda_global=0.003
+CONFIG_DONE=p9016_pcgamma1_td0p5_sep0_lct0_gct0p003
+CONFIG_START=p9016_pcgamma1_td0p5_msep1_lsep1_lct0p01_gct0p003 rho_mode=constant rho_floor=0 temp=1->1 trans_dscale=0.5 min_sep=1 lambda_sep=1 lambda_copytrack=0.01 lambda_global=0.003
+CONFIG_DONE=p9016_pcgamma1_td0p5_sep0_lct0_gct0p01
+CONFIG_START=p9016_pcgamma1_td0p5_entropyfloor0p5_sep0_lct0p01_gct0 rho_mode=entropy_with_floor rho_floor=0.5 temp=1->1 trans_dscale=0.5 min_sep=0 lambda_sep=0 lambda_copytrack=0.01 lambda_global=0
+CONFIG_DONE=p9016_pcgamma1_td0p5_sep0_lct0p03_gct0p003
+CONFIG_START=p9016_pcgamma1_td0p5_entropyfloor0p5_sep0_lct0_gct0p003 rho_mode=entropy_with_floor rho_floor=0.5 temp=1->1 trans_dscale=0.5 min_sep=0 lambda_sep=0 lambda_copytrack=0 lambda_global=0.003
+CONFIG_DONE=p9016_pcgamma1_td0p5_msep1_lsep0p5_lct0p01_gct0p003
+CONFIG_START=p9016_pcgamma1_td0p5_entropyfloor0p5_sep0_lct0p01_gct0p003 rho_mode=entropy_with_floor rho_floor=0.5 temp=1->1 trans_dscale=0.5 min_sep=0 lambda_sep=0 lambda_copytrack=0.01 lambda_global=0.003
+CONFIG_DONE=p9016_pcgamma1_td0p5_msep1_lsep1_lct0p01_gct0p003
+CONFIG_START=p9016_pcgamma1_td0p5_entropyfloor0p5_msep1_lsep0p5_lct0p01_gct0p003 rho_mode=entropy_with_floor rho_floor=0.5 temp=1->1 trans_dscale=0.5 min_sep=1 lambda_sep=0.5 lambda_copytrack=0.01 lambda_global=0.003
+CONFIG_DONE=p9016_pcgamma1_td0p5_entropyfloor0p5_sep0_lct0p01_gct0
+CONFIG_DONE=p9016_pcgamma1_td0p5_entropyfloor0p5_sep0_lct0_gct0p003
+CONFIG_DONE=p9016_pcgamma1_td0p5_entropyfloor0p5_msep1_lsep0p5_lct0p01_gct0p003
+CONFIG_DONE=p9016_pcgamma1_td0p5_entropyfloor0p5_sep0_lct0p01_gct0p003
+FULL_RESULT_ROOT=/mnt/ssd/zliu/phase3/test_res/035-20260619_143807-p9016_copytrack_entropy_combo_1m
+LIGHT_RESULT_ROOT=/mnt/ssd/zliu/phase3/hickit/result/035-20260619_143807-p9016_copytrack_entropy_combo_1m
+SUMMARY_TSV=/mnt/ssd/zliu/phase3/test_res/035-20260619_143807-p9016_copytrack_entropy_combo_1m/summary.tsv
+COPYTRACK_ENTROPY_DELTA_SUMMARY_TSV=/mnt/ssd/zliu/phase3/test_res/035-20260619_143807-p9016_copytrack_entropy_combo_1m/copytrack_entropy_delta_summary.tsv
+HEADLINE=NO_PLUS_0P1

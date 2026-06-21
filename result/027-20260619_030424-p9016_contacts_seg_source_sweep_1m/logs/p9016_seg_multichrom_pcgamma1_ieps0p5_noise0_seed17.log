@@ -1,0 +1,27 @@
+CONFIG=p9016_seg_multichrom_pcgamma1_ieps0p5_noise0_seed17
+pairs=/mnt/ssd/zliu/phase3/test_res/027-20260619_030424-p9016_contacts_seg_source_sweep_1m/generated_pairs/P9016.seg_multichrom.pairs.gz
+allow_custom=1
+source=raw_pairs
+minimal P9016: input=/mnt/ssd/zliu/phase3/test_res/027-20260619_030424-p9016_contacts_seg_source_sweep_1m/generated_pairs/P9016.seg_multichrom.pairs.gz output_root=/mnt/ssd/zliu/phase3/test_res/027-20260619_030424-p9016_contacts_seg_source_sweep_1m/work_outputs/p9016_seg_multichrom_pcgamma1_ieps0p5_noise0_seed17 config=p9016_seg_multichrom_pcgamma1_ieps0p5_noise0_seed17 baseline=softall n_iter=100 relax_steps=100 relax_step=0.012 chain=0 init_mode=unphased_scaffold_split init_eps=0.5 init_noise=0 init_scale=10 init_seed=17 min_sep=0 lambda_sep=0 lambda_copytrack=0 trans_chr_pair_prior_lambda=0 trans_chr_pair_prior_eps=0.001 trans_chr_pair_prior_power=1 trans_chr_pair_prior_warmup_iter=0 d_scale_mode=posterior_count d_scale_input=posterior_count d_scale_formula=n_raw*posterior_prob^1 d_scale_gamma=1 d_scale_eps=1e-06 relax_backend=gpu
+minimal P9016: stage 1/1 name=1m bin_size_bp=1000000 parent=0
+[M::hk_map_read] read 2000000 pairs
+[M::hk_bmap_gen] generated 2633 beads
+[M::hk_bmap_gen] 436307 bin pairs
+minimal P9016[1m]: build binned contacts
+minimal P9016[1m]: init mode=unphased_scaffold_split seed=17 scale=10
+[M::hk_fdg] mid_dist:1000000 max_nei:210
+[M::hk_fdg1_cpu] iter:10 elapsed:0.32s rep_coef:0.2092 RMS_force:336.3506 n_rep:43.6498 energy:25.1686,8.8871,0.0049 dist:5.6259,8.2148,1.4482
+[M::hk_fdg1_cpu] iter:20 elapsed:0.78s rep_coef:0.6615 RMS_force:313.4162 n_rep:158.7725 energy:7.8099,4.8103,0.0176 dist:3.4206,5.2916,1.4041
+[M::hk_fdg1_cpu] iter:30 elapsed:1.69s rep_coef:0.9352 RMS_force:226.3290 n_rep:597.0832 energy:1.8938,1.7449,0.0352 dist:2.0146,2.9118,1.2580
+[M::hk_fdg1_cpu] iter:40 elapsed:3.05s rep_coef:0.9907 RMS_force:128.0654 n_rep:892.0634 energy:0.5174,0.6552,0.0421 dist:1.4077,1.9609,1.1882
+[M::hk_fdg1_cpu] iter:50 elapsed:4.51s rep_coef:0.9987 RMS_force:139.5796 n_rep:868.8044 energy:0.4898,0.7450,0.0377 dist:1.4572,2.0779,1.2442
+minimal P9016[1m]: run softall, n_iter=100 relax_steps=100 relax_step=0.012 relax_backend=gpu
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 646343 bin pairs
+[E::blind-gpu] GPU backend requested but CUDA backend/device is unavailable; rebuild with make gpu=1 and check CUDA device visibility
+check failed: scheduled run got -1 expected 0
+minimal P9016: FAILED
+manifest missing: /mnt/ssd/zliu/phase3/test_res/027-20260619_030424-p9016_contacts_seg_source_sweep_1m/work_outputs/p9016_seg_multichrom_pcgamma1_ieps0p5_noise0_seed17/p9016_seg_multichrom_pcgamma1_ieps0p5_noise0_seed17/p9016_full.manifest.tsv
+bpair posterior missing: /mnt/ssd/zliu/phase3/test_res/027-20260619_030424-p9016_contacts_seg_source_sweep_1m/work_outputs/p9016_seg_multichrom_pcgamma1_ieps0p5_noise0_seed17/p9016_seg_multichrom_pcgamma1_ieps0p5_noise0_seed17/p9016_full.bpair_posterior.tsv
+coords missing: /mnt/ssd/zliu/phase3/test_res/027-20260619_030424-p9016_contacts_seg_source_sweep_1m/work_outputs/p9016_seg_multichrom_pcgamma1_ieps0p5_noise0_seed17/p9016_seg_multichrom_pcgamma1_ieps0p5_noise0_seed17/p9016_full.coords.tsv
+loop diag missing: /mnt/ssd/zliu/phase3/test_res/027-20260619_030424-p9016_contacts_seg_source_sweep_1m/work_outputs/p9016_seg_multichrom_pcgamma1_ieps0p5_noise0_seed17/p9016_seg_multichrom_pcgamma1_ieps0p5_noise0_seed17/p9016_full.loop_diag.tsv

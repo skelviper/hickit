@@ -1,0 +1,54 @@
+FULL_RESULT_ROOT=/mnt/ssd/zliu/phase3/test_res/033-20260619_131815-p9016_trans_top1_mstep_1m
+LIGHT_RESULT_ROOT=/mnt/ssd/zliu/phase3/hickit/result/033-20260619_131815-p9016_trans_top1_mstep_1m
+cc -g -Wall -O2 -Wc++-compat -fno-fast-math -fno-unsafe-math-optimizations    run_blind_p9016_minimal.c sdict.o io.o pair.o count.o phase.o bin.o blind.o fdg.o image.o view3d.o fdg_gpu_stub.o -o run_blind_p9016_minimal.bin -L/usr/local/cuda/targets/x86_64-linux/lib -Wl,-rpath,/usr/local/cuda/targets/x86_64-linux/lib -lm -lz
+rm -rf /mnt/ssd/zliu/phase3/test_res/smoke/hk_blind_p9016_minimal_audit_smoke
+mkdir -p /mnt/ssd/zliu/phase3/test_res/smoke
+env -i PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+HK_BLIND_P9016_PAIRS=testdata/p9016_blind_smoke.pairs \
+HK_BLIND_P9016_ALLOW_CUSTOM_PAIRS=1 \
+HK_BLIND_P9016_OUTPUT_ROOT=/mnt/ssd/zliu/phase3/test_res/smoke/hk_blind_p9016_minimal_audit_smoke \
+HK_BLIND_P9016_CONFIG_NAME=minimal_soft_sep_off \
+HK_BLIND_P9016_BIN_SIZE_BP=1000000 \
+HK_BLIND_P9016_MINIMAL_N_ITER=1 \
+HK_BLIND_P9016_MINIMAL_RELAX_STEPS=1 \
+HK_BLIND_P9016_INIT_EPS=0.5 \
+HK_BLIND_P9016_INIT_NOISE_SCALE=0.0 \
+HK_BLIND_P9016_MIN_SEP_UNIT=0.0 \
+HK_BLIND_P9016_LAMBDA_SEP=0.0 \
+HK_BLIND_P9016_INIT_SEED=17 \
+./run_blind_p9016_minimal.bin
+./audit_blind_p9016_full_cpu_output.bin /mnt/ssd/zliu/phase3/test_res/smoke/hk_blind_p9016_minimal_audit_smoke/minimal_soft_sep_off
+cc -g -Wall -O2 -Wc++-compat -fno-fast-math -fno-unsafe-math-optimizations    run_blind_p9016_minimal.c sdict.o io.o pair.o count.o phase.o bin.o blind.o fdg.o image.o view3d.o fdg_gpu.o -o run_blind_p9016_minimal.bin -L/usr/local/cuda/targets/x86_64-linux/lib -Wl,-rpath,/usr/local/cuda/targets/x86_64-linux/lib -lm -lz -lcudart -lstdc++
+make: 'audit_blind_p9016_full_cpu_output.bin' is up to date.
+CONFIG_START=p9016_pcgamma1_top1off_td1_sep0_ieps0p5_noise0_seed17 mode=off pmax=1 margin=1 mix=0 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_top1hard_pmax0p30_m0_td1_sep0 mode=hard pmax=0.30 margin=0 mix=1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_top1hard_pmax0p35_m0_td1_sep0 mode=hard pmax=0.35 margin=0 mix=1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_top1hard_pmax0p40_m0_td1_sep0 mode=hard pmax=0.40 margin=0 mix=1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_top1hard_pmax0p50_m0_td1_sep0 mode=hard pmax=0.50 margin=0 mix=1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_top1hard_pmax0p30_m0p02_td1_sep0 mode=hard pmax=0.30 margin=0.02 mix=1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_top1hard_pmax0p35_m0p02_td1_sep0 mode=hard pmax=0.35 margin=0.02 mix=1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_top1hard_pmax0p40_m0p05_td1_sep0 mode=hard pmax=0.40 margin=0.05 mix=1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_top1mix0p5_pmax0p30_m0_td1_sep0 mode=mix pmax=0.30 margin=0 mix=0.5 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_top1mix0p75_pmax0p30_m0_td1_sep0 mode=mix pmax=0.30 margin=0 mix=0.75 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_DONE=p9016_pcgamma1_top1hard_pmax0p30_m0_td1_sep0
+CONFIG_START=p9016_pcgamma1_top1mix0p5_pmax0p35_m0p02_td1_sep0 mode=mix pmax=0.35 margin=0.02 mix=0.5 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_DONE=p9016_pcgamma1_top1hard_pmax0p30_m0p02_td1_sep0
+CONFIG_START=p9016_pcgamma1_top1mix0p75_pmax0p35_m0p02_td1_sep0 mode=mix pmax=0.35 margin=0.02 mix=0.75 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_DONE=p9016_pcgamma1_top1hard_pmax0p40_m0p05_td1_sep0
+CONFIG_START=p9016_pcgamma1_top1off_td0p5_sep0_ieps0p5_noise0_seed17 mode=off pmax=1 margin=1 mix=0 trans_k=1 trans_dscale=0.5 min_sep=0 lambda_sep=0
+CONFIG_DONE=p9016_pcgamma1_top1hard_pmax0p35_m0_td1_sep0
+CONFIG_START=p9016_pcgamma1_top1hard_pmax0p35_m0p02_td0p5_sep0 mode=hard pmax=0.35 margin=0.02 mix=1 trans_k=1 trans_dscale=0.5 min_sep=0 lambda_sep=0
+CONFIG_DONE=p9016_pcgamma1_top1hard_pmax0p40_m0_td1_sep0
+CONFIG_START=p9016_pcgamma1_top1mix0p5_pmax0p35_m0p02_td0p5_sep0 mode=mix pmax=0.35 margin=0.02 mix=0.5 trans_k=1 trans_dscale=0.5 min_sep=0 lambda_sep=0
+CONFIG_DONE=p9016_pcgamma1_top1hard_pmax0p35_m0p02_td1_sep0
+CONFIG_START=p9016_pcgamma1_top1hard_pmax0p35_m0p02_td1_msep1_lsep1 mode=hard pmax=0.35 margin=0.02 mix=1 trans_k=1 trans_dscale=1 min_sep=1 lambda_sep=1
+CONFIG_DONE=p9016_pcgamma1_top1mix0p5_pmax0p30_m0_td1_sep0
+CONFIG_DONE=p9016_pcgamma1_top1mix0p75_pmax0p30_m0_td1_sep0
+CONFIG_DONE=p9016_pcgamma1_top1off_td1_sep0_ieps0p5_noise0_seed17
+CONFIG_DONE=p9016_pcgamma1_top1hard_pmax0p50_m0_td1_sep0
+CONFIG_DONE=p9016_pcgamma1_top1hard_pmax0p35_m0p02_td1_msep1_lsep1
+CONFIG_DONE=p9016_pcgamma1_top1mix0p5_pmax0p35_m0p02_td0p5_sep0
+CONFIG_DONE=p9016_pcgamma1_top1mix0p5_pmax0p35_m0p02_td1_sep0
+CONFIG_DONE=p9016_pcgamma1_top1off_td0p5_sep0_ieps0p5_noise0_seed17
+CONFIG_DONE=p9016_pcgamma1_top1mix0p75_pmax0p35_m0p02_td1_sep0
+CONFIG_DONE=p9016_pcgamma1_top1hard_pmax0p35_m0p02_td0p5_sep0

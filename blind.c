@@ -21,6 +21,7 @@ struct hk_blind_base_k_aux {
 struct hk_blind_softall_aux {
 	struct hk_map *map;
 	float *final_phased_prob;
+	float *final_train_prob;
 	int32_t n_final_phased_prob;
 	int32_t m_final_phased_prob;
 	int64_t n_selected_raw;
@@ -29,7 +30,14 @@ struct hk_blind_softall_aux {
 	int64_t state_count[HK_BLIND_N_STATE];
 };
 
+struct hk_blind_callable_anchor_candidate {
+	int32_t bpair_id;
+	int32_t n_raw;
+	float score;
+};
+
 static int32_t hk_blind_bmap_n_chr(const struct hk_bmap *bmap);
+static int hk_blind_p4_top_state(const float p4[HK_BLIND_N_STATE]);
 
 static int hk_blind_bpair_aux_cmp(const void *a_, const void *b_)
 {
@@ -42,6 +50,17 @@ static int hk_blind_bpair_aux_cmp(const void *a_, const void *b_)
 	if (a->raw_id != b->raw_id)
 		return a->raw_id < b->raw_id? -1 : 1;
 	return 0;
+}
+
+static int hk_blind_callable_anchor_candidate_cmp(const void *a_, const void *b_)
+{
+	const struct hk_blind_callable_anchor_candidate *a = (const struct hk_blind_callable_anchor_candidate*)a_;
+	const struct hk_blind_callable_anchor_candidate *b = (const struct hk_blind_callable_anchor_candidate*)b_;
+	if (a->score > b->score) return -1;
+	if (a->score < b->score) return 1;
+	if (a->n_raw > b->n_raw) return -1;
+	if (a->n_raw < b->n_raw) return 1;
+	return a->bpair_id < b->bpair_id? -1 : a->bpair_id > b->bpair_id? 1 : 0;
 }
 
 static int hk_blind_base_k_aux_cmp(const void *a_, const void *b_)
@@ -122,6 +141,8 @@ const char *hk_blind_rho_train_mode_name(int mode)
 	case HK_BLIND_RHO_TRAIN_ENTROPY_WITH_FLOOR: return "entropy_with_floor";
 	case HK_BLIND_RHO_TRAIN_ENTROPY_CIS_CONSTANT_TRANS: return "entropy_cis_constant_trans";
 	case HK_BLIND_RHO_TRAIN_ENTROPY_CIS_FLOOR_TRANS: return "entropy_cis_floor_trans";
+	case HK_BLIND_RHO_TRAIN_TRANS_ENTROPY: return "trans_entropy";
+	case HK_BLIND_RHO_TRAIN_TRANS_ENTROPY_WITH_FLOOR: return "trans_entropy_with_floor";
 	default: return "unknown";
 	}
 }
@@ -176,6 +197,87 @@ const char *hk_blind_base_k_mode_name(int mode)
 	}
 }
 
+const char *hk_blind_readgroup_mode_name(int mode)
+{
+	switch (mode) {
+	case HK_BLIND_READGROUP_OFF: return "off";
+	case HK_BLIND_READGROUP_JOINT_MARGINAL: return "joint_marginal";
+	default: return "unknown";
+	}
+}
+
+const char *hk_blind_trans_top1_mode_name(int mode)
+{
+	switch (mode) {
+	case HK_BLIND_TRANS_TOP1_OFF: return "off";
+	case HK_BLIND_TRANS_TOP1_HARD: return "hard";
+	case HK_BLIND_TRANS_TOP1_MIX: return "mix";
+	default: return "unknown";
+	}
+}
+
+const char *hk_blind_trans_gate_mode_name(int mode)
+{
+	switch (mode) {
+	case HK_BLIND_TRANS_GATE_OFF: return "off";
+	case HK_BLIND_TRANS_GATE_PMAX: return "pmax";
+	case HK_BLIND_TRANS_GATE_MARGIN: return "margin";
+	case HK_BLIND_TRANS_GATE_NEG_ENTROPY: return "neg_entropy";
+	case HK_BLIND_TRANS_GATE_PMAX_MARGIN: return "pmax_margin";
+	default: return "unknown";
+	}
+}
+
+const char *hk_blind_trans_chr_pair_mstep_mode_name(int mode)
+{
+	switch (mode) {
+	case HK_BLIND_TRANS_CHR_PAIR_MSTEP_STATE4: return "state4";
+	case HK_BLIND_TRANS_CHR_PAIR_MSTEP_SAME_CROSS: return "same_cross";
+	default: return "unknown";
+	}
+}
+
+const char *hk_blind_trans_callable_anchor_mode_name(int mode)
+{
+	switch (mode) {
+	case HK_BLIND_TRANS_CALLABLE_ANCHOR_OFF: return "off";
+	case HK_BLIND_TRANS_CALLABLE_ANCHOR_NEG_ENTROPY: return "neg_entropy";
+	case HK_BLIND_TRANS_CALLABLE_ANCHOR_PMAX: return "pmax";
+	case HK_BLIND_TRANS_CALLABLE_ANCHOR_MARGIN: return "margin";
+	default: return "unknown";
+	}
+}
+
+static int hk_blind_trans_top1_mode_valid(int mode)
+{
+	return mode == HK_BLIND_TRANS_TOP1_OFF ||
+		   mode == HK_BLIND_TRANS_TOP1_HARD ||
+		   mode == HK_BLIND_TRANS_TOP1_MIX;
+}
+
+static int hk_blind_trans_gate_mode_valid(int mode)
+{
+	return mode == HK_BLIND_TRANS_GATE_OFF ||
+		   mode == HK_BLIND_TRANS_GATE_PMAX ||
+		   mode == HK_BLIND_TRANS_GATE_MARGIN ||
+		   mode == HK_BLIND_TRANS_GATE_NEG_ENTROPY ||
+		   mode == HK_BLIND_TRANS_GATE_PMAX_MARGIN;
+}
+
+int hk_blind_trans_chr_pair_mstep_mode_valid(int mode)
+{
+	return mode == HK_BLIND_TRANS_CHR_PAIR_MSTEP_STATE4 ||
+		   mode == HK_BLIND_TRANS_CHR_PAIR_MSTEP_SAME_CROSS;
+}
+
+int hk_blind_trans_callable_anchor_mode_valid(int mode)
+{
+	return mode == HK_BLIND_TRANS_CALLABLE_ANCHOR_OFF ||
+		   mode == HK_BLIND_TRANS_CALLABLE_ANCHOR_NEG_ENTROPY ||
+		   mode == HK_BLIND_TRANS_CALLABLE_ANCHOR_PMAX ||
+		   mode == HK_BLIND_TRANS_CALLABLE_ANCHOR_MARGIN;
+}
+
 const char *hk_blind_contact_class_name(int contact_class)
 {
 	switch (contact_class) {
@@ -205,7 +307,9 @@ int hk_blind_rho_train_mode_valid(int mode)
 		   mode == HK_BLIND_RHO_TRAIN_ENTROPY ||
 		   mode == HK_BLIND_RHO_TRAIN_ENTROPY_WITH_FLOOR ||
 		   mode == HK_BLIND_RHO_TRAIN_ENTROPY_CIS_CONSTANT_TRANS ||
-		   mode == HK_BLIND_RHO_TRAIN_ENTROPY_CIS_FLOOR_TRANS;
+		   mode == HK_BLIND_RHO_TRAIN_ENTROPY_CIS_FLOOR_TRANS ||
+		   mode == HK_BLIND_RHO_TRAIN_TRANS_ENTROPY ||
+		   mode == HK_BLIND_RHO_TRAIN_TRANS_ENTROPY_WITH_FLOOR;
 }
 
 int hk_blind_d_scale_mode_valid(int mode)
@@ -227,7 +331,13 @@ int hk_blind_estep_score_mode_valid(int mode)
 int hk_blind_base_k_mode_valid(int mode)
 {
 	return mode == HK_BLIND_BASE_K_UNIFORM ||
-		   mode == HK_BLIND_BASE_K_NEIGHBOR_MEDIAN;
+		mode == HK_BLIND_BASE_K_NEIGHBOR_MEDIAN;
+}
+
+int hk_blind_readgroup_mode_valid(int mode)
+{
+	return mode == HK_BLIND_READGROUP_OFF ||
+		mode == HK_BLIND_READGROUP_JOINT_MARGINAL;
 }
 
 int hk_blind_contact_class_valid(int contact_class)
@@ -301,6 +411,106 @@ static void hk_blind_p4_uncertainty(const float p4[HK_BLIND_N_STATE], float *ent
 	*margin = top1 - top2;
 	*rho_output = hk_blind_clip01(1.0f - *entropy / logf((float)HK_BLIND_N_STATE));
 	*pU = 1.0f - *rho_output;
+}
+
+static int hk_blind_trans_gate_keep(const struct hk_blind_bpair *bp, int mode,
+									float min_pmax, float min_margin,
+									float min_neg_entropy)
+{
+	float neg_entropy;
+	assert(bp);
+	assert(hk_blind_trans_gate_mode_valid(mode));
+	assert(isfinite(min_pmax));
+	assert(isfinite(min_margin));
+	assert(isfinite(min_neg_entropy));
+	if (mode == HK_BLIND_TRANS_GATE_OFF || bp->contact_class != HK_BLIND_CONTACT_TRANS)
+		return 1;
+	neg_entropy = -bp->entropy;
+	switch (mode) {
+	case HK_BLIND_TRANS_GATE_PMAX:
+		return bp->pmax >= min_pmax;
+	case HK_BLIND_TRANS_GATE_MARGIN:
+		return bp->margin >= min_margin;
+	case HK_BLIND_TRANS_GATE_NEG_ENTROPY:
+		return neg_entropy >= min_neg_entropy;
+	case HK_BLIND_TRANS_GATE_PMAX_MARGIN:
+		return bp->pmax >= min_pmax && bp->margin >= min_margin;
+	default:
+		return 1;
+	}
+}
+
+static float hk_blind_callable_anchor_score(const struct hk_blind_bpair *bp, int mode)
+{
+	assert(bp);
+	assert(hk_blind_trans_callable_anchor_mode_valid(mode));
+	switch (mode) {
+	case HK_BLIND_TRANS_CALLABLE_ANCHOR_NEG_ENTROPY:
+		return -bp->entropy;
+	case HK_BLIND_TRANS_CALLABLE_ANCHOR_PMAX:
+		return bp->pmax;
+	case HK_BLIND_TRANS_CALLABLE_ANCHOR_MARGIN:
+		return bp->margin;
+	default:
+		return -INFINITY;
+	}
+}
+
+static int hk_blind_mark_trans_callable_anchor_bpairs(const struct hk_blind_bpair_set *set,
+													  int mode,
+													  float top_frac,
+													  int32_t min_n_raw,
+													  uint8_t *selected)
+{
+	struct hk_blind_callable_anchor_candidate *candidates = 0;
+	int32_t n_candidates = 0, i;
+	int64_t total_raw = 0, target_raw, selected_raw = 0;
+	assert(set);
+	assert(selected);
+	assert(hk_blind_trans_callable_anchor_mode_valid(mode));
+	assert(isfinite(top_frac));
+	assert(top_frac >= 0.0f && top_frac <= 1.0f);
+	assert(min_n_raw >= 0);
+	memset(selected, 0, (size_t)set->n_bpairs);
+	if (mode == HK_BLIND_TRANS_CALLABLE_ANCHOR_OFF || top_frac <= 0.0f || set->n_bpairs <= 0)
+		return 0;
+	candidates = MALLOC(struct hk_blind_callable_anchor_candidate, set->n_bpairs);
+	if (candidates == 0)
+		return -1;
+	for (i = 0; i < set->n_bpairs; ++i) {
+		const struct hk_blind_bpair *bp = &set->bpairs[i];
+		float score;
+		int32_t n_raw = bp->n_raw > 0? bp->n_raw : 1;
+		if (bp->contact_class != HK_BLIND_CONTACT_TRANS)
+			continue;
+		if (bp->n_raw < min_n_raw)
+			continue;
+		score = hk_blind_callable_anchor_score(bp, mode);
+		if (!isfinite(score))
+			continue;
+		candidates[n_candidates].bpair_id = i;
+		candidates[n_candidates].n_raw = n_raw;
+		candidates[n_candidates].score = score;
+		++n_candidates;
+		total_raw += n_raw;
+	}
+	if (n_candidates <= 0 || total_raw <= 0) {
+		free(candidates);
+		return 0;
+	}
+	target_raw = (int64_t)ceil((double)total_raw * (double)top_frac);
+	if (target_raw < 1)
+		target_raw = 1;
+	qsort(candidates, (size_t)n_candidates, sizeof(*candidates),
+		  hk_blind_callable_anchor_candidate_cmp);
+	for (i = 0; i < n_candidates && selected_raw < target_raw; ++i) {
+		int32_t id = candidates[i].bpair_id;
+		assert(id >= 0 && id < set->n_bpairs);
+		selected[id] = 1;
+		selected_raw += candidates[i].n_raw;
+	}
+	free(candidates);
+	return 0;
 }
 
 static void hk_blind_bpair_set_unknown_posterior(struct hk_blind_bpair *p)
@@ -391,6 +601,128 @@ void hk_blind_bpair_set_init_uniform_prior(struct hk_blind_bpair_set *set)
 	assert(set->n_bpairs == 0 || set->bpairs);
 	for (i = 0; i < set->n_bpairs; ++i)
 		hk_blind_init_uniform_log_prior(set->bpairs[i].log_prior);
+}
+
+int hk_blind_bpair_set_apply_trans_chr_pair_prior(const struct hk_bmap *bmap, struct hk_blind_bpair_set *set,
+												  float lambda, float eps_count, float power)
+{
+	double (*sum)[HK_BLIND_N_STATE] = 0;
+	double *total = 0;
+	int32_t n_chr, n_pair, i;
+
+	assert(bmap);
+	assert(set);
+	assert(set->n_bpairs >= 0);
+	assert(set->n_bpairs == 0 || set->bpairs);
+	assert(isfinite(lambda));
+	assert(lambda >= 0.0f);
+	assert(lambda <= 1.0f);
+	assert(isfinite(eps_count));
+	assert(eps_count >= 0.0f);
+	assert(isfinite(power));
+	assert(power >= 0.0f);
+	n_chr = hk_blind_bmap_n_chr(bmap);
+	if (lambda <= 0.0f || n_chr <= 1) {
+		hk_blind_bpair_set_init_uniform_prior(set);
+		return 0;
+	}
+	if (n_chr > 46340)
+		return -1;
+	n_pair = n_chr * n_chr;
+	sum = (double (*)[HK_BLIND_N_STATE])calloc((size_t)n_pair, sizeof(*sum));
+	total = (double*)calloc((size_t)n_pair, sizeof(*total));
+	if (sum == 0 || total == 0) {
+		free(sum);
+		free(total);
+		return -1;
+	}
+	for (i = 0; i < set->n_bpairs; ++i) {
+		struct hk_blind_bpair *bp = &set->bpairs[i];
+		int32_t bid0 = bp->key.bid[0], bid1 = bp->key.bid[1];
+		int32_t chr0, chr1, idx, s;
+		double w;
+		assert(bid0 >= 0 && bid0 < bmap->n_beads);
+		assert(bid1 >= 0 && bid1 < bmap->n_beads);
+		chr0 = bmap->beads[bid0].chr;
+		chr1 = bmap->beads[bid1].chr;
+		assert(chr0 >= 0 && chr0 < n_chr);
+		assert(chr1 >= 0 && chr1 < n_chr);
+		if (chr0 == chr1)
+			continue;
+		idx = chr0 * n_chr + chr1;
+		w = bp->n_raw > 0? (double)bp->n_raw : 1.0;
+		total[idx] += w;
+		for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+			assert(isfinite(bp->p4[s]));
+			assert(bp->p4[s] >= 0.0f);
+			sum[idx][s] += w * (double)bp->p4[s];
+		}
+	}
+	for (i = 0; i < set->n_bpairs; ++i) {
+		struct hk_blind_bpair *bp = &set->bpairs[i];
+		int32_t bid0 = bp->key.bid[0], bid1 = bp->key.bid[1];
+		int32_t chr0, chr1, idx, s;
+		double denom;
+		assert(bid0 >= 0 && bid0 < bmap->n_beads);
+		assert(bid1 >= 0 && bid1 < bmap->n_beads);
+		chr0 = bmap->beads[bid0].chr;
+		chr1 = bmap->beads[bid1].chr;
+		assert(chr0 >= 0 && chr0 < n_chr);
+		assert(chr1 >= 0 && chr1 < n_chr);
+		if (chr0 == chr1) {
+			hk_blind_init_uniform_log_prior(bp->log_prior);
+			continue;
+		}
+		idx = chr0 * n_chr + chr1;
+		denom = total[idx] + 4.0 * (double)eps_count;
+		if (denom <= 0.0) {
+			hk_blind_init_uniform_log_prior(bp->log_prior);
+			continue;
+		}
+		if (power != 1.0f) {
+			double tmp[HK_BLIND_N_STATE];
+			double tmp_sum = 0.0;
+			for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+				double pair_prob = (sum[idx][s] + (double)eps_count) / denom;
+				tmp[s] = power == 0.0f? 1.0 : pow(pair_prob, (double)power);
+				if (!(tmp[s] >= 0.0) || !isfinite(tmp[s])) {
+					free(sum);
+					free(total);
+					return -1;
+				}
+				tmp_sum += tmp[s];
+			}
+			if (!(tmp_sum > 0.0) || !isfinite(tmp_sum)) {
+				free(sum);
+				free(total);
+				return -1;
+			}
+			for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+				double pair_prob = tmp[s] / tmp_sum;
+				double prior_prob = (1.0 - (double)lambda) * 0.25 + (double)lambda * pair_prob;
+				if (!(prior_prob > 0.0) || !isfinite(prior_prob)) {
+					free(sum);
+					free(total);
+					return -1;
+				}
+				bp->log_prior[s] = (float)log(prior_prob);
+			}
+			continue;
+		}
+		for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+			double pair_prob = (sum[idx][s] + (double)eps_count) / denom;
+			double prior_prob = (1.0 - (double)lambda) * 0.25 + (double)lambda * pair_prob;
+			if (!(prior_prob > 0.0) || !isfinite(prior_prob)) {
+				free(sum);
+				free(total);
+				return -1;
+			}
+			bp->log_prior[s] = (float)log(prior_prob);
+		}
+	}
+	free(sum);
+	free(total);
+	return 0;
 }
 
 static int hk_blind_float_cmp(const void *a_, const void *b_)
@@ -1059,6 +1391,75 @@ float hk_blind_homolog_sep_accumulate_force(int32_t n_haploid, const fvec3_t *co
 													min_sep_unit, lambda_sep, 0, 0);
 }
 
+float hk_blind_copytrack_accumulate_force(const struct hk_bmap *bmap, const fvec3_t *coords,
+										  fvec3_t *force, float unit, float lambda_copytrack,
+										  float *force_l1, int32_t *n_nonfinite)
+{
+	double total = 0.0, l1 = 0.0;
+	int32_t n_bad = 0;
+	int32_t i;
+	int a;
+
+	assert(bmap);
+	assert(bmap->n_beads >= 0);
+	assert(bmap->n_beads == 0 || bmap->beads);
+	assert(isfinite(unit));
+	assert(unit > 0.0f);
+	assert(isfinite(lambda_copytrack));
+	assert(lambda_copytrack >= 0.0f);
+	if (force_l1) *force_l1 = 0.0f;
+	if (n_nonfinite) *n_nonfinite = 0;
+	if (bmap->n_beads <= 1 || lambda_copytrack <= 0.0f)
+		return 0.0f;
+	assert(coords);
+	assert(force);
+
+	for (i = 1; i < bmap->n_beads; ++i) {
+		int32_t prev = i - 1;
+		int32_t cur = i;
+		int32_t prev0, prev1, cur0, cur1;
+		fvec3_t delta, f;
+		int edge_bad = 0;
+		if (bmap->beads[prev].chr != bmap->beads[cur].chr)
+			continue;
+		prev0 = hk_diploid_bid(prev, HK_DIPLOID_COPY0);
+		prev1 = hk_diploid_bid(prev, HK_DIPLOID_COPY1);
+		cur0 = hk_diploid_bid(cur, HK_DIPLOID_COPY0);
+		cur1 = hk_diploid_bid(cur, HK_DIPLOID_COPY1);
+		for (a = 0; a < 3; ++a) {
+			float v_prev = coords[prev1][a] - coords[prev0][a];
+			float v_cur = coords[cur1][a] - coords[cur0][a];
+			delta[a] = v_cur - v_prev;
+			if (!isfinite(delta[a])) {
+				++n_bad;
+				edge_bad = 1;
+			}
+		}
+		if (edge_bad)
+			continue;
+		for (a = 0; a < 3; ++a) {
+			float d_unit = delta[a] / unit;
+			total += (double)lambda_copytrack * (double)d_unit * (double)d_unit;
+			f[a] = -2.0f * lambda_copytrack * delta[a] / (unit * unit);
+		}
+		for (a = 0; a < 3; ++a) {
+			force[cur1][a] += f[a];
+			force[cur0][a] -= f[a];
+			force[prev1][a] -= f[a];
+			force[prev0][a] += f[a];
+			if (isfinite(f[a])) l1 += 4.0 * fabs((double)f[a]);
+			else n_bad += 4;
+			assert(isfinite(force[cur1][a]));
+			assert(isfinite(force[cur0][a]));
+			assert(isfinite(force[prev1][a]));
+			assert(isfinite(force[prev0][a]));
+		}
+	}
+	if (force_l1) *force_l1 = (float)l1;
+	if (n_nonfinite) *n_nonfinite = n_bad;
+	return (float)total;
+}
+
 static float hk_blind_chr_centroid_sep_accumulate_force(const struct hk_bmap *bmap,
 														const fvec3_t *coords,
 														fvec3_t *force,
@@ -1144,6 +1545,223 @@ cleanup:
 	free(counts);
 	free(centroid0);
 	free(centroid1);
+	if (force_l1) *force_l1 = (float)l1;
+	if (n_nonfinite) *n_nonfinite = n_bad;
+	return (float)total;
+}
+
+float hk_blind_global_copytrack_accumulate_force(const struct hk_bmap *bmap, const fvec3_t *coords,
+												 fvec3_t *force, float unit, float lambda_global_copytrack,
+												 float *force_l1, int32_t *n_nonfinite)
+{
+	fvec3_t *chr_mean = 0;
+	int32_t *counts = 0;
+	double global_mean[3] = {0.0, 0.0, 0.0};
+	double total = 0.0, l1 = 0.0;
+	int32_t n_chr, n_active_chr = 0, n_bad = 0;
+	int32_t c, i;
+	int a;
+
+	assert(bmap);
+	assert(bmap->n_beads >= 0);
+	assert(bmap->n_beads == 0 || bmap->beads);
+	assert(isfinite(unit));
+	assert(unit > 0.0f);
+	assert(isfinite(lambda_global_copytrack));
+	assert(lambda_global_copytrack >= 0.0f);
+	if (force_l1) *force_l1 = 0.0f;
+	if (n_nonfinite) *n_nonfinite = 0;
+	if (bmap->n_beads <= 1 || lambda_global_copytrack <= 0.0f)
+		return 0.0f;
+	assert(coords);
+	assert(force);
+
+	n_chr = hk_blind_bmap_n_chr(bmap);
+	if (n_chr <= 1)
+		return 0.0f;
+	counts = CALLOC(int32_t, n_chr);
+	chr_mean = CALLOC(fvec3_t, n_chr);
+	if (counts == 0 || chr_mean == 0)
+		goto cleanup;
+
+	for (i = 0; i < bmap->n_beads; ++i) {
+		int32_t chr = bmap->beads[i].chr;
+		int32_t c0 = hk_diploid_bid(i, HK_DIPLOID_COPY0);
+		int32_t c1 = hk_diploid_bid(i, HK_DIPLOID_COPY1);
+		float v[3];
+		int bad = 0;
+		assert(chr >= 0 && chr < n_chr);
+		for (a = 0; a < 3; ++a) {
+			v[a] = coords[c1][a] - coords[c0][a];
+			if (!isfinite(v[a])) {
+				bad = 1;
+				++n_bad;
+			}
+		}
+		if (!bad) {
+			for (a = 0; a < 3; ++a)
+				chr_mean[chr][a] += v[a];
+			++counts[chr];
+		}
+	}
+	for (c = 0; c < n_chr; ++c) {
+		if (counts[c] <= 0)
+			continue;
+		for (a = 0; a < 3; ++a) {
+			chr_mean[c][a] /= (float)counts[c];
+			global_mean[a] += (double)chr_mean[c][a] * (double)counts[c];
+		}
+		n_active_chr += counts[c];
+	}
+	if (n_active_chr <= 0)
+		goto cleanup;
+	for (a = 0; a < 3; ++a)
+		global_mean[a] /= (double)n_active_chr;
+
+	// Align chromosome-mean homolog vectors. This couples chromosome gauges
+	// without using SNP/CHARM labels and avoids normalizing near-zero vectors.
+	for (c = 0; c < n_chr; ++c) {
+		float f[3];
+		if (counts[c] <= 0)
+			continue;
+		for (a = 0; a < 3; ++a) {
+			double delta = (double)chr_mean[c][a] - global_mean[a];
+			double d_unit = delta / (double)unit;
+			double fa;
+			if (!isfinite(delta)) {
+				++n_bad;
+				f[a] = 0.0f;
+				continue;
+			}
+			total += (double)lambda_global_copytrack * (double)counts[c] * d_unit * d_unit;
+			fa = -2.0 * (double)lambda_global_copytrack * delta / ((double)unit * (double)unit);
+			f[a] = (float)fa;
+		}
+		for (i = 0; i < bmap->n_beads; ++i) {
+			int32_t c0, c1;
+			if (bmap->beads[i].chr != c)
+				continue;
+			c0 = hk_diploid_bid(i, HK_DIPLOID_COPY0);
+			c1 = hk_diploid_bid(i, HK_DIPLOID_COPY1);
+			for (a = 0; a < 3; ++a) {
+				force[c1][a] += f[a];
+				force[c0][a] -= f[a];
+				if (isfinite(f[a])) l1 += 2.0 * fabs((double)f[a]);
+				else n_bad += 2;
+				assert(isfinite(force[c1][a]));
+				assert(isfinite(force[c0][a]));
+			}
+		}
+	}
+cleanup:
+	free(counts);
+	free(chr_mean);
+	if (force_l1) *force_l1 = (float)l1;
+	if (n_nonfinite) *n_nonfinite = n_bad;
+	return (float)total;
+}
+
+float hk_blind_normdir_copytrack_accumulate_force(const struct hk_bmap *bmap, const fvec3_t *coords,
+												  fvec3_t *force, float unit,
+												  float lambda_normdir_copytrack,
+												  float eps_unit,
+												  float *force_l1,
+												  int32_t *n_nonfinite)
+{
+	double total = 0.0, l1 = 0.0;
+	float min_norm;
+	int32_t n_bad = 0;
+	int32_t i;
+	int a;
+
+	assert(bmap);
+	assert(bmap->n_beads >= 0);
+	assert(bmap->n_beads == 0 || bmap->beads);
+	assert(isfinite(unit));
+	assert(unit > 0.0f);
+	assert(isfinite(lambda_normdir_copytrack));
+	assert(lambda_normdir_copytrack >= 0.0f);
+	assert(isfinite(eps_unit));
+	assert(eps_unit >= 0.0f);
+	if (force_l1) *force_l1 = 0.0f;
+	if (n_nonfinite) *n_nonfinite = 0;
+	if (bmap->n_beads <= 1 || lambda_normdir_copytrack <= 0.0f)
+		return 0.0f;
+	assert(coords);
+	assert(force);
+
+	min_norm = eps_unit * unit;
+	for (i = 1; i < bmap->n_beads; ++i) {
+		int32_t prev = i - 1;
+		int32_t cur = i;
+		int32_t prev0, prev1, cur0, cur1;
+		float v_prev[3], v_cur[3], u_prev[3], u_cur[3], diff[3];
+		float grad_prev[3], grad_cur[3];
+		double norm_prev2 = 0.0, norm_cur2 = 0.0;
+		double norm_prev, norm_cur, inv_prev, inv_cur;
+		double dot_prev = 0.0, dot_cur = 0.0;
+		int bad = 0;
+		if (bmap->beads[prev].chr != bmap->beads[cur].chr)
+			continue;
+		prev0 = hk_diploid_bid(prev, HK_DIPLOID_COPY0);
+		prev1 = hk_diploid_bid(prev, HK_DIPLOID_COPY1);
+		cur0 = hk_diploid_bid(cur, HK_DIPLOID_COPY0);
+		cur1 = hk_diploid_bid(cur, HK_DIPLOID_COPY1);
+		for (a = 0; a < 3; ++a) {
+			v_prev[a] = coords[prev1][a] - coords[prev0][a];
+			v_cur[a] = coords[cur1][a] - coords[cur0][a];
+			if (!isfinite(v_prev[a]) || !isfinite(v_cur[a])) {
+				++n_bad;
+				bad = 1;
+			}
+			norm_prev2 += (double)v_prev[a] * (double)v_prev[a];
+			norm_cur2 += (double)v_cur[a] * (double)v_cur[a];
+		}
+		if (bad)
+			continue;
+		norm_prev = sqrt(norm_prev2);
+		norm_cur = sqrt(norm_cur2);
+		if (!(norm_prev > (double)min_norm) || !(norm_cur > (double)min_norm) ||
+			!isfinite(norm_prev) || !isfinite(norm_cur))
+			continue;
+		inv_prev = 1.0 / norm_prev;
+		inv_cur = 1.0 / norm_cur;
+		for (a = 0; a < 3; ++a) {
+			u_prev[a] = (float)((double)v_prev[a] * inv_prev);
+			u_cur[a] = (float)((double)v_cur[a] * inv_cur);
+			diff[a] = u_cur[a] - u_prev[a];
+			total += 0.5 * (double)lambda_normdir_copytrack * (double)diff[a] * (double)diff[a];
+			dot_prev += (double)diff[a] * (double)u_prev[a];
+			dot_cur += (double)diff[a] * (double)u_cur[a];
+		}
+		for (a = 0; a < 3; ++a) {
+			double gp = -(double)lambda_normdir_copytrack *
+				((double)diff[a] - dot_prev * (double)u_prev[a]) * inv_prev;
+			double gc = (double)lambda_normdir_copytrack *
+				((double)diff[a] - dot_cur * (double)u_cur[a]) * inv_cur;
+			grad_prev[a] = (float)gp;
+			grad_cur[a] = (float)gc;
+			if (!isfinite(grad_prev[a]) || !isfinite(grad_cur[a])) {
+				n_bad += 2;
+				bad = 1;
+			}
+		}
+		if (bad)
+			continue;
+		for (a = 0; a < 3; ++a) {
+			float f_prev = -grad_prev[a];
+			float f_cur = -grad_cur[a];
+			force[prev1][a] += f_prev;
+			force[prev0][a] -= f_prev;
+			force[cur1][a] += f_cur;
+			force[cur0][a] -= f_cur;
+			l1 += 2.0 * fabs((double)f_prev) + 2.0 * fabs((double)f_cur);
+			assert(isfinite(force[prev1][a]));
+			assert(isfinite(force[prev0][a]));
+			assert(isfinite(force[cur1][a]));
+			assert(isfinite(force[cur0][a]));
+		}
+	}
 	if (force_l1) *force_l1 = (float)l1;
 	if (n_nonfinite) *n_nonfinite = n_bad;
 	return (float)total;
@@ -1461,6 +2079,91 @@ void hk_blind_p4_to_raw_order(const float canonical_p4[HK_BLIND_N_STATE], uint8_
 	}
 }
 
+static void hk_blind_p4_from_raw_order(const float raw_p4[HK_BLIND_N_STATE], uint8_t swapped, float canonical_p4[HK_BLIND_N_STATE])
+{
+	assert(raw_p4);
+	assert(canonical_p4);
+	hk_blind_p4_to_raw_order(raw_p4, swapped, canonical_p4);
+}
+
+static const float *hk_blind_raw_contact_training_p4(const struct hk_blind_bpair_set *set,
+													 int32_t raw_id,
+													 const struct hk_blind_bpair *bp,
+													 uint8_t swapped,
+													 float tmp_canonical_p4[HK_BLIND_N_STATE])
+{
+	assert(set);
+	assert(bp);
+	assert(raw_id >= 0 && raw_id < set->n_raw);
+	assert(tmp_canonical_p4);
+	if (set->raw_p4) {
+		const float *raw_p4 = &set->raw_p4[(size_t)raw_id * HK_BLIND_N_STATE];
+		hk_blind_p4_from_raw_order(raw_p4, swapped, tmp_canonical_p4);
+		return tmp_canonical_p4;
+	}
+	return bp->p4;
+}
+
+int hk_blind_bpair_set_aggregate_raw_p4_to_bpair(struct hk_blind_bpair_set *set)
+{
+	double *accum = 0;
+	int32_t *count = 0;
+	int32_t i;
+
+	assert(set);
+	if (set->raw_p4 == 0)
+		return 0;
+	accum = CALLOC(double, (size_t)set->n_bpairs * HK_BLIND_N_STATE);
+	count = CALLOC(int32_t, set->n_bpairs);
+	if (accum == 0 || count == 0) {
+		free(accum);
+		free(count);
+		return -1;
+	}
+	for (i = 0; i < set->n_raw; ++i) {
+		const struct hk_blind_raw2binned *r2b = &set->raw2binned[i];
+		const float *raw_p4 = &set->raw_p4[(size_t)i * HK_BLIND_N_STATE];
+		float canonical_p4[HK_BLIND_N_STATE];
+		int s;
+		assert(r2b->bpair_id >= 0 && r2b->bpair_id < set->n_bpairs);
+		hk_blind_p4_from_raw_order(raw_p4, r2b->swapped, canonical_p4);
+		for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+			if (isfinite(canonical_p4[s]) && canonical_p4[s] >= 0.0f)
+				accum[(size_t)r2b->bpair_id * HK_BLIND_N_STATE + s] += canonical_p4[s];
+		}
+		++count[r2b->bpair_id];
+	}
+	for (i = 0; i < set->n_bpairs; ++i) {
+		struct hk_blind_bpair *bp = &set->bpairs[i];
+		double sum = 0.0;
+		int s;
+		if (hk_blind_bpair_is_same_bin(bp)) {
+			hk_blind_bpair_set_unknown_posterior(bp);
+			continue;
+		}
+		if (count[i] <= 0)
+			continue;
+		for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+			double v = accum[(size_t)i * HK_BLIND_N_STATE + s] / (double)count[i];
+			if (!isfinite(v) || v < 0.0)
+				v = 0.0;
+			bp->p4[s] = (float)v;
+			sum += v;
+		}
+		if (!(sum > 0.0) || !isfinite(sum)) {
+			hk_blind_bpair_set_unknown_posterior(bp);
+			continue;
+		}
+		for (s = 0; s < HK_BLIND_N_STATE; ++s)
+			bp->p4[s] = (float)(bp->p4[s] / sum);
+		hk_blind_p4_uncertainty(bp->p4, &bp->entropy, &bp->pmax, &bp->margin,
+								&bp->rho_output, &bp->pU);
+	}
+	free(accum);
+	free(count);
+	return 0;
+}
+
 static void hk_blind_wedge_set(struct hk_blind_wedge *edge, int32_t bid0, int32_t bid1, float k, float d_scale, int8_t state)
 {
 	assert(edge);
@@ -1511,9 +2214,12 @@ float hk_blind_bpair_effective_rho_train_floor(const struct hk_blind_bpair *bp, 
 	if (rho_train_mode == HK_BLIND_RHO_TRAIN_ENTROPY ||
 		rho_train_mode == HK_BLIND_RHO_TRAIN_ENTROPY_WITH_FLOOR ||
 		rho_train_mode == HK_BLIND_RHO_TRAIN_ENTROPY_CIS_CONSTANT_TRANS ||
-		rho_train_mode == HK_BLIND_RHO_TRAIN_ENTROPY_CIS_FLOOR_TRANS) {
+		rho_train_mode == HK_BLIND_RHO_TRAIN_ENTROPY_CIS_FLOOR_TRANS ||
+		rho_train_mode == HK_BLIND_RHO_TRAIN_TRANS_ENTROPY ||
+		rho_train_mode == HK_BLIND_RHO_TRAIN_TRANS_ENTROPY_WITH_FLOOR) {
 		float rho_output;
 		float floor_factor;
+		int contact_class;
 		assert(isfinite(bp->rho_output));
 		rho_output = hk_blind_clip01(bp->rho_output);
 		floor_factor = hk_blind_rho_train_floor_or_default(rho_train_floor);
@@ -1521,7 +2227,17 @@ float hk_blind_bpair_effective_rho_train_floor(const struct hk_blind_bpair *bp, 
 			return rho_train * rho_output;
 		if (rho_train_mode == HK_BLIND_RHO_TRAIN_ENTROPY_WITH_FLOOR)
 			return rho_train * (rho_output > floor_factor? rho_output : floor_factor);
-		if (hk_blind_bpair_contact_class_or_default(bp) == HK_BLIND_CONTACT_TRANS) {
+		contact_class = hk_blind_bpair_contact_class_or_default(bp);
+		if (rho_train_mode == HK_BLIND_RHO_TRAIN_TRANS_ENTROPY ||
+			rho_train_mode == HK_BLIND_RHO_TRAIN_TRANS_ENTROPY_WITH_FLOOR) {
+			if (contact_class == HK_BLIND_CONTACT_TRANS) {
+				if (rho_train_mode == HK_BLIND_RHO_TRAIN_TRANS_ENTROPY)
+					return rho_train * rho_output;
+				return rho_train * (rho_output > floor_factor? rho_output : floor_factor);
+			}
+			return rho_train;
+		}
+		if (contact_class == HK_BLIND_CONTACT_TRANS) {
 			if (rho_train_mode == HK_BLIND_RHO_TRAIN_ENTROPY_CIS_CONSTANT_TRANS)
 				return rho_train;
 			return rho_train * (rho_output > floor_factor? rho_output : floor_factor);
@@ -1676,16 +2392,23 @@ void hk_blind_contact_class_diag_init(struct hk_blind_contact_class_diag *diag)
 	diag->contact_force_l1_trans = 0.0f;
 }
 
-static int hk_blind_wedge_contact_class_from_bmap(const struct hk_bmap *bmap, const struct hk_blind_wedge *edge)
+static int hk_blind_diploid_pair_contact_class_from_bmap(const struct hk_bmap *bmap, int32_t d0, int32_t d1)
 {
 	int32_t h0, h1;
 	assert(bmap);
-	assert(edge);
-	h0 = hk_diploid_haploid_bid(edge->bid[0]);
-	h1 = hk_diploid_haploid_bid(edge->bid[1]);
+	assert(d0 >= 0);
+	assert(d1 >= 0);
+	h0 = hk_diploid_haploid_bid(d0);
+	h1 = hk_diploid_haploid_bid(d1);
 	assert(h0 >= 0 && h0 < bmap->n_beads);
 	assert(h1 >= 0 && h1 < bmap->n_beads);
 	return bmap->beads[h0].chr == bmap->beads[h1].chr? HK_BLIND_CONTACT_CIS : HK_BLIND_CONTACT_TRANS;
+}
+
+static int hk_blind_wedge_contact_class_from_bmap(const struct hk_bmap *bmap, const struct hk_blind_wedge *edge)
+{
+	assert(edge);
+	return hk_blind_diploid_pair_contact_class_from_bmap(bmap, edge->bid[0], edge->bid[1]);
 }
 
 int hk_blind_contact_class_diag_accumulate(const struct hk_fdg_conf *conf, const struct hk_bmap *bmap,
@@ -2530,18 +3253,27 @@ void hk_blind_step_diag_init(struct hk_blind_step_diag *diag)
 	diag->backbone_energy = 0.0f;
 	diag->repulsion_energy = 0.0f;
 	diag->sep_energy = 0.0f;
+	diag->copytrack_energy = 0.0f;
+	diag->global_copytrack_energy = 0.0f;
+	diag->normdir_copytrack_energy = 0.0f;
 	diag->anchor_energy = 0.0f;
 	diag->total_energy = 0.0f;
 	diag->force_l1 = 0.0f;
 	diag->backbone_force_l1 = 0.0f;
 	diag->repulsion_force_l1 = 0.0f;
 	diag->sep_force_l1 = 0.0f;
+	diag->copytrack_force_l1 = 0.0f;
+	diag->global_copytrack_force_l1 = 0.0f;
+	diag->normdir_copytrack_force_l1 = 0.0f;
 	diag->anchor_force_l1 = 0.0f;
 	diag->n_force_nonfinite = 0;
 	diag->n_contact_nonfinite = 0;
 	diag->n_backbone_nonfinite = 0;
 	diag->n_repulsion_nonfinite = 0;
 	diag->n_sep_nonfinite = 0;
+	diag->n_copytrack_nonfinite = 0;
+	diag->n_global_copytrack_nonfinite = 0;
+	diag->n_normdir_copytrack_nonfinite = 0;
 	diag->n_anchor_nonfinite = 0;
 	diag->n_backbone_edges = 0;
 	diag->n_repulsion_pairs_considered = 0;
@@ -2554,7 +3286,8 @@ static int hk_blind_relax_step_cpu_impl(const struct hk_fdg_conf *conf, const st
 										const struct hk_bmap *bmap_or_null, int32_t n_haploid, fvec3_t *coords, float unit, float step,
 										float min_sep_unit, float lambda_sep, int enable_repulsion, int repulsion_mode, float rel_rep_k,
 										float repulsion_block_k_min,
-										float chr_sep_unit, float lambda_chr_sep,
+										float chr_sep_unit, float lambda_chr_sep, float lambda_copytrack, float lambda_global_copytrack,
+										float lambda_normdir_copytrack, float normdir_copytrack_eps_unit,
 										const struct hk_blind_coarse_to_fine_map *anchor_map,
 										const fvec3_t *coarse_diploid_coords, float anchor_k,
 										struct hk_blind_step_diag *diag)
@@ -2563,11 +3296,16 @@ static int hk_blind_relax_step_cpu_impl(const struct hk_fdg_conf *conf, const st
 	struct hk_blind_backbone_diag backbone_diag;
 	struct hk_blind_repulsion_diag repulsion_diag;
 	float contact_energy, backbone_energy = 0.0f, repulsion_energy = 0.0f, sep_energy;
+	float copytrack_energy = 0.0f, copytrack_force_l1 = 0.0f;
+	float global_copytrack_energy = 0.0f, global_copytrack_force_l1 = 0.0f;
+	float normdir_copytrack_energy = 0.0f, normdir_copytrack_force_l1 = 0.0f;
 	float sep_force_l1 = 0.0f, anchor_energy = 0.0f, anchor_force_l1 = 0.0f;
 	double force_l1 = 0.0;
 	int32_t n_diploid;
 	int32_t n_contact_nonfinite = 0;
 	int32_t n_sep_nonfinite = 0;
+	int32_t n_copytrack_nonfinite = 0, n_global_copytrack_nonfinite = 0;
+	int32_t n_normdir_copytrack_nonfinite = 0;
 	int32_t n_anchor_nonfinite = 0;
 	int32_t n_force_nonfinite = 0;
 	int32_t i;
@@ -2597,6 +3335,14 @@ static int hk_blind_relax_step_cpu_impl(const struct hk_fdg_conf *conf, const st
 	assert(chr_sep_unit >= 0.0f);
 	assert(isfinite(lambda_chr_sep));
 	assert(lambda_chr_sep >= 0.0f);
+	assert(isfinite(lambda_copytrack));
+	assert(lambda_copytrack >= 0.0f);
+	assert(isfinite(lambda_global_copytrack));
+	assert(lambda_global_copytrack >= 0.0f);
+	assert(isfinite(lambda_normdir_copytrack));
+	assert(lambda_normdir_copytrack >= 0.0f);
+	assert(isfinite(normdir_copytrack_eps_unit));
+	assert(normdir_copytrack_eps_unit >= 0.0f);
 	assert(isfinite(anchor_k));
 	assert(anchor_k >= 0.0f);
 	if (bmap_or_null) {
@@ -2652,6 +3398,25 @@ static int hk_blind_relax_step_cpu_impl(const struct hk_fdg_conf *conf, const st
 		sep_force_l1 += chr_sep_force_l1;
 		n_sep_nonfinite += chr_sep_nonfinite;
 	}
+	if (bmap_or_null && lambda_copytrack > 0.0f) {
+		copytrack_energy = hk_blind_copytrack_accumulate_force(bmap_or_null, coords, force,
+															   unit, lambda_copytrack,
+															   &copytrack_force_l1,
+															   &n_copytrack_nonfinite);
+	}
+	if (bmap_or_null && lambda_global_copytrack > 0.0f) {
+		global_copytrack_energy = hk_blind_global_copytrack_accumulate_force(bmap_or_null, coords, force,
+																			 unit, lambda_global_copytrack,
+																			 &global_copytrack_force_l1,
+																			 &n_global_copytrack_nonfinite);
+	}
+	if (bmap_or_null && lambda_normdir_copytrack > 0.0f) {
+		normdir_copytrack_energy = hk_blind_normdir_copytrack_accumulate_force(bmap_or_null, coords, force,
+																			   unit, lambda_normdir_copytrack,
+																			   normdir_copytrack_eps_unit,
+																			   &normdir_copytrack_force_l1,
+																			   &n_normdir_copytrack_nonfinite);
+	}
 	if (anchor_map && anchor_k > 0.0f)
 		anchor_energy = hk_blind_parent_centroid_anchor_accumulate_force(anchor_map, coords, coarse_diploid_coords,
 																		 anchor_k, force, &n_anchor_nonfinite,
@@ -2675,19 +3440,30 @@ static int hk_blind_relax_step_cpu_impl(const struct hk_fdg_conf *conf, const st
 		diag->backbone_energy = backbone_energy;
 		diag->repulsion_energy = repulsion_energy;
 		diag->sep_energy = sep_energy;
-		diag->anchor_energy = anchor_energy;
-		diag->total_energy = contact_energy + backbone_energy + repulsion_energy + sep_energy + anchor_energy;
-			diag->force_l1 = (float)force_l1;
-			diag->backbone_force_l1 = backbone_diag.force_l1;
-			diag->repulsion_force_l1 = repulsion_diag.force_l1;
-			diag->sep_force_l1 = sep_force_l1;
+			diag->copytrack_energy = copytrack_energy;
+			diag->global_copytrack_energy = global_copytrack_energy;
+			diag->normdir_copytrack_energy = normdir_copytrack_energy;
+			diag->anchor_energy = anchor_energy;
+		diag->total_energy = contact_energy + backbone_energy + repulsion_energy +
+			sep_energy + copytrack_energy + global_copytrack_energy +
+			normdir_copytrack_energy + anchor_energy;
+		diag->force_l1 = (float)force_l1;
+		diag->backbone_force_l1 = backbone_diag.force_l1;
+		diag->repulsion_force_l1 = repulsion_diag.force_l1;
+		diag->sep_force_l1 = sep_force_l1;
+			diag->copytrack_force_l1 = copytrack_force_l1;
+			diag->global_copytrack_force_l1 = global_copytrack_force_l1;
+			diag->normdir_copytrack_force_l1 = normdir_copytrack_force_l1;
 			diag->anchor_force_l1 = anchor_force_l1;
-			diag->n_force_nonfinite = n_force_nonfinite;
-			diag->n_contact_nonfinite = n_contact_nonfinite;
-			diag->n_backbone_nonfinite = backbone_diag.n_nonfinite;
-			diag->n_repulsion_nonfinite = repulsion_diag.n_nonfinite;
-			diag->n_sep_nonfinite = n_sep_nonfinite;
-			diag->n_anchor_nonfinite = n_anchor_nonfinite;
+		diag->n_force_nonfinite = n_force_nonfinite;
+		diag->n_contact_nonfinite = n_contact_nonfinite;
+		diag->n_backbone_nonfinite = backbone_diag.n_nonfinite;
+		diag->n_repulsion_nonfinite = repulsion_diag.n_nonfinite;
+		diag->n_sep_nonfinite = n_sep_nonfinite;
+			diag->n_copytrack_nonfinite = n_copytrack_nonfinite;
+			diag->n_global_copytrack_nonfinite = n_global_copytrack_nonfinite;
+			diag->n_normdir_copytrack_nonfinite = n_normdir_copytrack_nonfinite;
+		diag->n_anchor_nonfinite = n_anchor_nonfinite;
 		diag->n_backbone_edges = backbone_diag.n_edges;
 		diag->n_repulsion_pairs_considered = repulsion_diag.n_pairs_considered;
 		diag->n_repulsion_pairs_blocked = repulsion_diag.n_pairs_blocked;
@@ -2705,7 +3481,8 @@ int hk_blind_relax_step_cpu(const struct hk_fdg_conf *conf, const struct hk_blin
 {
 	return hk_blind_relax_step_cpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step,
 										min_sep_unit, lambda_sep, enable_repulsion, repulsion_mode, rel_rep_k,
-										0.0f, 0.0f, 0.0f, 0, 0, 0.0f, diag);
+										0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+										0.0f, 0, 0, 0.0f, diag);
 }
 
 int hk_blind_relax_step_parent_anchor_cpu(const struct hk_fdg_conf *conf, const struct hk_blind_wedge_list *edges,
@@ -2718,7 +3495,8 @@ int hk_blind_relax_step_parent_anchor_cpu(const struct hk_fdg_conf *conf, const 
 {
 	return hk_blind_relax_step_cpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step,
 										min_sep_unit, lambda_sep, enable_repulsion, repulsion_mode, rel_rep_k,
-										0.0f, 0.0f, 0.0f, anchor_map, coarse_diploid_coords, anchor_k, diag);
+											0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+											0.0f, anchor_map, coarse_diploid_coords, anchor_k, diag);
 }
 
 void hk_blind_relax_diag_init(struct hk_blind_relax_diag *diag)
@@ -2736,6 +3514,12 @@ void hk_blind_relax_diag_init(struct hk_blind_relax_diag *diag)
 	diag->final_repulsion_energy = 0.0f;
 	diag->initial_sep_energy = 0.0f;
 	diag->final_sep_energy = 0.0f;
+	diag->initial_copytrack_energy = 0.0f;
+	diag->final_copytrack_energy = 0.0f;
+	diag->initial_global_copytrack_energy = 0.0f;
+	diag->final_global_copytrack_energy = 0.0f;
+	diag->initial_normdir_copytrack_energy = 0.0f;
+	diag->final_normdir_copytrack_energy = 0.0f;
 	diag->initial_anchor_energy = 0.0f;
 	diag->final_anchor_energy = 0.0f;
 	diag->max_force_l1 = 0.0f;
@@ -2746,6 +3530,12 @@ void hk_blind_relax_diag_init(struct hk_blind_relax_diag *diag)
 	diag->final_repulsion_force_l1 = 0.0f;
 	diag->max_sep_force_l1 = 0.0f;
 	diag->final_sep_force_l1 = 0.0f;
+	diag->max_copytrack_force_l1 = 0.0f;
+	diag->final_copytrack_force_l1 = 0.0f;
+	diag->max_global_copytrack_force_l1 = 0.0f;
+	diag->final_global_copytrack_force_l1 = 0.0f;
+	diag->max_normdir_copytrack_force_l1 = 0.0f;
+	diag->final_normdir_copytrack_force_l1 = 0.0f;
 	diag->max_anchor_force_l1 = 0.0f;
 	diag->final_anchor_force_l1 = 0.0f;
 	diag->final_n_repulsion_pairs_considered = 0;
@@ -2755,6 +3545,9 @@ void hk_blind_relax_diag_init(struct hk_blind_relax_diag *diag)
 	diag->n_backbone_nonfinite_step = 0;
 	diag->n_repulsion_nonfinite_step = 0;
 	diag->n_sep_nonfinite_step = 0;
+	diag->n_copytrack_nonfinite_step = 0;
+	diag->n_global_copytrack_nonfinite_step = 0;
+	diag->n_normdir_copytrack_nonfinite_step = 0;
 	diag->n_anchor_nonfinite_step = 0;
 	diag->n_coord_nonfinite = 0;
 	diag->repulsion_mode = HK_BLIND_REPULSION_NONE;
@@ -2784,17 +3577,26 @@ static int hk_blind_step_diag_has_nonfinite(const struct hk_blind_step_diag *dia
 		   diag->n_backbone_nonfinite != 0 ||
 		   diag->n_repulsion_nonfinite != 0 ||
 		   diag->n_sep_nonfinite != 0 ||
+		   diag->n_copytrack_nonfinite != 0 ||
+		   diag->n_global_copytrack_nonfinite != 0 ||
+		   diag->n_normdir_copytrack_nonfinite != 0 ||
 		   diag->n_anchor_nonfinite != 0 ||
 		   diag->n_force_nonfinite != 0 ||
 		   !hk_blind_float_isfinite(diag->contact_energy) ||
 		   !hk_blind_float_isfinite(diag->backbone_energy) ||
 		   !hk_blind_float_isfinite(diag->repulsion_energy) ||
 		   !hk_blind_float_isfinite(diag->sep_energy) ||
+		   !hk_blind_float_isfinite(diag->copytrack_energy) ||
+		   !hk_blind_float_isfinite(diag->global_copytrack_energy) ||
+		   !hk_blind_float_isfinite(diag->normdir_copytrack_energy) ||
 		   !hk_blind_float_isfinite(diag->anchor_energy) ||
 		   !hk_blind_float_isfinite(diag->total_energy) ||
 		   !hk_blind_float_isfinite(diag->backbone_force_l1) ||
 		   !hk_blind_float_isfinite(diag->repulsion_force_l1) ||
 		   !hk_blind_float_isfinite(diag->sep_force_l1) ||
+		   !hk_blind_float_isfinite(diag->copytrack_force_l1) ||
+		   !hk_blind_float_isfinite(diag->global_copytrack_force_l1) ||
+		   !hk_blind_float_isfinite(diag->normdir_copytrack_force_l1) ||
 		   !hk_blind_float_isfinite(diag->anchor_force_l1) ||
 		   !hk_blind_float_isfinite(diag->force_l1);
 }
@@ -2803,7 +3605,8 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct 
 								   const struct hk_bmap *bmap_or_null, int32_t n_haploid, fvec3_t *coords,
 								   float unit, float step, int32_t n_steps, float min_sep_unit, float lambda_sep,
 								   int enable_repulsion, int repulsion_mode, float repulsion_block_k_min,
-								   float chr_sep_unit, float lambda_chr_sep,
+								   float chr_sep_unit, float lambda_chr_sep, float lambda_copytrack, float lambda_global_copytrack,
+								   float lambda_normdir_copytrack, float normdir_copytrack_eps_unit,
 								   const struct hk_blind_coarse_to_fine_map *anchor_map,
 								   const fvec3_t *coarse_diploid_coords, float anchor_k,
 								   struct hk_blind_relax_diag *diag)
@@ -2835,6 +3638,14 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct 
 	assert(chr_sep_unit >= 0.0f);
 	assert(isfinite(lambda_chr_sep));
 	assert(lambda_chr_sep >= 0.0f);
+	assert(isfinite(lambda_copytrack));
+	assert(lambda_copytrack >= 0.0f);
+	assert(isfinite(lambda_global_copytrack));
+	assert(lambda_global_copytrack >= 0.0f);
+	assert(isfinite(lambda_normdir_copytrack));
+	assert(lambda_normdir_copytrack >= 0.0f);
+	assert(isfinite(normdir_copytrack_eps_unit));
+	assert(normdir_copytrack_eps_unit >= 0.0f);
 	assert(isfinite(anchor_k));
 	assert(anchor_k >= 0.0f);
 	assert(diag);
@@ -2875,6 +3686,8 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct 
 											   enable_repulsion? hk_blind_rel_rep_schedule_at(t, n_steps) : 0.0f,
 											   repulsion_block_k_min,
 											   chr_sep_unit, lambda_chr_sep,
+											   lambda_copytrack, lambda_global_copytrack,
+											   lambda_normdir_copytrack, normdir_copytrack_eps_unit,
 											   anchor_map, coarse_diploid_coords, anchor_k,
 											   &step_diag);
 		if (t == 0) {
@@ -2883,6 +3696,9 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct 
 			diag->initial_backbone_energy = step_diag.backbone_energy;
 			diag->initial_repulsion_energy = step_diag.repulsion_energy;
 			diag->initial_sep_energy = step_diag.sep_energy;
+			diag->initial_copytrack_energy = step_diag.copytrack_energy;
+			diag->initial_global_copytrack_energy = step_diag.global_copytrack_energy;
+			diag->initial_normdir_copytrack_energy = step_diag.normdir_copytrack_energy;
 			diag->initial_anchor_energy = step_diag.anchor_energy;
 		}
 		diag->final_total_energy = step_diag.total_energy;
@@ -2890,11 +3706,17 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct 
 		diag->final_backbone_energy = step_diag.backbone_energy;
 		diag->final_repulsion_energy = step_diag.repulsion_energy;
 		diag->final_sep_energy = step_diag.sep_energy;
+		diag->final_copytrack_energy = step_diag.copytrack_energy;
+		diag->final_global_copytrack_energy = step_diag.global_copytrack_energy;
+		diag->final_normdir_copytrack_energy = step_diag.normdir_copytrack_energy;
 		diag->final_anchor_energy = step_diag.anchor_energy;
 		diag->final_force_l1 = step_diag.force_l1;
 		diag->final_backbone_force_l1 = step_diag.backbone_force_l1;
 		diag->final_repulsion_force_l1 = step_diag.repulsion_force_l1;
 		diag->final_sep_force_l1 = step_diag.sep_force_l1;
+		diag->final_copytrack_force_l1 = step_diag.copytrack_force_l1;
+		diag->final_global_copytrack_force_l1 = step_diag.global_copytrack_force_l1;
+		diag->final_normdir_copytrack_force_l1 = step_diag.normdir_copytrack_force_l1;
 		diag->final_anchor_force_l1 = step_diag.anchor_force_l1;
 		diag->final_n_repulsion_pairs_considered = step_diag.n_repulsion_pairs_considered;
 		diag->final_n_repulsion_pairs_blocked = step_diag.n_repulsion_pairs_blocked;
@@ -2907,6 +3729,14 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct 
 			diag->max_repulsion_force_l1 = step_diag.repulsion_force_l1;
 		if (hk_blind_float_isfinite(step_diag.sep_force_l1) && step_diag.sep_force_l1 > diag->max_sep_force_l1)
 			diag->max_sep_force_l1 = step_diag.sep_force_l1;
+		if (hk_blind_float_isfinite(step_diag.copytrack_force_l1) && step_diag.copytrack_force_l1 > diag->max_copytrack_force_l1)
+			diag->max_copytrack_force_l1 = step_diag.copytrack_force_l1;
+		if (hk_blind_float_isfinite(step_diag.global_copytrack_force_l1) &&
+			step_diag.global_copytrack_force_l1 > diag->max_global_copytrack_force_l1)
+			diag->max_global_copytrack_force_l1 = step_diag.global_copytrack_force_l1;
+		if (hk_blind_float_isfinite(step_diag.normdir_copytrack_force_l1) &&
+			step_diag.normdir_copytrack_force_l1 > diag->max_normdir_copytrack_force_l1)
+			diag->max_normdir_copytrack_force_l1 = step_diag.normdir_copytrack_force_l1;
 		if (hk_blind_float_isfinite(step_diag.anchor_force_l1) && step_diag.anchor_force_l1 > diag->max_anchor_force_l1)
 			diag->max_anchor_force_l1 = step_diag.anchor_force_l1;
 		if (step_diag.n_backbone_nonfinite != 0)
@@ -2915,6 +3745,12 @@ static int hk_blind_relax_cpu_impl(const struct hk_fdg_conf *conf, const struct 
 			++diag->n_repulsion_nonfinite_step;
 		if (step_diag.n_sep_nonfinite != 0)
 			++diag->n_sep_nonfinite_step;
+		if (step_diag.n_copytrack_nonfinite != 0)
+			++diag->n_copytrack_nonfinite_step;
+		if (step_diag.n_global_copytrack_nonfinite != 0)
+			++diag->n_global_copytrack_nonfinite_step;
+		if (step_diag.n_normdir_copytrack_nonfinite != 0)
+			++diag->n_normdir_copytrack_nonfinite_step;
 		if (step_diag.n_anchor_nonfinite != 0)
 			++diag->n_anchor_nonfinite_step;
 
@@ -3040,14 +3876,19 @@ fail:
 	return -1;
 }
 
-static int hk_blind_apply_extra_cpu_forces(const struct hk_blind_coarse_to_fine_map *anchor_map,
+static int hk_blind_apply_extra_cpu_forces(const struct hk_bmap *bmap_or_null,
+										   const struct hk_blind_coarse_to_fine_map *anchor_map,
 										   const fvec3_t *coarse_diploid_coords, float anchor_k,
 										   int32_t n_haploid, fvec3_t *coords, float unit, float step,
-										   float min_sep_unit, float lambda_sep,
+										   float min_sep_unit, float lambda_sep, float lambda_copytrack,
+										   float lambda_global_copytrack,
+										   float lambda_normdir_copytrack, float normdir_copytrack_eps_unit,
 										   fvec3_t *extra_force, struct hk_blind_step_diag *step_diag)
 {
-	float sep_force_l1 = 0.0f, anchor_force_l1 = 0.0f;
-	int32_t n_sep_nonfinite = 0, n_anchor_nonfinite = 0;
+	float sep_force_l1 = 0.0f, copytrack_force_l1 = 0.0f, global_copytrack_force_l1 = 0.0f;
+	float normdir_copytrack_force_l1 = 0.0f, anchor_force_l1 = 0.0f;
+	int32_t n_sep_nonfinite = 0, n_copytrack_nonfinite = 0, n_global_copytrack_nonfinite = 0;
+	int32_t n_normdir_copytrack_nonfinite = 0, n_anchor_nonfinite = 0;
 	int32_t n_diploid = n_haploid * HK_DIPLOID_N_COPY;
 	int32_t i;
 	int a;
@@ -3062,6 +3903,31 @@ static int hk_blind_apply_extra_cpu_forces(const struct hk_blind_coarse_to_fine_
 																	 &sep_force_l1, &n_sep_nonfinite);
 	step_diag->sep_force_l1 = sep_force_l1;
 	step_diag->n_sep_nonfinite = n_sep_nonfinite;
+	if (bmap_or_null && lambda_copytrack > 0.0f) {
+		step_diag->copytrack_energy = hk_blind_copytrack_accumulate_force(bmap_or_null, coords, extra_force,
+																		  unit, lambda_copytrack,
+																		  &copytrack_force_l1,
+																		  &n_copytrack_nonfinite);
+			step_diag->copytrack_force_l1 = copytrack_force_l1;
+			step_diag->n_copytrack_nonfinite = n_copytrack_nonfinite;
+		}
+	if (bmap_or_null && lambda_global_copytrack > 0.0f) {
+		step_diag->global_copytrack_energy = hk_blind_global_copytrack_accumulate_force(bmap_or_null, coords, extra_force,
+																						unit, lambda_global_copytrack,
+																						&global_copytrack_force_l1,
+																						&n_global_copytrack_nonfinite);
+		step_diag->global_copytrack_force_l1 = global_copytrack_force_l1;
+		step_diag->n_global_copytrack_nonfinite = n_global_copytrack_nonfinite;
+	}
+	if (bmap_or_null && lambda_normdir_copytrack > 0.0f) {
+		step_diag->normdir_copytrack_energy = hk_blind_normdir_copytrack_accumulate_force(bmap_or_null, coords, extra_force,
+																						  unit, lambda_normdir_copytrack,
+																						  normdir_copytrack_eps_unit,
+																						  &normdir_copytrack_force_l1,
+																						  &n_normdir_copytrack_nonfinite);
+		step_diag->normdir_copytrack_force_l1 = normdir_copytrack_force_l1;
+		step_diag->n_normdir_copytrack_nonfinite = n_normdir_copytrack_nonfinite;
+	}
 	if (anchor_map && anchor_k > 0.0f) {
 		step_diag->anchor_energy = hk_blind_parent_centroid_anchor_accumulate_force(anchor_map, coords,
 																					coarse_diploid_coords,
@@ -3090,6 +3956,8 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct 
 								   const struct hk_bmap *bmap_or_null, int32_t n_haploid, fvec3_t *coords,
 								   float unit, float step, int32_t n_steps, float min_sep_unit, float lambda_sep,
 								   int enable_repulsion, int repulsion_mode, float repulsion_block_k_min,
+								   float lambda_copytrack, float lambda_global_copytrack,
+								   float lambda_normdir_copytrack, float normdir_copytrack_eps_unit,
 								   const struct hk_blind_coarse_to_fine_map *anchor_map,
 								   const fvec3_t *coarse_diploid_coords, float anchor_k,
 								   struct hk_blind_relax_diag *diag)
@@ -3114,6 +3982,14 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct 
 	assert(enable_repulsion == 0 || enable_repulsion == 1);
 	assert(repulsion_mode == HK_BLIND_REPULSION_CELL);
 	assert(repulsion_block_k_min == 0.0f);
+	assert(isfinite(lambda_copytrack));
+	assert(lambda_copytrack >= 0.0f);
+	assert(isfinite(lambda_global_copytrack));
+	assert(lambda_global_copytrack >= 0.0f);
+	assert(isfinite(lambda_normdir_copytrack));
+	assert(lambda_normdir_copytrack >= 0.0f);
+	assert(isfinite(normdir_copytrack_eps_unit));
+	assert(normdir_copytrack_eps_unit >= 0.0f);
 	assert(diag);
 	if (bmap_or_null) {
 		assert(bmap_or_null->n_beads == n_haploid);
@@ -3220,18 +4096,23 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct 
 		step_diag.n_backbone_edges = stats.active[HK_FDG_PAIR_TYPE_BACKBONE];
 		step_diag.n_repulsion_pairs_active = stats.active[HK_FDG_PAIR_TYPE_REPEL];
 		step_diag.n_repulsion_pairs_considered = stats.active[HK_FDG_PAIR_TYPE_REPEL];
-		step_diag.n_repulsion_pairs_blocked = 0;
-		step_diag.repulsion_mode = enable_repulsion? repulsion_mode : HK_BLIND_REPULSION_NONE;
-		if (min_sep_unit > 0.0f || lambda_sep > 0.0f || (anchor_map && anchor_k > 0.0f)) {
-			extra_force = n_diploid > 0? CALLOC(fvec3_t, n_diploid) : 0;
-			if (n_diploid > 0 && extra_force == 0)
-				goto cleanup;
-			if (hk_blind_apply_extra_cpu_forces(anchor_map, coarse_diploid_coords, anchor_k,
-												n_haploid, coords, unit, step,
-												min_sep_unit, lambda_sep,
-												extra_force, &step_diag) != 0) {
-				free(extra_force);
-				goto cleanup;
+			step_diag.n_repulsion_pairs_blocked = 0;
+			step_diag.repulsion_mode = enable_repulsion? repulsion_mode : HK_BLIND_REPULSION_NONE;
+			if (min_sep_unit > 0.0f || lambda_sep > 0.0f ||
+				lambda_copytrack > 0.0f || lambda_global_copytrack > 0.0f ||
+				lambda_normdir_copytrack > 0.0f ||
+				(anchor_map && anchor_k > 0.0f)) {
+				extra_force = n_diploid > 0? CALLOC(fvec3_t, n_diploid) : 0;
+				if (n_diploid > 0 && extra_force == 0)
+					goto cleanup;
+				if (hk_blind_apply_extra_cpu_forces(bmap_or_null, anchor_map, coarse_diploid_coords, anchor_k,
+													n_haploid, coords, unit, step,
+													min_sep_unit, lambda_sep, lambda_copytrack,
+													lambda_global_copytrack,
+													lambda_normdir_copytrack, normdir_copytrack_eps_unit,
+													extra_force, &step_diag) != 0) {
+					free(extra_force);
+					goto cleanup;
 			}
 			free(extra_force);
 				if (hk_fdg_gpu_upload_positions(gpu_ctx, (const fvec3_t*)coords, n_diploid) != 0) {
@@ -3239,33 +4120,52 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct 
 							t + 1, n_steps);
 					goto cleanup;
 				}
-		}
-		step_diag.total_energy = step_diag.contact_energy + step_diag.backbone_energy +
-			step_diag.repulsion_energy + step_diag.sep_energy + step_diag.anchor_energy;
-		if (t == 0) {
-			diag->initial_total_energy = step_diag.total_energy;
-			diag->initial_contact_energy = step_diag.contact_energy;
+			}
+			step_diag.total_energy = step_diag.contact_energy + step_diag.backbone_energy +
+				step_diag.repulsion_energy + step_diag.sep_energy +
+				step_diag.copytrack_energy + step_diag.global_copytrack_energy +
+				step_diag.normdir_copytrack_energy + step_diag.anchor_energy;
+			if (t == 0) {
+				diag->initial_total_energy = step_diag.total_energy;
+				diag->initial_contact_energy = step_diag.contact_energy;
 			diag->initial_backbone_energy = step_diag.backbone_energy;
-			diag->initial_repulsion_energy = step_diag.repulsion_energy;
-			diag->initial_sep_energy = step_diag.sep_energy;
-			diag->initial_anchor_energy = step_diag.anchor_energy;
-		}
+				diag->initial_repulsion_energy = step_diag.repulsion_energy;
+				diag->initial_sep_energy = step_diag.sep_energy;
+				diag->initial_copytrack_energy = step_diag.copytrack_energy;
+				diag->initial_global_copytrack_energy = step_diag.global_copytrack_energy;
+				diag->initial_normdir_copytrack_energy = step_diag.normdir_copytrack_energy;
+				diag->initial_anchor_energy = step_diag.anchor_energy;
+			}
 		diag->final_total_energy = step_diag.total_energy;
 		diag->final_contact_energy = step_diag.contact_energy;
 		diag->final_backbone_energy = step_diag.backbone_energy;
-		diag->final_repulsion_energy = step_diag.repulsion_energy;
-		diag->final_sep_energy = step_diag.sep_energy;
-		diag->final_anchor_energy = step_diag.anchor_energy;
+			diag->final_repulsion_energy = step_diag.repulsion_energy;
+			diag->final_sep_energy = step_diag.sep_energy;
+			diag->final_copytrack_energy = step_diag.copytrack_energy;
+			diag->final_global_copytrack_energy = step_diag.global_copytrack_energy;
+			diag->final_normdir_copytrack_energy = step_diag.normdir_copytrack_energy;
+			diag->final_anchor_energy = step_diag.anchor_energy;
 		diag->final_force_l1 = step_diag.force_l1;
 		diag->final_backbone_force_l1 = step_diag.backbone_force_l1;
 		diag->final_repulsion_force_l1 = step_diag.repulsion_force_l1;
-		diag->final_sep_force_l1 = step_diag.sep_force_l1;
-		diag->final_anchor_force_l1 = step_diag.anchor_force_l1;
+			diag->final_sep_force_l1 = step_diag.sep_force_l1;
+			diag->final_copytrack_force_l1 = step_diag.copytrack_force_l1;
+			diag->final_global_copytrack_force_l1 = step_diag.global_copytrack_force_l1;
+			diag->final_normdir_copytrack_force_l1 = step_diag.normdir_copytrack_force_l1;
+			diag->final_anchor_force_l1 = step_diag.anchor_force_l1;
 		diag->final_n_repulsion_pairs_considered = step_diag.n_repulsion_pairs_considered;
 		diag->final_n_repulsion_pairs_blocked = step_diag.n_repulsion_pairs_blocked;
 		diag->final_n_repulsion_pairs_active = step_diag.n_repulsion_pairs_active;
-		if (hk_blind_float_isfinite(step_diag.force_l1) && step_diag.force_l1 > diag->max_force_l1)
-			diag->max_force_l1 = step_diag.force_l1;
+			if (hk_blind_float_isfinite(step_diag.force_l1) && step_diag.force_l1 > diag->max_force_l1)
+				diag->max_force_l1 = step_diag.force_l1;
+		if (hk_blind_float_isfinite(step_diag.copytrack_force_l1) && step_diag.copytrack_force_l1 > diag->max_copytrack_force_l1)
+			diag->max_copytrack_force_l1 = step_diag.copytrack_force_l1;
+		if (hk_blind_float_isfinite(step_diag.global_copytrack_force_l1) &&
+			step_diag.global_copytrack_force_l1 > diag->max_global_copytrack_force_l1)
+			diag->max_global_copytrack_force_l1 = step_diag.global_copytrack_force_l1;
+		if (hk_blind_float_isfinite(step_diag.normdir_copytrack_force_l1) &&
+			step_diag.normdir_copytrack_force_l1 > diag->max_normdir_copytrack_force_l1)
+			diag->max_normdir_copytrack_force_l1 = step_diag.normdir_copytrack_force_l1;
 		if (hk_blind_float_isfinite(step_diag.anchor_force_l1) && step_diag.anchor_force_l1 > diag->max_anchor_force_l1)
 			diag->max_anchor_force_l1 = step_diag.anchor_force_l1;
 		if (step_diag.n_backbone_nonfinite != 0)
@@ -3274,6 +4174,12 @@ static int hk_blind_relax_gpu_impl(const struct hk_fdg_conf *conf, const struct 
 			++diag->n_repulsion_nonfinite_step;
 		if (step_diag.n_sep_nonfinite != 0)
 			++diag->n_sep_nonfinite_step;
+		if (step_diag.n_copytrack_nonfinite != 0)
+			++diag->n_copytrack_nonfinite_step;
+		if (step_diag.n_global_copytrack_nonfinite != 0)
+			++diag->n_global_copytrack_nonfinite_step;
+		if (step_diag.n_normdir_copytrack_nonfinite != 0)
+			++diag->n_normdir_copytrack_nonfinite_step;
 		if (step_diag.n_anchor_nonfinite != 0)
 			++diag->n_anchor_nonfinite_step;
 		diag->n_coord_nonfinite = hk_blind_count_nonfinite_coords(coords, n_diploid);
@@ -3296,7 +4202,9 @@ static int hk_blind_relax_impl(const struct hk_fdg_conf *conf, const struct hk_b
 							   const struct hk_bmap *bmap_or_null, int32_t n_haploid, fvec3_t *coords,
 							   float unit, float step, int32_t n_steps, float min_sep_unit, float lambda_sep,
 							   int enable_repulsion, int repulsion_mode, float repulsion_block_k_min,
-							   float chr_sep_unit, float lambda_chr_sep,
+							   float chr_sep_unit, float lambda_chr_sep, float lambda_copytrack,
+							   float lambda_global_copytrack,
+							   float lambda_normdir_copytrack, float normdir_copytrack_eps_unit,
 							   const struct hk_blind_coarse_to_fine_map *anchor_map,
 							   const fvec3_t *coarse_diploid_coords, float anchor_k,
 							   struct hk_blind_relax_diag *diag)
@@ -3307,14 +4215,17 @@ static int hk_blind_relax_impl(const struct hk_fdg_conf *conf, const struct hk_b
 			return -1;
 		return hk_blind_relax_gpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step,
 									   n_steps, min_sep_unit, lambda_sep, enable_repulsion,
-									   repulsion_mode, repulsion_block_k_min,
+									   repulsion_mode, repulsion_block_k_min, lambda_copytrack,
+									   lambda_global_copytrack,
+									   lambda_normdir_copytrack, normdir_copytrack_eps_unit,
 									   anchor_map, coarse_diploid_coords, anchor_k, diag);
 	}
 	return hk_blind_relax_cpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step,
 								   n_steps, min_sep_unit, lambda_sep, enable_repulsion,
 								   repulsion_mode, repulsion_block_k_min, chr_sep_unit,
-								   lambda_chr_sep, anchor_map, coarse_diploid_coords,
-								   anchor_k, diag);
+								   lambda_chr_sep, lambda_copytrack, lambda_global_copytrack,
+								   lambda_normdir_copytrack, normdir_copytrack_eps_unit,
+								   anchor_map, coarse_diploid_coords, anchor_k, diag);
 }
 
 int hk_blind_relax_cpu(const struct hk_fdg_conf *conf, const struct hk_blind_wedge_list *edges,
@@ -3323,7 +4234,8 @@ int hk_blind_relax_cpu(const struct hk_fdg_conf *conf, const struct hk_blind_wed
 {
 	return hk_blind_relax_cpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step, n_steps,
 								   min_sep_unit, lambda_sep, enable_repulsion, repulsion_mode,
-								   0.0f, 0.0f, 0.0f, 0, 0, 0.0f, diag);
+								   0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+								   0.0f, 0, 0, 0.0f, diag);
 }
 
 int hk_blind_relax_parent_anchor_cpu(const struct hk_fdg_conf *conf, const struct hk_blind_wedge_list *edges,
@@ -3336,7 +4248,8 @@ int hk_blind_relax_parent_anchor_cpu(const struct hk_fdg_conf *conf, const struc
 {
 	return hk_blind_relax_cpu_impl(conf, edges, bmap_or_null, n_haploid, coords, unit, step, n_steps,
 								   min_sep_unit, lambda_sep, enable_repulsion, repulsion_mode,
-								   0.0f, 0.0f, 0.0f, anchor_map, coarse_diploid_coords, anchor_k, diag);
+								   0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+								   0.0f, anchor_map, coarse_diploid_coords, anchor_k, diag);
 }
 
 void hk_blind_wedge_list_init(struct hk_blind_wedge_list *list)
@@ -3638,11 +4551,12 @@ static void hk_blind_softall_map_push_pair(struct hk_map *m,
 									   const struct hk_blind_pair *q,
 									   const int32_t *ploidy_XY,
 									   const int32_t *old2new,
-									   int canonical_state,
-									   uint8_t swapped,
-									   float phased_prob,
-									   float final_phased_prob,
-									   struct hk_blind_softall_aux *aux)
+								   int canonical_state,
+								   uint8_t swapped,
+								   float phased_prob,
+								   float final_phased_prob,
+								   float final_train_prob,
+								   struct hk_blind_softall_aux *aux)
 {
 	struct hk_pair *r;
 	int raw_state;
@@ -3656,6 +4570,8 @@ static void hk_blind_softall_map_push_pair(struct hk_map *m,
 	assert(canonical_state >= 0 && canonical_state < HK_BLIND_N_STATE);
 	assert(isfinite(phased_prob));
 	assert(isfinite(final_phased_prob));
+	assert(isfinite(final_train_prob));
+	assert(final_train_prob >= 0.0f);
 	assert(aux);
 	raw_state = hk_blind_canonical_state_to_raw_state(canonical_state, swapped);
 	raw_copy[0] = (raw_state >> 1) & 1;
@@ -3666,8 +4582,17 @@ static void hk_blind_softall_map_push_pair(struct hk_map *m,
 		((ploidy_XY[q->chr[1]] >> 8) == 1? 0 : raw_copy[1]);
 	if (m->n_pairs == *m_pairs)
 		EXPAND(m->pairs, *m_pairs);
-	if (aux->n_final_phased_prob == aux->m_final_phased_prob)
-		EXPAND(aux->final_phased_prob, aux->m_final_phased_prob);
+	if (aux->n_final_phased_prob == aux->m_final_phased_prob) {
+		int32_t old_m = aux->m_final_phased_prob;
+		aux->m_final_phased_prob = aux->m_final_phased_prob?
+			aux->m_final_phased_prob + (aux->m_final_phased_prob >> 1) : 16;
+		REALLOC(aux->final_phased_prob, aux->m_final_phased_prob);
+		REALLOC(aux->final_train_prob, aux->m_final_phased_prob);
+		if (aux->final_phased_prob == 0 || aux->final_train_prob == 0)
+			abort();
+		memset(aux->final_train_prob + old_m, 0,
+			   (size_t)(aux->m_final_phased_prob - old_m) * sizeof(*aux->final_train_prob));
+	}
 	if (aux->n_final_phased_prob > INT32_MAX)
 		abort();
 	r = &m->pairs[m->n_pairs++];
@@ -3689,16 +4614,41 @@ static void hk_blind_softall_map_push_pair(struct hk_map *m,
 		r->phase[1] = raw_copy[1];
 	}
 	r->_.phased_prob = phased_prob;
-	aux->final_phased_prob[aux->n_final_phased_prob++] = final_phased_prob;
+	aux->final_phased_prob[aux->n_final_phased_prob] = final_phased_prob;
+	aux->final_train_prob[aux->n_final_phased_prob++] = final_train_prob;
 }
 
 static int hk_blind_build_softall_map(const struct hk_bmap *bmap,
 									 const struct hk_blind_bpair_set *set,
-									 struct hk_blind_softall_aux *aux)
+									 struct hk_blind_softall_aux *aux,
+									 float rho_train,
+									 int rho_train_mode,
+									 float rho_train_floor,
+									 int trans_top1_mode,
+									 float trans_top1_min_pmax,
+									 float trans_top1_min_margin,
+									 float trans_top1_mix_weight,
+									 int trans_callable_anchor_mode,
+									 float trans_callable_anchor_top_frac,
+									 float trans_callable_anchor_mix_weight,
+									 int32_t trans_callable_anchor_min_n_raw,
+									 int trans_gate_mode,
+									 float trans_gate_min_pmax,
+									 float trans_gate_min_margin,
+									 float trans_gate_min_neg_entropy,
+									 float trans_chr_pair_mstep_lambda,
+									 float trans_chr_pair_mstep_eps,
+									 float trans_chr_pair_mstep_power,
+									 int trans_chr_pair_mstep_mode)
 {
 	struct hk_map *m = 0;
 	int32_t *ploidy_XY = 0, *old2new = 0;
+	float (*chr_pair_prior)[HK_BLIND_N_STATE] = 0;
+	double (*chr_pair_sum)[HK_BLIND_N_STATE] = 0;
+	double *chr_pair_total = 0;
+	uint8_t *callable_anchor_selected = 0;
 	int32_t i, m_pairs = 0;
+	int32_t n_chr = 0, n_chr_pair = 0;
 
 	assert(bmap);
 	assert(bmap->d);
@@ -3706,6 +4656,38 @@ static int hk_blind_build_softall_map(const struct hk_bmap *bmap,
 	assert(aux);
 	assert(set->n_raw == 0 || set->raw);
 	assert(set->n_raw == 0 || set->raw2binned);
+	assert(isfinite(rho_train));
+	assert(rho_train >= 0.0f);
+	assert(hk_blind_rho_train_mode_valid(rho_train_mode));
+	assert(rho_train_floor == 0.0f ||
+		   (isfinite(rho_train_floor) && rho_train_floor >= 0.0f && rho_train_floor <= 1.0f));
+	assert(hk_blind_trans_top1_mode_valid(trans_top1_mode));
+	assert(isfinite(trans_top1_min_pmax));
+	assert(trans_top1_min_pmax >= 0.0f && trans_top1_min_pmax <= 1.0f);
+	assert(isfinite(trans_top1_min_margin));
+	assert(trans_top1_min_margin >= 0.0f && trans_top1_min_margin <= 1.0f);
+	assert(isfinite(trans_top1_mix_weight));
+	assert(trans_top1_mix_weight >= 0.0f && trans_top1_mix_weight <= 1.0f);
+	assert(hk_blind_trans_callable_anchor_mode_valid(trans_callable_anchor_mode));
+	assert(isfinite(trans_callable_anchor_top_frac));
+	assert(trans_callable_anchor_top_frac >= 0.0f && trans_callable_anchor_top_frac <= 1.0f);
+	assert(isfinite(trans_callable_anchor_mix_weight));
+	assert(trans_callable_anchor_mix_weight >= 0.0f && trans_callable_anchor_mix_weight <= 1.0f);
+	assert(trans_callable_anchor_min_n_raw >= 0);
+	assert(hk_blind_trans_gate_mode_valid(trans_gate_mode));
+	assert(isfinite(trans_gate_min_pmax));
+	assert(trans_gate_min_pmax >= 0.0f && trans_gate_min_pmax <= 1.0f);
+	assert(isfinite(trans_gate_min_margin));
+	assert(trans_gate_min_margin >= 0.0f && trans_gate_min_margin <= 1.0f);
+	assert(isfinite(trans_gate_min_neg_entropy));
+	assert(trans_gate_min_neg_entropy <= 0.0f);
+	assert(isfinite(trans_chr_pair_mstep_lambda));
+	assert(trans_chr_pair_mstep_lambda >= 0.0f && trans_chr_pair_mstep_lambda <= 1.0f);
+	assert(isfinite(trans_chr_pair_mstep_eps));
+	assert(trans_chr_pair_mstep_eps >= 0.0f);
+	assert(isfinite(trans_chr_pair_mstep_power));
+	assert(trans_chr_pair_mstep_power >= 0.0f);
+	assert(hk_blind_trans_chr_pair_mstep_mode_valid(trans_chr_pair_mstep_mode));
 	memset(aux, 0, sizeof(*aux));
 
 	ploidy_XY = hk_sd_ploidy_XY(bmap->d, 0);
@@ -3718,11 +4700,114 @@ static int hk_blind_build_softall_map(const struct hk_bmap *bmap,
 	m->d = hk_sd_split_phase(bmap->d, ploidy_XY);
 	if (m->d == 0)
 		goto fail;
+	if (trans_chr_pair_mstep_lambda > 0.0f) {
+		int32_t j;
+		n_chr = hk_blind_bmap_n_chr(bmap);
+		if (n_chr > 46340)
+			goto fail;
+		n_chr_pair = n_chr * n_chr;
+		if (n_chr_pair > 0) {
+			chr_pair_prior = (float (*)[HK_BLIND_N_STATE])calloc((size_t)n_chr_pair, sizeof(*chr_pair_prior));
+			chr_pair_sum = (double (*)[HK_BLIND_N_STATE])calloc((size_t)n_chr_pair, sizeof(*chr_pair_sum));
+			chr_pair_total = (double*)calloc((size_t)n_chr_pair, sizeof(*chr_pair_total));
+			if (chr_pair_prior == 0 || chr_pair_sum == 0 || chr_pair_total == 0)
+				goto fail;
+		}
+		for (i = 0; i < set->n_bpairs; ++i) {
+			const struct hk_blind_bpair *bp = &set->bpairs[i];
+			int32_t bid0 = bp->key.bid[0], bid1 = bp->key.bid[1];
+			int32_t chr0, chr1, idx, s;
+			double w;
+			if (bp->contact_class != HK_BLIND_CONTACT_TRANS)
+				continue;
+			assert(bid0 >= 0 && bid0 < bmap->n_beads);
+			assert(bid1 >= 0 && bid1 < bmap->n_beads);
+			chr0 = bmap->beads[bid0].chr;
+			chr1 = bmap->beads[bid1].chr;
+			assert(chr0 >= 0 && chr0 < n_chr);
+			assert(chr1 >= 0 && chr1 < n_chr);
+			assert(chr0 != chr1);
+			idx = chr0 * n_chr + chr1;
+			w = bp->n_raw > 0? (double)bp->n_raw : 1.0;
+			chr_pair_total[idx] += w;
+			for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+				assert(isfinite(bp->p4[s]));
+				assert(bp->p4[s] >= 0.0f);
+				chr_pair_sum[idx][s] += w * (double)bp->p4[s];
+			}
+		}
+		for (j = 0; j < n_chr_pair; ++j) {
+			double tmp[HK_BLIND_N_STATE], tmp_sum = 0.0;
+			int s;
+			if (chr_pair_total[j] <= 0.0) {
+				for (s = 0; s < HK_BLIND_N_STATE; ++s)
+					chr_pair_prior[j][s] = 0.25f;
+				continue;
+			}
+			if (trans_chr_pair_mstep_mode == HK_BLIND_TRANS_CHR_PAIR_MSTEP_SAME_CROSS) {
+				double denom = chr_pair_total[j] + 2.0 * (double)trans_chr_pair_mstep_eps;
+				double same_prob = (chr_pair_sum[j][HK_BLIND_STATE_00] +
+									chr_pair_sum[j][HK_BLIND_STATE_11] +
+									(double)trans_chr_pair_mstep_eps) / denom;
+				double cross_prob = (chr_pair_sum[j][HK_BLIND_STATE_01] +
+									 chr_pair_sum[j][HK_BLIND_STATE_10] +
+									 (double)trans_chr_pair_mstep_eps) / denom;
+				double same_tmp = trans_chr_pair_mstep_power == 0.0f? 1.0 : pow(same_prob, (double)trans_chr_pair_mstep_power);
+				double cross_tmp = trans_chr_pair_mstep_power == 0.0f? 1.0 : pow(cross_prob, (double)trans_chr_pair_mstep_power);
+				double group_sum = same_tmp + cross_tmp;
+				if (!(same_tmp >= 0.0) || !(cross_tmp >= 0.0) ||
+					!isfinite(same_tmp) || !isfinite(cross_tmp) ||
+					!(group_sum > 0.0) || !isfinite(group_sum))
+					goto fail;
+				/*
+				 * same_cross deliberately discards the 00-vs-11 and 01-vs-10
+				 * chromosome-pair gauge. Local posterior keeps the within-group
+				 * ratio when these group priors are multiplied back below.
+				 */
+				chr_pair_prior[j][HK_BLIND_STATE_00] = (float)(0.5 * same_tmp / group_sum);
+				chr_pair_prior[j][HK_BLIND_STATE_11] = (float)(0.5 * same_tmp / group_sum);
+				chr_pair_prior[j][HK_BLIND_STATE_01] = (float)(0.5 * cross_tmp / group_sum);
+				chr_pair_prior[j][HK_BLIND_STATE_10] = (float)(0.5 * cross_tmp / group_sum);
+			} else {
+				for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+					double denom = chr_pair_total[j] + 4.0 * (double)trans_chr_pair_mstep_eps;
+					double pair_prob = (chr_pair_sum[j][s] + (double)trans_chr_pair_mstep_eps) / denom;
+					tmp[s] = trans_chr_pair_mstep_power == 0.0f? 1.0 : pow(pair_prob, (double)trans_chr_pair_mstep_power);
+					if (!(tmp[s] >= 0.0) || !isfinite(tmp[s]))
+						goto fail;
+					tmp_sum += tmp[s];
+				}
+				if (!(tmp_sum > 0.0) || !isfinite(tmp_sum))
+					goto fail;
+				for (s = 0; s < HK_BLIND_N_STATE; ++s)
+					chr_pair_prior[j][s] = (float)(tmp[s] / tmp_sum);
+			}
+		}
+	}
+	if (trans_callable_anchor_mode != HK_BLIND_TRANS_CALLABLE_ANCHOR_OFF &&
+		trans_callable_anchor_top_frac > 0.0f &&
+		trans_callable_anchor_mix_weight > 0.0f) {
+		callable_anchor_selected = CALLOC(uint8_t, set->n_bpairs);
+		if (callable_anchor_selected == 0)
+			goto fail;
+		if (hk_blind_mark_trans_callable_anchor_bpairs(set,
+													  trans_callable_anchor_mode,
+													  trans_callable_anchor_top_frac,
+													  trans_callable_anchor_min_n_raw,
+													  callable_anchor_selected) != 0)
+			goto fail;
+	}
 
 	for (i = 0; i < set->n_raw; ++i) {
 		const struct hk_blind_raw2binned *r2b = &set->raw2binned[i];
 		const struct hk_blind_bpair *bp;
 		const struct hk_blind_pair *q = &set->raw[i];
+		float raw_training_p4[HK_BLIND_N_STATE];
+		float chr_pair_training_p4[HK_BLIND_N_STATE];
+		float callable_anchor_p4[HK_BLIND_N_STATE];
+		float trans_control_p4[HK_BLIND_N_STATE];
+		const float *posterior_p4;
+		const float *training_p4;
 		int s;
 		assert(r2b->bpair_id >= 0 && r2b->bpair_id < set->n_bpairs);
 		bp = &set->bpairs[r2b->bpair_id];
@@ -3730,20 +4815,101 @@ static int hk_blind_build_softall_map(const struct hk_bmap *bmap,
 			++aux->n_same_bin_skip_raw;
 			continue;
 		}
+		if (!hk_blind_trans_gate_keep(bp, trans_gate_mode,
+									  trans_gate_min_pmax,
+									  trans_gate_min_margin,
+									  trans_gate_min_neg_entropy)) {
+			++aux->n_gate_skip_raw;
+			continue;
+		}
+		posterior_p4 = hk_blind_raw_contact_training_p4(set, i, bp, r2b->swapped, raw_training_p4);
+		training_p4 = posterior_p4;
+		if (trans_chr_pair_mstep_lambda > 0.0f &&
+			bp->contact_class == HK_BLIND_CONTACT_TRANS) {
+			int32_t chr0 = bmap->beads[bp->key.bid[0]].chr;
+			int32_t chr1 = bmap->beads[bp->key.bid[1]].chr;
+			int32_t idx = chr0 * n_chr + chr1;
+			double denom = 0.0;
+			assert(chr_pair_prior);
+			for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+				double prior = chr_pair_prior[idx][s];
+				double blend = (1.0 - (double)trans_chr_pair_mstep_lambda) +
+					(double)trans_chr_pair_mstep_lambda * 4.0 * prior;
+				chr_pair_training_p4[s] = (float)((double)training_p4[s] * blend);
+				if (!isfinite(chr_pair_training_p4[s]) || chr_pair_training_p4[s] < 0.0f)
+					goto fail;
+				denom += chr_pair_training_p4[s];
+			}
+			if (!(denom > 0.0) || !isfinite(denom))
+				goto fail;
+			for (s = 0; s < HK_BLIND_N_STATE; ++s)
+				chr_pair_training_p4[s] = (float)((double)chr_pair_training_p4[s] / denom);
+			training_p4 = chr_pair_training_p4;
+		}
+		if (callable_anchor_selected &&
+			bp->contact_class == HK_BLIND_CONTACT_TRANS &&
+			callable_anchor_selected[r2b->bpair_id]) {
+			int best = hk_blind_p4_top_state(training_p4);
+			for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+				float hard = s == best? 1.0f : 0.0f;
+				callable_anchor_p4[s] =
+					(1.0f - trans_callable_anchor_mix_weight) * training_p4[s] +
+					trans_callable_anchor_mix_weight * hard;
+			}
+			training_p4 = callable_anchor_p4;
+		}
+		if (trans_top1_mode != HK_BLIND_TRANS_TOP1_OFF &&
+			bp->contact_class == HK_BLIND_CONTACT_TRANS &&
+			bp->pmax >= trans_top1_min_pmax &&
+			bp->margin >= trans_top1_min_margin) {
+			int best = hk_blind_p4_top_state(training_p4);
+			for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+				if (trans_top1_mode == HK_BLIND_TRANS_TOP1_HARD) {
+					trans_control_p4[s] = s == best? 1.0f : 0.0f;
+				} else {
+					float hard = s == best? 1.0f : 0.0f;
+					trans_control_p4[s] =
+						(1.0f - trans_top1_mix_weight) * training_p4[s] +
+						trans_top1_mix_weight * hard;
+				}
+			}
+			training_p4 = trans_control_p4;
+		}
 		for (s = 0; s < HK_BLIND_N_STATE; ++s) {
-			float p = bp->p4[s];
-			assert(isfinite(p));
-			assert(p >= 0.0f);
-			if (p <= 0.0f)
+			float train_state_p = training_p4[s];
+			float graph_p = trans_chr_pair_mstep_lambda > 0.0f? posterior_p4[s] : train_state_p;
+			float rho_eff, train_p;
+			assert(isfinite(train_state_p));
+			assert(train_state_p >= 0.0f);
+			assert(isfinite(graph_p));
+			assert(graph_p >= 0.0f);
+			if (graph_p <= 0.0f && train_state_p <= 0.0f)
 				continue;
+			rho_eff = hk_blind_bpair_effective_rho_train_floor(bp, rho_train,
+															   rho_train_mode,
+															   rho_train_floor);
+			if (!isfinite(rho_eff) || rho_eff < 0.0f)
+				goto fail;
+			train_p = train_state_p * rho_eff;
+			if (!isfinite(train_p) || train_p < 0.0f)
+				goto fail;
+			/*
+			 * The chromosome-pair M-step synchronizer is deliberately train-only:
+			 * softall filtering and posterior-count dscale keep the current E-step
+			 * posterior, while final_train_prob carries the synchronized weight.
+			 */
 			hk_blind_softall_map_push_pair(m, &m_pairs, q, ploidy_XY,
-									 old2new, s, r2b->swapped, p, p, aux);
+									 old2new, s, r2b->swapped, graph_p, graph_p, train_p, aux);
 			++aux->n_selected_raw;
 			++aux->state_count[s];
 		}
 	}
 	hk_pair_sort(m->n_pairs, m->pairs);
 	m->cols = 1 << 8;
+	free(chr_pair_prior);
+	free(chr_pair_sum);
+	free(chr_pair_total);
+	free(callable_anchor_selected);
 	free(old2new);
 	free(ploidy_XY);
 	aux->map = m;
@@ -3752,8 +4918,14 @@ static int hk_blind_build_softall_map(const struct hk_bmap *bmap,
 fail:
 	free(old2new);
 	free(ploidy_XY);
+	free(chr_pair_prior);
+	free(chr_pair_sum);
+	free(chr_pair_total);
+	free(callable_anchor_selected);
 	free(aux->final_phased_prob);
+	free(aux->final_train_prob);
 	aux->final_phased_prob = 0;
+	aux->final_train_prob = 0;
 	aux->n_final_phased_prob = aux->m_final_phased_prob = 0;
 	if (m) {
 		if (m->d)
@@ -3984,30 +5156,62 @@ static int hk_blind_pair_count_nei_weighted_to_int(int32_t n_pairs,
 	return 0;
 }
 
-static int hk_blind_softall_apply_final_prob_to_filtered_pairs(struct hk_map *m,
+static int hk_blind_softall_apply_final_probs_to_filtered_pairs(struct hk_map *m,
 											   const float *final_prob,
-											   int32_t n_final_prob)
+											   const float *final_train_prob,
+											   int32_t n_final_prob,
+											   struct hk_pair **train_pairs_out)
 {
 	int32_t i;
+	struct hk_pair *train_pairs = 0;
 	assert(m);
 	assert(final_prob || n_final_prob == 0);
+	assert(final_train_prob || n_final_prob == 0);
 	assert(n_final_prob >= 0);
+	assert(train_pairs_out);
+	*train_pairs_out = 0;
+	if (m->n_pairs > 0) {
+		train_pairs = MALLOC(struct hk_pair, m->n_pairs);
+		if (train_pairs == 0)
+			return -1;
+	}
 	for (i = 0; i < m->n_pairs; ++i) {
 		uint32_t id = m->pairs[i].n_ctn;
-		if (id >= (uint32_t)n_final_prob)
+		float prob, train_prob;
+		if (id >= (uint32_t)n_final_prob) {
+			free(train_pairs);
 			return -1;
-		m->pairs[i]._.phased_prob = final_prob[id];
+		}
+		prob = final_prob[id];
+		train_prob = final_train_prob[id];
+		if (!isfinite(prob) || prob < 0.0f ||
+			!isfinite(train_prob) || train_prob < 0.0f) {
+			free(train_pairs);
+			return -1;
+		}
+		m->pairs[i]._.phased_prob = prob;
+		train_pairs[i] = m->pairs[i];
+		train_pairs[i]._.phased_prob = train_prob;
 	}
+	*train_pairs_out = train_pairs;
 	return 0;
 }
 
 static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list *out,
 											  const struct hk_bmap *bmap,
 											  struct hk_blind_softall_aux *aux,
-											  int d_scale_mode, float d_scale_eps_count,
-											  float d_scale_posterior_gamma)
+											  float rho_train,
+											  int rho_train_mode,
+											  float rho_train_floor,
+												  int d_scale_mode, float d_scale_eps_count,
+												  float d_scale_posterior_gamma,
+												  float trans_d_scale_posterior_gamma,
+												  float trans_k_multiplier,
+												  float trans_dscale_multiplier)
 {
 	struct hk_bmap *split_bmap = 0;
+	struct hk_bmap *split_train_bmap = 0;
+	struct hk_pair *train_pairs = 0;
 	int32_t *split_to_diploid = 0;
 	int32_t i;
 	int32_t median_nei;
@@ -4018,11 +5222,23 @@ static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list
 	assert(aux);
 	assert(aux->map);
 	assert(aux->n_final_phased_prob == aux->map->n_pairs);
+	assert(aux->n_final_phased_prob == 0 || aux->final_train_prob);
+	assert(isfinite(rho_train));
+	assert(rho_train >= 0.0f);
+	assert(hk_blind_rho_train_mode_valid(rho_train_mode));
+	assert(rho_train_floor == 0.0f ||
+		   (isfinite(rho_train_floor) && rho_train_floor >= 0.0f && rho_train_floor <= 1.0f));
 	assert(hk_blind_d_scale_mode_valid(d_scale_mode));
 	assert(isfinite(d_scale_eps_count));
 	assert(d_scale_eps_count > 0.0f);
 	assert(isfinite(d_scale_posterior_gamma));
 	assert(d_scale_posterior_gamma >= 0.0f);
+	assert(isfinite(trans_d_scale_posterior_gamma));
+	assert(trans_d_scale_posterior_gamma >= 0.0f);
+	assert(isfinite(trans_k_multiplier));
+	assert(trans_k_multiplier >= 0.0f);
+	assert(isfinite(trans_dscale_multiplier));
+	assert(trans_dscale_multiplier > 0.0f);
 
 	out->n_softall_selected_raw = aux->n_selected_raw;
 	out->n_softall_gate_skip_raw = aux->n_gate_skip_raw;
@@ -4057,12 +5273,19 @@ static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list
 										  aux->map->pairs,
 										  10000000, 10000000) != 0)
 		goto cleanup;
-	if (hk_blind_softall_apply_final_prob_to_filtered_pairs(
-			aux->map, aux->final_phased_prob, aux->n_final_phased_prob) != 0)
+	if (hk_blind_softall_apply_final_probs_to_filtered_pairs(
+			aux->map, aux->final_phased_prob, aux->final_train_prob,
+			aux->n_final_phased_prob, &train_pairs) != 0)
 		goto cleanup;
 	split_bmap = hk_bmap_gen(aux->map->d, aux->map->n_pairs,
 						 aux->map->pairs, 1000000, 1);
 	if (split_bmap == 0)
+		goto cleanup;
+	split_train_bmap = hk_bmap_gen(aux->map->d, aux->map->n_pairs,
+								   train_pairs, 1000000, 1);
+	if (split_train_bmap == 0)
+		goto cleanup;
+	if (split_train_bmap->n_pairs != split_bmap->n_pairs)
 		goto cleanup;
 	out->n_softall_bmap_pairs = split_bmap->n_pairs;
 	split_to_diploid = CALLOC(int32_t, split_bmap->n_beads);
@@ -4074,9 +5297,14 @@ static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list
 	out->n_input_bpair = split_bmap->n_pairs;
 	for (i = 0; i < split_bmap->n_pairs; ++i) {
 		const struct hk_bpair *p = &split_bmap->pairs[i];
+		const struct hk_bpair *tp = &split_train_bmap->pairs[i];
 		struct hk_blind_wedge edge;
 		int32_t d0, d1;
-		float k, d_scale, prob, effective_n;
+			float k, d_scale, prob, train_prob, effective_n, rho_eff;
+			float dscale_gamma = d_scale_posterior_gamma;
+			int contact_class;
+		if (tp->bid[0] != p->bid[0] || tp->bid[1] != p->bid[1] || tp->n != p->n)
+			goto cleanup;
 		if (p->bid[0] == p->bid[1]) {
 			++out->n_skipped_self_edges;
 			continue;
@@ -4088,7 +5316,19 @@ static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list
 			continue;
 		}
 		prob = hk_blind_clip01(p->p);
-		k = hk_blind_native_fdg_k_from_nei(p, median_nei) * prob;
+		train_prob = tp->p;
+		if (!isfinite(train_prob) || train_prob < 0.0f)
+			goto cleanup;
+		rho_eff = prob > 0.0f? train_prob / prob : 0.0f;
+		if (!isfinite(rho_eff) || rho_eff < 0.0f)
+			rho_eff = 0.0f;
+		if (out->n_expanded_edges == 0 || rho_eff < out->min_rho_train_bpair)
+			out->min_rho_train_bpair = rho_eff;
+		if (out->n_expanded_edges == 0 || rho_eff > out->max_rho_train_bpair)
+			out->max_rho_train_bpair = rho_eff;
+		out->sum_rho_train_bpair += rho_eff;
+		++out->n_expanded_edges;
+		k = hk_blind_native_fdg_k_from_nei(p, median_nei) * train_prob;
 		if (k <= 0.0f)
 			continue;
 		effective_n = (float)p->n;
@@ -4099,12 +5339,25 @@ static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list
 		 *   dscale_effective_count = n_raw * posterior_prob^gamma.
 		 * Gamma only controls whether posterior also tempers count-to-distance mapping.
 		 */
-		if (d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT ||
-			d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT)
-			effective_n *= powf(prob, d_scale_posterior_gamma);
+			contact_class = hk_blind_diploid_pair_contact_class_from_bmap(bmap, d0, d1);
+			if (contact_class == HK_BLIND_CONTACT_TRANS)
+				dscale_gamma = trans_d_scale_posterior_gamma;
+			if (d_scale_mode == HK_BLIND_D_SCALE_POSTERIOR_COUNT ||
+				d_scale_mode == HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT)
+				effective_n *= powf(prob, dscale_gamma);
 		if (!isfinite(effective_n) || effective_n < d_scale_eps_count)
 			effective_n = d_scale_eps_count;
 		d_scale = powf(effective_n, -1.0f / 3.0f);
+			if (contact_class == HK_BLIND_CONTACT_TRANS) {
+				/*
+				 * Controlled trans-only M-step dscale. Posterior probabilities,
+				 * edge k, raw counts, E-step scoring, and cis edges are unchanged.
+				 */
+				k *= trans_k_multiplier;
+				d_scale *= trans_dscale_multiplier;
+		}
+		if (k <= 0.0f || !isfinite(k) || d_scale <= 0.0f || !isfinite(d_scale))
+			continue;
 		if (d1 < d0) {
 			int32_t t = d0;
 			d0 = d1;
@@ -4114,18 +5367,16 @@ static int hk_blind_wedge_list_build_softall_from_map(struct hk_blind_wedge_list
 		edge.state_mask = 0xffu;
 		hk_blind_wedge_list_push(out, &edge);
 	}
-	out->n_expanded_edges = out->n_edges;
 	out->n_edges_before_aggregation = out->n_edges;
-	if (out->n_edges > 0) {
-		out->mean_rho_train_bpair = 1.0f;
-		out->min_rho_train_bpair = 1.0f;
-		out->max_rho_train_bpair = 1.0f;
-		out->sum_rho_train_bpair = (double)out->n_edges;
-	}
+	if (out->n_expanded_edges > 0)
+		out->mean_rho_train_bpair = (float)(out->sum_rho_train_bpair / out->n_expanded_edges);
 	ret = 0;
 
 cleanup:
+	free(train_pairs);
 	free(split_to_diploid);
+	if (split_train_bmap)
+		hk_bmap_destroy(split_train_bmap);
 	if (split_bmap)
 		hk_bmap_destroy(split_bmap);
 	return ret;
@@ -4158,6 +5409,97 @@ int hk_blind_wedge_list_build_softall_mode_gamma(struct hk_blind_wedge_list *out
 												 float d_scale_eps_count,
 												 float d_scale_posterior_gamma)
 {
+	return hk_blind_wedge_list_build_softall_mode_gamma_trans_scale(out, bmap, set,
+																	d_scale_mode,
+																	d_scale_eps_count,
+																	d_scale_posterior_gamma,
+																	d_scale_posterior_gamma,
+																	1.0f, 1.0f);
+}
+
+int hk_blind_wedge_list_build_softall_mode_gamma_trans_scale(struct hk_blind_wedge_list *out,
+															 const struct hk_bmap *bmap,
+															 const struct hk_blind_bpair_set *set,
+																 int d_scale_mode,
+																 float d_scale_eps_count,
+																 float d_scale_posterior_gamma,
+																 float trans_d_scale_posterior_gamma,
+																 float trans_k_multiplier,
+															 float trans_dscale_multiplier)
+{
+	return hk_blind_wedge_list_build_softall_mode_gamma_trans_control(out, bmap, set,
+																	  d_scale_mode,
+																		  d_scale_eps_count,
+																		  d_scale_posterior_gamma,
+																		  trans_d_scale_posterior_gamma,
+																	  trans_k_multiplier,
+																	  trans_dscale_multiplier,
+																	  1.0f,
+																	  HK_BLIND_RHO_TRAIN_CONSTANT,
+																	  HK_BLIND_RHO_TRAIN_DEFAULT_FLOOR,
+																		  HK_BLIND_TRANS_TOP1_OFF,
+																		  1.0f,
+																		  1.0f,
+																		  0.0f);
+}
+
+int hk_blind_wedge_list_build_softall_mode_gamma_trans_control(struct hk_blind_wedge_list *out,
+															  const struct hk_bmap *bmap,
+															  const struct hk_blind_bpair_set *set,
+																  int d_scale_mode,
+																  float d_scale_eps_count,
+																  float d_scale_posterior_gamma,
+																  float trans_d_scale_posterior_gamma,
+																  float trans_k_multiplier,
+																  float trans_dscale_multiplier,
+															  float rho_train,
+															  int rho_train_mode,
+															  float rho_train_floor,
+															  int trans_top1_mode,
+															  float trans_top1_min_pmax,
+															  float trans_top1_min_margin,
+															  float trans_top1_mix_weight)
+{
+		return hk_blind_wedge_list_build_softall_mode_gamma_trans_control_chrpair(
+			out, bmap, set, d_scale_mode, d_scale_eps_count, d_scale_posterior_gamma,
+			trans_d_scale_posterior_gamma,
+			trans_k_multiplier, trans_dscale_multiplier, rho_train, rho_train_mode,
+			rho_train_floor, trans_top1_mode, trans_top1_min_pmax,
+			trans_top1_min_margin, trans_top1_mix_weight,
+			HK_BLIND_TRANS_CALLABLE_ANCHOR_OFF, 0.0f, 0.0f, 1,
+			HK_BLIND_TRANS_GATE_OFF, 1.0f, 1.0f, -logf((float)HK_BLIND_N_STATE),
+			0.0f, 1e-3f, 1.0f, HK_BLIND_TRANS_CHR_PAIR_MSTEP_STATE4);
+}
+
+int hk_blind_wedge_list_build_softall_mode_gamma_trans_control_chrpair(struct hk_blind_wedge_list *out,
+																	  const struct hk_bmap *bmap,
+																	  const struct hk_blind_bpair_set *set,
+																		  int d_scale_mode,
+																		  float d_scale_eps_count,
+																		  float d_scale_posterior_gamma,
+																		  float trans_d_scale_posterior_gamma,
+																		  float trans_k_multiplier,
+																		  float trans_dscale_multiplier,
+																	  float rho_train,
+																	  int rho_train_mode,
+																	  float rho_train_floor,
+																	  int trans_top1_mode,
+																		  float trans_top1_min_pmax,
+																		  float trans_top1_min_margin,
+																		  float trans_top1_mix_weight,
+																		  int trans_callable_anchor_mode,
+																		  float trans_callable_anchor_top_frac,
+																		  float trans_callable_anchor_mix_weight,
+																		  int32_t trans_callable_anchor_min_n_raw,
+																		  int trans_gate_mode,
+																	  float trans_gate_min_pmax,
+																	  float trans_gate_min_margin,
+																	  float trans_gate_min_neg_entropy,
+																	  float trans_chr_pair_mstep_lambda,
+																	  float trans_chr_pair_mstep_eps,
+																	  float trans_chr_pair_mstep_power,
+																	  int trans_chr_pair_mstep_mode)
+{
 	struct hk_blind_softall_aux aux;
 	int ret = -1;
 	assert(out);
@@ -4168,6 +5510,44 @@ int hk_blind_wedge_list_build_softall_mode_gamma(struct hk_blind_wedge_list *out
 	assert(d_scale_eps_count > 0.0f);
 	assert(isfinite(d_scale_posterior_gamma));
 	assert(d_scale_posterior_gamma >= 0.0f);
+	assert(isfinite(trans_d_scale_posterior_gamma));
+	assert(trans_d_scale_posterior_gamma >= 0.0f);
+	assert(isfinite(trans_k_multiplier));
+	assert(trans_k_multiplier >= 0.0f);
+	assert(isfinite(trans_dscale_multiplier));
+	assert(trans_dscale_multiplier > 0.0f);
+	assert(isfinite(rho_train));
+	assert(rho_train >= 0.0f);
+	assert(hk_blind_rho_train_mode_valid(rho_train_mode));
+	assert(rho_train_floor == 0.0f ||
+		   (isfinite(rho_train_floor) && rho_train_floor >= 0.0f && rho_train_floor <= 1.0f));
+	assert(hk_blind_trans_top1_mode_valid(trans_top1_mode));
+	assert(isfinite(trans_top1_min_pmax));
+	assert(trans_top1_min_pmax >= 0.0f && trans_top1_min_pmax <= 1.0f);
+	assert(isfinite(trans_top1_min_margin));
+	assert(trans_top1_min_margin >= 0.0f && trans_top1_min_margin <= 1.0f);
+	assert(isfinite(trans_top1_mix_weight));
+	assert(trans_top1_mix_weight >= 0.0f && trans_top1_mix_weight <= 1.0f);
+	assert(hk_blind_trans_callable_anchor_mode_valid(trans_callable_anchor_mode));
+	assert(isfinite(trans_callable_anchor_top_frac));
+	assert(trans_callable_anchor_top_frac >= 0.0f && trans_callable_anchor_top_frac <= 1.0f);
+	assert(isfinite(trans_callable_anchor_mix_weight));
+	assert(trans_callable_anchor_mix_weight >= 0.0f && trans_callable_anchor_mix_weight <= 1.0f);
+	assert(trans_callable_anchor_min_n_raw >= 0);
+	assert(hk_blind_trans_gate_mode_valid(trans_gate_mode));
+	assert(isfinite(trans_gate_min_pmax));
+	assert(trans_gate_min_pmax >= 0.0f && trans_gate_min_pmax <= 1.0f);
+	assert(isfinite(trans_gate_min_margin));
+	assert(trans_gate_min_margin >= 0.0f && trans_gate_min_margin <= 1.0f);
+	assert(isfinite(trans_gate_min_neg_entropy));
+	assert(trans_gate_min_neg_entropy <= 0.0f);
+	assert(isfinite(trans_chr_pair_mstep_lambda));
+	assert(trans_chr_pair_mstep_lambda >= 0.0f && trans_chr_pair_mstep_lambda <= 1.0f);
+	assert(isfinite(trans_chr_pair_mstep_eps));
+	assert(trans_chr_pair_mstep_eps >= 0.0f);
+	assert(isfinite(trans_chr_pair_mstep_power));
+	assert(trans_chr_pair_mstep_power >= 0.0f);
+	assert(hk_blind_trans_chr_pair_mstep_mode_valid(trans_chr_pair_mstep_mode));
 	memset(&aux, 0, sizeof(aux));
 
 	out->n_edges = 0;
@@ -4190,14 +5570,40 @@ int hk_blind_wedge_list_build_softall_mode_gamma(struct hk_blind_wedge_list *out
 	out->min_rho_train_bpair = 0.0f;
 	out->max_rho_train_bpair = 0.0f;
 
-	if (hk_blind_build_softall_map(bmap, set, &aux) != 0)
+	if (hk_blind_build_softall_map(bmap, set, &aux,
+								   rho_train,
+								   rho_train_mode,
+								   rho_train_floor,
+									   trans_top1_mode,
+									   trans_top1_min_pmax,
+									   trans_top1_min_margin,
+									   trans_top1_mix_weight,
+									   trans_callable_anchor_mode,
+									   trans_callable_anchor_top_frac,
+									   trans_callable_anchor_mix_weight,
+									   trans_callable_anchor_min_n_raw,
+									   trans_gate_mode,
+								   trans_gate_min_pmax,
+								   trans_gate_min_margin,
+								   trans_gate_min_neg_entropy,
+								   trans_chr_pair_mstep_lambda,
+								   trans_chr_pair_mstep_eps,
+								   trans_chr_pair_mstep_power,
+								   trans_chr_pair_mstep_mode) != 0)
 		goto cleanup;
 	ret = hk_blind_wedge_list_build_softall_from_map(out, bmap, &aux,
-													 d_scale_mode, d_scale_eps_count,
-													 d_scale_posterior_gamma);
+													 rho_train,
+													 rho_train_mode,
+													 rho_train_floor,
+														 d_scale_mode, d_scale_eps_count,
+														 d_scale_posterior_gamma,
+														 trans_d_scale_posterior_gamma,
+														 trans_k_multiplier,
+													 trans_dscale_multiplier);
 
 cleanup:
 	free(aux.final_phased_prob);
+	free(aux.final_train_prob);
 	if (aux.map)
 		hk_map_destroy(aux.map);
 	return ret;
@@ -4693,6 +6099,30 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct 
 	assert(iter_conf->min_sep_unit >= 0.0f);
 	assert(isfinite(iter_conf->lambda_sep));
 	assert(iter_conf->lambda_sep >= 0.0f);
+	assert(isfinite(iter_conf->lambda_copytrack));
+	assert(iter_conf->lambda_copytrack >= 0.0f);
+	assert(isfinite(iter_conf->lambda_global_copytrack));
+	assert(iter_conf->lambda_global_copytrack >= 0.0f);
+	assert(isfinite(iter_conf->lambda_normdir_copytrack));
+	assert(iter_conf->lambda_normdir_copytrack >= 0.0f);
+	assert(isfinite(iter_conf->normdir_copytrack_eps_unit));
+	assert(iter_conf->normdir_copytrack_eps_unit >= 0.0f);
+	assert(isfinite(iter_conf->trans_chr_pair_prior_lambda));
+	assert(iter_conf->trans_chr_pair_prior_lambda >= 0.0f);
+	assert(iter_conf->trans_chr_pair_prior_lambda <= 1.0f);
+	assert(isfinite(iter_conf->trans_chr_pair_prior_eps));
+	assert(iter_conf->trans_chr_pair_prior_eps >= 0.0f);
+	assert(isfinite(iter_conf->trans_chr_pair_prior_power));
+	assert(iter_conf->trans_chr_pair_prior_power >= 0.0f);
+	assert(iter_conf->trans_chr_pair_prior_warmup_iter >= 0);
+	assert(isfinite(iter_conf->trans_chr_pair_mstep_lambda));
+	assert(iter_conf->trans_chr_pair_mstep_lambda >= 0.0f);
+	assert(iter_conf->trans_chr_pair_mstep_lambda <= 1.0f);
+	assert(isfinite(iter_conf->trans_chr_pair_mstep_eps));
+	assert(iter_conf->trans_chr_pair_mstep_eps >= 0.0f);
+	assert(isfinite(iter_conf->trans_chr_pair_mstep_power));
+	assert(iter_conf->trans_chr_pair_mstep_power >= 0.0f);
+	assert(iter_conf->trans_chr_pair_mstep_warmup_iter >= 0);
 	assert(isfinite(iter_conf->chr_sep_unit));
 	assert(iter_conf->chr_sep_unit >= 0.0f);
 	assert(isfinite(iter_conf->lambda_chr_sep));
@@ -4711,6 +6141,32 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct 
 	assert(iter_conf->d_scale_eps_count > 0.0f);
 	assert(isfinite(iter_conf->d_scale_posterior_gamma));
 	assert(iter_conf->d_scale_posterior_gamma >= 0.0f);
+	assert(isfinite(iter_conf->trans_d_scale_posterior_gamma));
+	assert(iter_conf->trans_d_scale_posterior_gamma >= 0.0f);
+	assert(isfinite(iter_conf->trans_k_multiplier));
+	assert(iter_conf->trans_k_multiplier >= 0.0f);
+	assert(isfinite(iter_conf->trans_dscale_multiplier));
+	assert(iter_conf->trans_dscale_multiplier > 0.0f);
+	assert(hk_blind_trans_top1_mode_valid(iter_conf->trans_top1_mode));
+	assert(isfinite(iter_conf->trans_top1_min_pmax));
+	assert(iter_conf->trans_top1_min_pmax >= 0.0f && iter_conf->trans_top1_min_pmax <= 1.0f);
+	assert(isfinite(iter_conf->trans_top1_min_margin));
+	assert(iter_conf->trans_top1_min_margin >= 0.0f && iter_conf->trans_top1_min_margin <= 1.0f);
+	assert(isfinite(iter_conf->trans_top1_mix_weight));
+	assert(iter_conf->trans_top1_mix_weight >= 0.0f && iter_conf->trans_top1_mix_weight <= 1.0f);
+	assert(hk_blind_trans_callable_anchor_mode_valid(iter_conf->trans_callable_anchor_mode));
+	assert(isfinite(iter_conf->trans_callable_anchor_top_frac));
+	assert(iter_conf->trans_callable_anchor_top_frac >= 0.0f &&
+		   iter_conf->trans_callable_anchor_top_frac <= 1.0f);
+	assert(isfinite(iter_conf->trans_callable_anchor_mix_weight));
+	assert(iter_conf->trans_callable_anchor_mix_weight >= 0.0f &&
+		   iter_conf->trans_callable_anchor_mix_weight <= 1.0f);
+	assert(iter_conf->trans_callable_anchor_min_n_raw >= 0);
+	assert(iter_conf->trans_callable_anchor_warmup_iter >= 0);
+	assert(hk_blind_readgroup_mode_valid(iter_conf->readgroup_mode));
+	assert(iter_conf->readgroup_max_segments >= 0);
+	assert(isfinite(iter_conf->readgroup_eps));
+	assert(iter_conf->readgroup_eps >= 0.0f);
 	assert(hk_blind_estep_score_mode_valid(iter_conf->estep_score_mode));
 	assert(isfinite(anchor_k));
 	assert(anchor_k >= 0.0f);
@@ -4736,11 +6192,36 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct 
 
 	// Core CPU blind iteration uses per-bpair Hickit-style contact params for E-step scoring.
 	// iter_conf->d_scale/base_k are retained for legacy/global diagnostics and ablations.
+	if (log_prior == 0 &&
+		hk_blind_bpair_set_apply_trans_chr_pair_prior(bmap, set,
+													  iter_conf->trans_chr_pair_prior_lambda,
+													  iter_conf->trans_chr_pair_prior_eps,
+													  iter_conf->trans_chr_pair_prior_power) != 0) {
+		free(prev_coords);
+		return -1;
+	}
 	hk_blind_bpair_set_update_posterior_from_coords_params_score_mode(set, fdg_conf, coords,
 																	  iter_conf->unit,
 																	  log_prior,
 																	  iter_conf->temperature,
 																	  iter_conf->estep_score_mode);
+	if (iter_conf->readgroup_mode == HK_BLIND_READGROUP_JOINT_MARGINAL) {
+		ret = hk_blind_bpair_set_apply_readgroup_marginals(set,
+														   iter_conf->readgroup_max_segments,
+														   iter_conf->readgroup_eps);
+		if (ret != 0) {
+			free(prev_coords);
+			return ret;
+		}
+		ret = hk_blind_bpair_set_aggregate_raw_p4_to_bpair(set);
+		if (ret != 0) {
+			free(prev_coords);
+			return ret;
+		}
+	} else {
+		free(set->raw_p4);
+		set->raw_p4 = 0;
+	}
 	hk_blind_iter_diag_update_posterior_stats(set, pre_diag);
 	hk_blind_iter_diag_validate_bpair_set(set, pre_diag);
 
@@ -4760,10 +6241,33 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct 
 	free(sep_force);
 
 	hk_blind_wedge_list_init(&wedges);
-	ret = hk_blind_wedge_list_build_softall_mode_gamma(&wedges, bmap, set,
-													   iter_conf->d_scale_mode,
-													   iter_conf->d_scale_eps_count,
-													   iter_conf->d_scale_posterior_gamma);
+	ret = hk_blind_wedge_list_build_softall_mode_gamma_trans_control_chrpair(
+		&wedges, bmap, set,
+		iter_conf->d_scale_mode,
+			iter_conf->d_scale_eps_count,
+			iter_conf->d_scale_posterior_gamma,
+			iter_conf->trans_d_scale_posterior_gamma,
+			iter_conf->trans_k_multiplier,
+		iter_conf->trans_dscale_multiplier,
+		iter_conf->rho_train,
+		iter_conf->rho_train_mode,
+		iter_conf->rho_train_floor,
+			iter_conf->trans_top1_mode,
+				iter_conf->trans_top1_min_pmax,
+				iter_conf->trans_top1_min_margin,
+				iter_conf->trans_top1_mix_weight,
+				iter_conf->trans_callable_anchor_mode,
+				iter_conf->trans_callable_anchor_top_frac,
+				iter_conf->trans_callable_anchor_mix_weight,
+				iter_conf->trans_callable_anchor_min_n_raw,
+				iter_conf->trans_gate_mode,
+			iter_conf->trans_gate_min_pmax,
+			iter_conf->trans_gate_min_margin,
+			iter_conf->trans_gate_min_neg_entropy,
+			iter_conf->trans_chr_pair_mstep_lambda,
+			iter_conf->trans_chr_pair_mstep_eps,
+			iter_conf->trans_chr_pair_mstep_power,
+			iter_conf->trans_chr_pair_mstep_mode);
 	if (ret != 0) {
 		hk_blind_wedge_list_destroy(&wedges);
 		free(prev_coords);
@@ -4817,6 +6321,9 @@ static int hk_blind_run_single_iter_cpu_impl(const struct hk_bmap *bmap, struct 
 							  iter_conf->lambda_sep, iter_conf->enable_repulsion,
 							  iter_conf->repulsion_mode, iter_conf->repulsion_block_k_min,
 							  iter_conf->chr_sep_unit, iter_conf->lambda_chr_sep,
+							  iter_conf->lambda_copytrack, iter_conf->lambda_global_copytrack,
+							  iter_conf->lambda_normdir_copytrack,
+							  iter_conf->normdir_copytrack_eps_unit,
 							  anchor_map, coarse_diploid_coords, anchor_k,
 							  &diag->relax_diag);
 	hk_blind_wedge_list_destroy(&wedges);
@@ -4909,9 +6416,18 @@ void hk_blind_iter_loop_diag_init(struct hk_blind_iter_loop_diag *diag)
 	diag->final_n_repulsion_pairs_considered = 0;
 	diag->final_n_repulsion_pairs_blocked = 0;
 	diag->final_n_repulsion_pairs_active = 0;
+	diag->final_copytrack_energy = 0.0f;
+	diag->final_copytrack_force_l1 = 0.0f;
+	diag->final_global_copytrack_energy = 0.0f;
+	diag->final_global_copytrack_force_l1 = 0.0f;
+	diag->final_normdir_copytrack_energy = 0.0f;
+	diag->final_normdir_copytrack_force_l1 = 0.0f;
 	diag->final_anchor_energy = 0.0f;
 	diag->final_anchor_force_l1 = 0.0f;
 	diag->n_repulsion_nonfinite_step = 0;
+	diag->n_copytrack_nonfinite_step = 0;
+	diag->n_global_copytrack_nonfinite_step = 0;
+	diag->n_normdir_copytrack_nonfinite_step = 0;
 	diag->n_anchor_nonfinite_step = 0;
 	diag->repulsion_mode = HK_BLIND_REPULSION_NONE;
 	diag->posterior_refreshed_after_final_relax = 0;
@@ -4920,6 +6436,7 @@ void hk_blind_iter_loop_diag_init(struct hk_blind_iter_loop_diag *diag)
 	diag->posterior_refresh_top_state_switch_frac = 0.0f;
 	diag->posterior_refresh_mean_pU_before = 0.0f;
 	diag->posterior_refresh_mean_pU_after = 0.0f;
+	hk_blind_heldout_diag_init(&diag->heldout_diag);
 }
 
 static int hk_blind_single_iter_diag_has_bad_numeric(const struct hk_blind_single_iter_diag *diag)
@@ -4946,7 +6463,82 @@ static int hk_blind_single_iter_diag_has_relax_nonfinite(const struct hk_blind_s
 	return diag->relax_diag.n_nonfinite_step != 0 ||
 		   diag->relax_diag.n_coord_nonfinite != 0 ||
 		   diag->relax_diag.n_backbone_nonfinite_step != 0 ||
-		   diag->relax_diag.n_repulsion_nonfinite_step != 0;
+		   diag->relax_diag.n_repulsion_nonfinite_step != 0 ||
+		   diag->relax_diag.n_copytrack_nonfinite_step != 0 ||
+		   diag->relax_diag.n_global_copytrack_nonfinite_step != 0 ||
+		   diag->relax_diag.n_normdir_copytrack_nonfinite_step != 0;
+}
+
+static int hk_blind_update_post_gauge_copytrack_diag(const struct hk_bmap *bmap,
+													 const struct hk_blind_single_iter_conf *conf,
+													 const fvec3_t *coords,
+													 struct hk_blind_iter_loop_diag *loop_diag)
+{
+	fvec3_t *force = 0;
+	int32_t n_diploid;
+	float copytrack_energy = 0.0f, copytrack_force_l1 = 0.0f;
+	float global_energy = 0.0f, global_force_l1 = 0.0f;
+	float normdir_energy = 0.0f, normdir_force_l1 = 0.0f;
+	int32_t n_copytrack_nonfinite = 0, n_global_nonfinite = 0, n_normdir_nonfinite = 0;
+
+	assert(bmap);
+	assert(conf);
+	assert(coords || bmap->n_beads == 0);
+	assert(loop_diag);
+	assert(isfinite(conf->unit));
+	assert(conf->unit > 0.0f);
+	assert(isfinite(conf->lambda_copytrack));
+	assert(conf->lambda_copytrack >= 0.0f);
+	assert(isfinite(conf->lambda_global_copytrack));
+	assert(conf->lambda_global_copytrack >= 0.0f);
+	assert(isfinite(conf->lambda_normdir_copytrack));
+	assert(conf->lambda_normdir_copytrack >= 0.0f);
+	assert(isfinite(conf->normdir_copytrack_eps_unit));
+	assert(conf->normdir_copytrack_eps_unit >= 0.0f);
+
+	n_diploid = bmap->n_beads * HK_DIPLOID_N_COPY;
+	if (n_diploid > 0 && (conf->lambda_copytrack > 0.0f ||
+						  conf->lambda_global_copytrack > 0.0f ||
+						  conf->lambda_normdir_copytrack > 0.0f)) {
+		force = CALLOC(fvec3_t, n_diploid);
+		if (force == 0)
+			return -1;
+	}
+	if (force && conf->lambda_copytrack > 0.0f)
+		copytrack_energy = hk_blind_copytrack_accumulate_force(bmap, coords, force,
+															   conf->unit,
+															   conf->lambda_copytrack,
+															   &copytrack_force_l1,
+															   &n_copytrack_nonfinite);
+	if (force && conf->lambda_global_copytrack > 0.0f)
+		global_energy = hk_blind_global_copytrack_accumulate_force(bmap, coords, force,
+																   conf->unit,
+																   conf->lambda_global_copytrack,
+																   &global_force_l1,
+																   &n_global_nonfinite);
+	if (force && conf->lambda_normdir_copytrack > 0.0f)
+		normdir_energy = hk_blind_normdir_copytrack_accumulate_force(bmap, coords, force,
+																	 conf->unit,
+																	 conf->lambda_normdir_copytrack,
+																	 conf->normdir_copytrack_eps_unit,
+																	 &normdir_force_l1,
+																	 &n_normdir_nonfinite);
+	free(force);
+
+	loop_diag->final_copytrack_energy = copytrack_energy;
+	loop_diag->final_copytrack_force_l1 = copytrack_force_l1;
+	loop_diag->final_global_copytrack_energy = global_energy;
+	loop_diag->final_global_copytrack_force_l1 = global_force_l1;
+	loop_diag->final_normdir_copytrack_energy = normdir_energy;
+	loop_diag->final_normdir_copytrack_force_l1 = normdir_force_l1;
+	if (n_copytrack_nonfinite != 0)
+		++loop_diag->n_copytrack_nonfinite_step;
+	if (n_global_nonfinite != 0)
+		++loop_diag->n_global_copytrack_nonfinite_step;
+	if (n_normdir_nonfinite != 0)
+		++loop_diag->n_normdir_copytrack_nonfinite_step;
+	return (n_copytrack_nonfinite == 0 && n_global_nonfinite == 0 &&
+			n_normdir_nonfinite == 0)? 0 : -1;
 }
 
 static void hk_blind_assert_single_iter_conf(const struct hk_blind_single_iter_conf *conf)
@@ -4970,6 +6562,23 @@ static void hk_blind_assert_single_iter_conf(const struct hk_blind_single_iter_c
 	assert(conf->min_sep_unit >= 0.0f);
 	assert(isfinite(conf->lambda_sep));
 	assert(conf->lambda_sep >= 0.0f);
+	assert(isfinite(conf->lambda_copytrack));
+	assert(conf->lambda_copytrack >= 0.0f);
+	assert(isfinite(conf->lambda_global_copytrack));
+	assert(conf->lambda_global_copytrack >= 0.0f);
+	assert(isfinite(conf->lambda_normdir_copytrack));
+	assert(conf->lambda_normdir_copytrack >= 0.0f);
+	assert(isfinite(conf->normdir_copytrack_eps_unit));
+	assert(conf->normdir_copytrack_eps_unit >= 0.0f);
+	assert(isfinite(conf->trans_chr_pair_prior_lambda));
+	assert(conf->trans_chr_pair_prior_lambda >= 0.0f);
+	assert(conf->trans_chr_pair_prior_lambda <= 1.0f);
+	assert(isfinite(conf->trans_chr_pair_prior_eps));
+	assert(conf->trans_chr_pair_prior_eps >= 0.0f);
+	assert(isfinite(conf->trans_chr_pair_prior_power));
+	assert(conf->trans_chr_pair_prior_power >= 0.0f);
+	assert(conf->trans_chr_pair_prior_warmup_iter >= 0);
+	assert(hk_blind_trans_chr_pair_mstep_mode_valid(conf->trans_chr_pair_mstep_mode));
 	assert(isfinite(conf->chr_sep_unit));
 	assert(conf->chr_sep_unit >= 0.0f);
 	assert(isfinite(conf->lambda_chr_sep));
@@ -4990,6 +6599,35 @@ static void hk_blind_assert_single_iter_conf(const struct hk_blind_single_iter_c
 	assert(conf->d_scale_eps_count > 0.0f);
 	assert(isfinite(conf->d_scale_posterior_gamma));
 	assert(conf->d_scale_posterior_gamma >= 0.0f);
+	assert(isfinite(conf->trans_d_scale_posterior_gamma));
+	assert(conf->trans_d_scale_posterior_gamma >= 0.0f);
+	assert(isfinite(conf->trans_k_multiplier));
+	assert(conf->trans_k_multiplier >= 0.0f);
+	assert(isfinite(conf->trans_dscale_multiplier));
+	assert(conf->trans_dscale_multiplier > 0.0f);
+	assert(hk_blind_trans_top1_mode_valid(conf->trans_top1_mode));
+	assert(isfinite(conf->trans_top1_min_pmax));
+	assert(conf->trans_top1_min_pmax >= 0.0f && conf->trans_top1_min_pmax <= 1.0f);
+	assert(isfinite(conf->trans_top1_min_margin));
+	assert(conf->trans_top1_min_margin >= 0.0f && conf->trans_top1_min_margin <= 1.0f);
+	assert(isfinite(conf->trans_top1_mix_weight));
+	assert(conf->trans_top1_mix_weight >= 0.0f && conf->trans_top1_mix_weight <= 1.0f);
+	assert(hk_blind_trans_callable_anchor_mode_valid(conf->trans_callable_anchor_mode));
+	assert(isfinite(conf->trans_callable_anchor_top_frac));
+	assert(conf->trans_callable_anchor_top_frac >= 0.0f &&
+		   conf->trans_callable_anchor_top_frac <= 1.0f);
+	assert(isfinite(conf->trans_callable_anchor_mix_weight));
+	assert(conf->trans_callable_anchor_mix_weight >= 0.0f &&
+		   conf->trans_callable_anchor_mix_weight <= 1.0f);
+	assert(conf->trans_callable_anchor_min_n_raw >= 0);
+	assert(conf->trans_callable_anchor_warmup_iter >= 0);
+	assert(hk_blind_trans_gate_mode_valid(conf->trans_gate_mode));
+	assert(isfinite(conf->trans_gate_min_pmax));
+	assert(conf->trans_gate_min_pmax >= 0.0f && conf->trans_gate_min_pmax <= 1.0f);
+	assert(isfinite(conf->trans_gate_min_margin));
+	assert(conf->trans_gate_min_margin >= 0.0f && conf->trans_gate_min_margin <= 1.0f);
+	assert(isfinite(conf->trans_gate_min_neg_entropy));
+	assert(conf->trans_gate_min_neg_entropy <= 0.0f);
 	assert(hk_blind_estep_score_mode_valid(conf->estep_score_mode));
 }
 
@@ -5190,10 +6828,19 @@ int hk_blind_run_iter_loop_cpu(const struct hk_bmap *bmap, struct hk_blind_bpair
 		loop_diag->final_n_repulsion_pairs_considered = iter_diag->relax_diag.final_n_repulsion_pairs_considered;
 		loop_diag->final_n_repulsion_pairs_blocked = iter_diag->relax_diag.final_n_repulsion_pairs_blocked;
 		loop_diag->final_n_repulsion_pairs_active = iter_diag->relax_diag.final_n_repulsion_pairs_active;
+		loop_diag->final_copytrack_energy = iter_diag->relax_diag.final_copytrack_energy;
+		loop_diag->final_copytrack_force_l1 = iter_diag->relax_diag.final_copytrack_force_l1;
+		loop_diag->final_global_copytrack_energy = iter_diag->relax_diag.final_global_copytrack_energy;
+		loop_diag->final_global_copytrack_force_l1 = iter_diag->relax_diag.final_global_copytrack_force_l1;
+		loop_diag->final_normdir_copytrack_energy = iter_diag->relax_diag.final_normdir_copytrack_energy;
+		loop_diag->final_normdir_copytrack_force_l1 = iter_diag->relax_diag.final_normdir_copytrack_force_l1;
 		loop_diag->final_anchor_energy = iter_diag->relax_diag.final_anchor_energy;
 		loop_diag->final_anchor_force_l1 = iter_diag->relax_diag.final_anchor_force_l1;
 		loop_diag->repulsion_mode = iter_diag->relax_diag.repulsion_mode;
 		loop_diag->n_repulsion_nonfinite_step += iter_diag->relax_diag.n_repulsion_nonfinite_step;
+		loop_diag->n_copytrack_nonfinite_step += iter_diag->relax_diag.n_copytrack_nonfinite_step;
+		loop_diag->n_global_copytrack_nonfinite_step += iter_diag->relax_diag.n_global_copytrack_nonfinite_step;
+		loop_diag->n_normdir_copytrack_nonfinite_step += iter_diag->relax_diag.n_normdir_copytrack_nonfinite_step;
 		loop_diag->n_anchor_nonfinite_step += iter_diag->relax_diag.n_anchor_nonfinite_step;
 		loop_diag->total_chr_flipped += iter_diag->n_chr_flipped;
 		if (hk_blind_single_iter_diag_has_bad_numeric(iter_diag))
@@ -5208,11 +6855,25 @@ int hk_blind_run_iter_loop_cpu(const struct hk_bmap *bmap, struct hk_blind_bpair
 		++loop_diag->n_completed;
 	}
 
+	if (log_prior == 0 &&
+		hk_blind_bpair_set_apply_trans_chr_pair_prior(bmap, set,
+													  loop_conf->single_iter_conf.trans_chr_pair_prior_lambda,
+													  loop_conf->single_iter_conf.trans_chr_pair_prior_eps,
+													  loop_conf->single_iter_conf.trans_chr_pair_prior_power) != 0)
+		return -1;
 	if (hk_blind_refresh_final_posterior(set, fdg_conf, coords,
 										 loop_conf->single_iter_conf.unit, log_prior,
 										 loop_conf->single_iter_conf.temperature,
 										 loop_conf->single_iter_conf.estep_score_mode,
 										 loop_diag) != 0)
+		return -1;
+	if (loop_conf->single_iter_conf.readgroup_mode == HK_BLIND_READGROUP_JOINT_MARGINAL &&
+		hk_blind_bpair_set_apply_readgroup_marginals(set,
+													 loop_conf->single_iter_conf.readgroup_max_segments,
+													 loop_conf->single_iter_conf.readgroup_eps) != 0)
+		return -1;
+	if (loop_conf->single_iter_conf.readgroup_mode == HK_BLIND_READGROUP_JOINT_MARGINAL &&
+		hk_blind_bpair_set_aggregate_raw_p4_to_bpair(set) != 0)
 		return -1;
 	if (hk_blind_homolog_sep_compute_stats(bmap->n_beads, coords,
 										   loop_conf->single_iter_conf.min_sep_unit * loop_conf->single_iter_conf.unit,
@@ -5221,6 +6882,9 @@ int hk_blind_run_iter_loop_cpu(const struct hk_bmap *bmap, struct hk_blind_bpair
 	loop_diag->final_mean_sep = final_sep.mean_sep;
 	loop_diag->final_min_sep = final_sep.min_sep;
 	loop_diag->final_max_sep = final_sep.max_sep;
+	if (hk_blind_update_post_gauge_copytrack_diag(bmap, &loop_conf->single_iter_conf, coords,
+												  loop_diag) != 0)
+		return -1;
 	return 0;
 }
 
@@ -5289,6 +6953,12 @@ static int hk_blind_run_iter_loop_scheduled_cpu_impl(const struct hk_bmap *bmap,
 		iter_conf = schedule_conf->base_conf;
 		iter_conf.temperature = hk_blind_iter_schedule_temperature_at(schedule_conf, t);
 		iter_conf.rho_train = hk_blind_iter_schedule_rho_train_at(schedule_conf, t);
+		if (t < iter_conf.trans_chr_pair_prior_warmup_iter)
+			iter_conf.trans_chr_pair_prior_lambda = 0.0f;
+		if (t < iter_conf.trans_chr_pair_mstep_warmup_iter)
+			iter_conf.trans_chr_pair_mstep_lambda = 0.0f;
+		if (t < iter_conf.trans_callable_anchor_warmup_iter)
+			iter_conf.trans_callable_anchor_mode = HK_BLIND_TRANS_CALLABLE_ANCHOR_OFF;
 		iter_diag = per_iter_diag_or_null? &per_iter_diag_or_null[t] : &local_iter_diag;
 		ret = hk_blind_run_single_iter_cpu_impl(bmap, set, fdg_conf, coords, log_prior, &iter_conf,
 												anchor_map, coarse_diploid_coords, anchor_k, iter_diag);
@@ -5321,10 +6991,19 @@ static int hk_blind_run_iter_loop_scheduled_cpu_impl(const struct hk_bmap *bmap,
 		loop_diag->final_n_repulsion_pairs_considered = iter_diag->relax_diag.final_n_repulsion_pairs_considered;
 		loop_diag->final_n_repulsion_pairs_blocked = iter_diag->relax_diag.final_n_repulsion_pairs_blocked;
 		loop_diag->final_n_repulsion_pairs_active = iter_diag->relax_diag.final_n_repulsion_pairs_active;
+		loop_diag->final_copytrack_energy = iter_diag->relax_diag.final_copytrack_energy;
+		loop_diag->final_copytrack_force_l1 = iter_diag->relax_diag.final_copytrack_force_l1;
+		loop_diag->final_global_copytrack_energy = iter_diag->relax_diag.final_global_copytrack_energy;
+		loop_diag->final_global_copytrack_force_l1 = iter_diag->relax_diag.final_global_copytrack_force_l1;
+		loop_diag->final_normdir_copytrack_energy = iter_diag->relax_diag.final_normdir_copytrack_energy;
+		loop_diag->final_normdir_copytrack_force_l1 = iter_diag->relax_diag.final_normdir_copytrack_force_l1;
 		loop_diag->final_anchor_energy = iter_diag->relax_diag.final_anchor_energy;
 		loop_diag->final_anchor_force_l1 = iter_diag->relax_diag.final_anchor_force_l1;
 		loop_diag->repulsion_mode = iter_diag->relax_diag.repulsion_mode;
 		loop_diag->n_repulsion_nonfinite_step += iter_diag->relax_diag.n_repulsion_nonfinite_step;
+		loop_diag->n_copytrack_nonfinite_step += iter_diag->relax_diag.n_copytrack_nonfinite_step;
+		loop_diag->n_global_copytrack_nonfinite_step += iter_diag->relax_diag.n_global_copytrack_nonfinite_step;
+		loop_diag->n_normdir_copytrack_nonfinite_step += iter_diag->relax_diag.n_normdir_copytrack_nonfinite_step;
 		loop_diag->n_anchor_nonfinite_step += iter_diag->relax_diag.n_anchor_nonfinite_step;
 		loop_diag->total_chr_flipped += iter_diag->n_chr_flipped;
 		if (hk_blind_single_iter_diag_has_bad_numeric(iter_diag))
@@ -5339,11 +7018,25 @@ static int hk_blind_run_iter_loop_scheduled_cpu_impl(const struct hk_bmap *bmap,
 		++loop_diag->n_completed;
 	}
 
+	if (log_prior == 0 &&
+		hk_blind_bpair_set_apply_trans_chr_pair_prior(bmap, set,
+													  schedule_conf->base_conf.trans_chr_pair_prior_lambda,
+													  schedule_conf->base_conf.trans_chr_pair_prior_eps,
+													  schedule_conf->base_conf.trans_chr_pair_prior_power) != 0)
+		return -1;
 	if (hk_blind_refresh_final_posterior(set, fdg_conf, coords,
 										 schedule_conf->base_conf.unit, log_prior,
 										 hk_blind_iter_schedule_temperature_at(schedule_conf, schedule_conf->n_iter - 1),
 										 schedule_conf->base_conf.estep_score_mode,
 										 loop_diag) != 0)
+		return -1;
+	if (schedule_conf->base_conf.readgroup_mode == HK_BLIND_READGROUP_JOINT_MARGINAL &&
+		hk_blind_bpair_set_apply_readgroup_marginals(set,
+													 schedule_conf->base_conf.readgroup_max_segments,
+													 schedule_conf->base_conf.readgroup_eps) != 0)
+		return -1;
+	if (schedule_conf->base_conf.readgroup_mode == HK_BLIND_READGROUP_JOINT_MARGINAL &&
+		hk_blind_bpair_set_aggregate_raw_p4_to_bpair(set) != 0)
 		return -1;
 	if (hk_blind_homolog_sep_compute_stats(bmap->n_beads, coords,
 										   schedule_conf->base_conf.min_sep_unit * schedule_conf->base_conf.unit,
@@ -5352,6 +7045,9 @@ static int hk_blind_run_iter_loop_scheduled_cpu_impl(const struct hk_bmap *bmap,
 	loop_diag->final_mean_sep = final_sep.mean_sep;
 	loop_diag->final_min_sep = final_sep.min_sep;
 	loop_diag->final_max_sep = final_sep.max_sep;
+	if (hk_blind_update_post_gauge_copytrack_diag(bmap, &schedule_conf->base_conf, coords,
+												  loop_diag) != 0)
+		return -1;
 	return 0;
 }
 
@@ -5488,7 +7184,10 @@ int hk_blind_write_raw_contact_posterior_tsv(FILE *fp, const struct hk_blind_pai
 		assert(r2b->bpair_id >= 0 && r2b->bpair_id < set->n_bpairs);
 		bp = &set->bpairs[r2b->bpair_id];
 		hk_blind_pair_to_bids(bmap, &raw[i], raw_bid);
-		hk_blind_p4_to_raw_order(bp->p4, r2b->swapped, raw_p4);
+		if (set->raw_p4)
+			memcpy(raw_p4, &set->raw_p4[(size_t)i * HK_BLIND_N_STATE], sizeof(raw_p4));
+		else
+			hk_blind_p4_to_raw_order(bp->p4, r2b->swapped, raw_p4);
 		psame_raw = raw_p4[HK_BLIND_STATE_00] + raw_p4[HK_BLIND_STATE_11];
 		pcross_raw = raw_p4[HK_BLIND_STATE_01] + raw_p4[HK_BLIND_STATE_10];
 		chr0 = hk_blind_chr_label(bmap, raw[i].chr[0], chr0_buf);
@@ -5602,13 +7301,18 @@ int hk_blind_write_iter_loop_diag_tsv(FILE *fp, const struct hk_blind_iter_loop_
 					"n_repulsion_nonfinite_step\trepulsion_mode\t"
 					"posterior_refreshed_after_final_relax\tposterior_refresh_temperature\t"
 					"posterior_refresh_mean_kl\tposterior_refresh_top_state_switch_frac\t"
-					"posterior_refresh_mean_pU_before\tposterior_refresh_mean_pU_after\n") < 0)
+					"posterior_refresh_mean_pU_before\tposterior_refresh_mean_pU_after\t"
+					"final_copytrack_energy\tfinal_copytrack_force_l1\t"
+					"final_global_copytrack_energy\tfinal_global_copytrack_force_l1\t"
+					"final_normdir_copytrack_energy\tfinal_normdir_copytrack_force_l1\t"
+					"n_copytrack_nonfinite_step\tn_global_copytrack_nonfinite_step\t"
+					"n_normdir_copytrack_nonfinite_step\n") < 0)
 		return -1;
 	if (fprintf(fp, "%d\t%d\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t"
 					"%d\t%d\t%d\t%d\t%.9g\t%.9g\t%.9g\t%.17g\t%.9g\t%.9g\t%.9g\t"
 					"%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t"
 					"%lld\t%lld\t%lld\t%lld\t%.9g\t%.9g\t%lld\t%lld\t%lld\t%d\t%d\t"
-					"%d\t%.9g\t%.17g\t%.9g\t%.9g\t%.9g\n",
+					"%d\t%.9g\t%.17g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%.9g\t%d\t%d\t%d\n",
 				diag->n_iter, diag->n_completed,
 				diag->initial_mean_entropy, diag->final_mean_entropy,
 				diag->initial_mean_pU, diag->final_mean_pU,
@@ -5642,7 +7346,16 @@ int hk_blind_write_iter_loop_diag_tsv(FILE *fp, const struct hk_blind_iter_loop_
 				diag->posterior_refresh_temperature, diag->posterior_refresh_mean_kl,
 				diag->posterior_refresh_top_state_switch_frac,
 				diag->posterior_refresh_mean_pU_before,
-				diag->posterior_refresh_mean_pU_after) < 0)
+				diag->posterior_refresh_mean_pU_after,
+				diag->final_copytrack_energy,
+				diag->final_copytrack_force_l1,
+				diag->final_global_copytrack_energy,
+				diag->final_global_copytrack_force_l1,
+				diag->final_normdir_copytrack_energy,
+				diag->final_normdir_copytrack_force_l1,
+				diag->n_copytrack_nonfinite_step,
+				diag->n_global_copytrack_nonfinite_step,
+				diag->n_normdir_copytrack_nonfinite_step) < 0)
 		return -1;
 	return ferror(fp)? -1 : 0;
 }
@@ -5910,12 +7623,233 @@ int hk_blind_eval_heldout_bpair_set(const struct hk_bmap *bmap, const struct hk_
 	return 0;
 }
 
+static int hk_blind_readgroup_entry_cmp(const void *a_, const void *b_)
+{
+	const struct hk_blind_readgroup_entry *a = (const struct hk_blind_readgroup_entry*)a_;
+	const struct hk_blind_readgroup_entry *b = (const struct hk_blind_readgroup_entry*)b_;
+	if (a->group_id != b->group_id)
+		return a->group_id < b->group_id? -1 : 1;
+	return a->raw_id < b->raw_id? -1 : a->raw_id > b->raw_id? 1 : 0;
+}
+
+int hk_blind_bpair_set_build_readgroup_index(struct hk_blind_bpair_set *set)
+{
+	int32_t i;
+
+	assert(set);
+	free(set->readgroup_entries);
+	set->readgroup_entries = 0;
+	set->n_readgroup_entries = 0;
+	set->n_readgroup_groups = 0;
+	set->n_readgroup_groups_used = 0;
+	set->n_readgroup_raw_decoded = 0;
+	set->n_readgroup_groups_skipped_too_large = 0;
+	set->n_readgroup_groups_skipped_bad = 0;
+	free(set->raw_p4);
+	set->raw_p4 = 0;
+	if (set->n_raw <= 0 || set->raw == 0)
+		return 0;
+	set->readgroup_entries = CALLOC(struct hk_blind_readgroup_entry, set->n_raw);
+	if (set->readgroup_entries == 0)
+		return -1;
+	for (i = 0; i < set->n_raw; ++i) {
+		const struct hk_blind_pair *p = &set->raw[i];
+		if (p->read_group_id < 0 || p->read_seg[0] < 0 || p->read_seg[1] < 0 ||
+			p->read_n_segments <= 1)
+			continue;
+		set->readgroup_entries[set->n_readgroup_entries].group_id = p->read_group_id;
+		set->readgroup_entries[set->n_readgroup_entries].raw_id = i;
+		++set->n_readgroup_entries;
+	}
+	if (set->n_readgroup_entries == 0) {
+		free(set->readgroup_entries);
+		set->readgroup_entries = 0;
+		return 0;
+	}
+	qsort(set->readgroup_entries, (size_t)set->n_readgroup_entries,
+		  sizeof(*set->readgroup_entries), hk_blind_readgroup_entry_cmp);
+	for (i = 0; i < set->n_readgroup_entries; ++i)
+		if (i == 0 || set->readgroup_entries[i].group_id != set->readgroup_entries[i - 1].group_id)
+			++set->n_readgroup_groups;
+	return 0;
+}
+
+static int hk_blind_readgroup_validate_span(const struct hk_blind_bpair_set *set,
+											int32_t st, int32_t en,
+											int32_t max_segments,
+											int *n_seg_out)
+{
+	int32_t k;
+	int32_t n_seg = 0;
+	int32_t group_id = -1;
+
+	assert(set);
+	assert(n_seg_out);
+	assert(st >= 0 && st <= en && en <= set->n_readgroup_entries);
+	assert(max_segments > 0 && max_segments <= 30);
+	for (k = st; k < en; ++k) {
+		const struct hk_blind_readgroup_entry *entry = &set->readgroup_entries[k];
+		const struct hk_blind_pair *raw;
+		if (entry->raw_id < 0 || entry->raw_id >= set->n_raw)
+			return -1;
+		raw = &set->raw[entry->raw_id];
+		if (group_id < 0)
+			group_id = raw->read_group_id;
+		if (raw->read_group_id != group_id || raw->read_n_segments <= 1 ||
+			raw->read_seg[0] < 0 || raw->read_seg[1] < 0 ||
+			raw->read_seg[0] == raw->read_seg[1])
+			return -1;
+		if (raw->read_seg[0] >= raw->read_n_segments ||
+			raw->read_seg[1] >= raw->read_n_segments)
+			return -1;
+		if (raw->read_n_segments > n_seg)
+			n_seg = raw->read_n_segments;
+		if (raw->read_seg[0] + 1 > n_seg)
+			n_seg = raw->read_seg[0] + 1;
+		if (raw->read_seg[1] + 1 > n_seg)
+			n_seg = raw->read_seg[1] + 1;
+	}
+	if (n_seg <= 1)
+		return -1;
+	if (n_seg > max_segments)
+		return 1;
+	*n_seg_out = n_seg;
+	return 0;
+}
+
+static void hk_blind_readgroup_seed_raw_p4_from_bpair(struct hk_blind_bpair_set *set)
+{
+	int32_t i;
+	int s;
+
+	assert(set);
+	assert(set->raw_p4 || set->n_raw == 0);
+	for (i = 0; i < set->n_raw; ++i) {
+		const struct hk_blind_raw2binned *r2b = &set->raw2binned[i];
+		const struct hk_blind_bpair *bp;
+		float *raw_p4;
+		assert(r2b->bpair_id >= 0 && r2b->bpair_id < set->n_bpairs);
+		bp = &set->bpairs[r2b->bpair_id];
+		raw_p4 = &set->raw_p4[(size_t)i * HK_BLIND_N_STATE];
+		hk_blind_p4_to_raw_order(bp->p4, r2b->swapped, raw_p4);
+		for (s = 0; s < HK_BLIND_N_STATE; ++s) {
+			if (!isfinite(raw_p4[s]) || raw_p4[s] < 0.0f)
+				raw_p4[s] = 0.25f;
+		}
+	}
+}
+
+int hk_blind_bpair_set_apply_readgroup_marginals(struct hk_blind_bpair_set *set,
+												 int32_t max_segments,
+												 float eps)
+{
+	double *score = 0;
+	double *posterior = 0;
+	int32_t i, st;
+
+	assert(set);
+	assert(max_segments >= 2);
+	assert(max_segments <= 20);
+	assert(isfinite(eps));
+	assert(eps > 0.0f);
+	if (set->n_readgroup_entries <= 0)
+		return 0;
+	if (set->raw_p4 == 0) {
+		set->raw_p4 = CALLOC(float, (size_t)set->n_raw * HK_BLIND_N_STATE);
+		if (set->raw_p4 == 0)
+			return -1;
+	}
+	hk_blind_readgroup_seed_raw_p4_from_bpair(set);
+	score = MALLOC(double, (size_t)1 << max_segments);
+	posterior = MALLOC(double, (size_t)1 << max_segments);
+	if (score == 0 || posterior == 0) {
+		free(score);
+		free(posterior);
+		return -1;
+	}
+	set->n_readgroup_groups_used = 0;
+	set->n_readgroup_raw_decoded = 0;
+	set->n_readgroup_groups_skipped_too_large = 0;
+	set->n_readgroup_groups_skipped_bad = 0;
+	for (st = 0; st < set->n_readgroup_entries; st = i) {
+		int32_t n_seg = 0;
+		int32_t n_assign, mask, k;
+		double max_score = -HUGE_VAL;
+		double sum_exp = 0.0;
+		int span_status;
+		for (i = st + 1; i < set->n_readgroup_entries &&
+			 set->readgroup_entries[i].group_id == set->readgroup_entries[st].group_id; ++i) {}
+		span_status = hk_blind_readgroup_validate_span(set, st, i, max_segments, &n_seg);
+		if (span_status > 0) {
+			++set->n_readgroup_groups_skipped_too_large;
+			continue;
+		}
+		if (span_status < 0) {
+			++set->n_readgroup_groups_skipped_bad;
+			continue;
+		}
+		n_assign = 1 << n_seg;
+		for (mask = 0; mask < n_assign; ++mask) {
+			double sc = 0.0;
+			for (k = st; k < i; ++k) {
+				const struct hk_blind_readgroup_entry *entry = &set->readgroup_entries[k];
+				const struct hk_blind_pair *raw = &set->raw[entry->raw_id];
+				const struct hk_blind_raw2binned *r2b = &set->raw2binned[entry->raw_id];
+				const struct hk_blind_bpair *bp = &set->bpairs[r2b->bpair_id];
+				float raw_bp_p4[HK_BLIND_N_STATE];
+				int c0 = (mask >> raw->read_seg[0]) & 1;
+				int c1 = (mask >> raw->read_seg[1]) & 1;
+				int state = (c0 << 1) | c1;
+				float p;
+				hk_blind_p4_to_raw_order(bp->p4, r2b->swapped, raw_bp_p4);
+				p = raw_bp_p4[state];
+				if (!isfinite(p) || p < eps)
+					p = eps;
+				sc += log((double)p);
+			}
+			score[mask] = sc;
+			if (sc > max_score)
+				max_score = sc;
+		}
+		for (mask = 0; mask < n_assign; ++mask) {
+			posterior[mask] = exp(score[mask] - max_score);
+			sum_exp += posterior[mask];
+		}
+		if (!(sum_exp > 0.0) || !isfinite(sum_exp)) {
+			++set->n_readgroup_groups_skipped_bad;
+			continue;
+		}
+		for (k = st; k < i; ++k) {
+			const struct hk_blind_readgroup_entry *entry = &set->readgroup_entries[k];
+			const struct hk_blind_pair *raw = &set->raw[entry->raw_id];
+			float *out = &set->raw_p4[(size_t)entry->raw_id * HK_BLIND_N_STATE];
+			double accum[HK_BLIND_N_STATE] = {0.0, 0.0, 0.0, 0.0};
+			int s;
+			for (mask = 0; mask < n_assign; ++mask) {
+				int c0 = (mask >> raw->read_seg[0]) & 1;
+				int c1 = (mask >> raw->read_seg[1]) & 1;
+				int state = (c0 << 1) | c1;
+				accum[state] += posterior[mask];
+			}
+			for (s = 0; s < HK_BLIND_N_STATE; ++s)
+				out[s] = (float)(accum[s] / sum_exp);
+			++set->n_readgroup_raw_decoded;
+		}
+		++set->n_readgroup_groups_used;
+	}
+	free(score);
+	free(posterior);
+	return 0;
+}
+
 void hk_blind_bpair_set_destroy(struct hk_blind_bpair_set *set)
 {
 	if (set == 0) return;
 	free(set->bpairs);
 	free(set->raw2binned);
 	free(set->raw);
+	free(set->readgroup_entries);
+	free(set->raw_p4);
 	free(set);
 }
 

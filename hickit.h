@@ -35,7 +35,9 @@ enum hk_blind_rho_train_mode {
 	HK_BLIND_RHO_TRAIN_ENTROPY = 1,
 	HK_BLIND_RHO_TRAIN_ENTROPY_WITH_FLOOR = 2,
 	HK_BLIND_RHO_TRAIN_ENTROPY_CIS_CONSTANT_TRANS = 3,
-	HK_BLIND_RHO_TRAIN_ENTROPY_CIS_FLOOR_TRANS = 4
+	HK_BLIND_RHO_TRAIN_ENTROPY_CIS_FLOOR_TRANS = 4,
+	HK_BLIND_RHO_TRAIN_TRANS_ENTROPY = 5,
+	HK_BLIND_RHO_TRAIN_TRANS_ENTROPY_WITH_FLOOR = 6
 };
 
 enum hk_blind_contact_class {
@@ -75,6 +77,37 @@ enum hk_blind_init_mode {
 enum hk_blind_base_k_mode {
 	HK_BLIND_BASE_K_UNIFORM = 0,
 	HK_BLIND_BASE_K_NEIGHBOR_MEDIAN = 1
+};
+
+enum hk_blind_readgroup_mode {
+	HK_BLIND_READGROUP_OFF = 0,
+	HK_BLIND_READGROUP_JOINT_MARGINAL = 1
+};
+
+enum hk_blind_trans_top1_mode {
+	HK_BLIND_TRANS_TOP1_OFF = 0,
+	HK_BLIND_TRANS_TOP1_HARD = 1,
+	HK_BLIND_TRANS_TOP1_MIX = 2
+};
+
+enum hk_blind_trans_gate_mode {
+	HK_BLIND_TRANS_GATE_OFF = 0,
+	HK_BLIND_TRANS_GATE_PMAX = 1,
+	HK_BLIND_TRANS_GATE_MARGIN = 2,
+	HK_BLIND_TRANS_GATE_NEG_ENTROPY = 3,
+	HK_BLIND_TRANS_GATE_PMAX_MARGIN = 4
+};
+
+enum hk_blind_trans_chr_pair_mstep_mode {
+	HK_BLIND_TRANS_CHR_PAIR_MSTEP_STATE4 = 0,
+	HK_BLIND_TRANS_CHR_PAIR_MSTEP_SAME_CROSS = 1
+};
+
+enum hk_blind_trans_callable_anchor_mode {
+	HK_BLIND_TRANS_CALLABLE_ANCHOR_OFF = 0,
+	HK_BLIND_TRANS_CALLABLE_ANCHOR_NEG_ENTROPY = 1,
+	HK_BLIND_TRANS_CALLABLE_ANCHOR_PMAX = 2,
+	HK_BLIND_TRANS_CALLABLE_ANCHOR_MARGIN = 3
 };
 
 // Copy must be 0 or 1. Assertions catch invalid use in debug/test builds.
@@ -129,6 +162,9 @@ struct hk_pair {      // a contact pair
 	uint64_t pos;     // pos1<<32 | pos2
 	int8_t strand[2]; // strand
 	int8_t phase[2];  // phase
+	int32_t read_group_id;
+	int16_t read_seg[2];
+	int16_t read_n_segments;
 	uint32_t n_ctn:31, tad_marked:1;
 	uint32_t n_nei, n_nei_corner;
 	union {
@@ -144,6 +180,9 @@ struct hk_blind_pair {
 	int32_t chr[2];
 	int32_t pos[2];
 	int8_t strand[2];
+	int32_t read_group_id;
+	int16_t read_seg[2];
+	int16_t read_n_segments;
 };
 
 struct hk_blind_bpair_key {
@@ -153,6 +192,11 @@ struct hk_blind_bpair_key {
 struct hk_blind_raw2binned {
 	int32_t bpair_id; // The array index is the raw contact id.
 	uint8_t swapped;  // Raw endpoint order was reversed relative to the canonical key.
+};
+
+struct hk_blind_readgroup_entry {
+	int32_t group_id;
+	int32_t raw_id;
 };
 
 struct hk_blind_bpair {
@@ -178,7 +222,15 @@ struct hk_blind_bpair_set {
 	int32_t n_bpairs;
 	struct hk_blind_raw2binned *raw2binned;
 	struct hk_blind_pair *raw;
+	struct hk_blind_readgroup_entry *readgroup_entries;
+	float *raw_p4;
 	int32_t n_raw;
+	int32_t n_readgroup_entries;
+	int32_t n_readgroup_groups;
+	int32_t n_readgroup_groups_used;
+	int64_t n_readgroup_raw_decoded;
+	int64_t n_readgroup_groups_skipped_too_large;
+	int64_t n_readgroup_groups_skipped_bad;
 	int same_bin_filter_enabled;
 	int64_t n_raw_same_bin_excluded;
 	int32_t n_bpair_same_bin_excluded;
@@ -326,18 +378,27 @@ struct hk_blind_step_diag {
 	float backbone_energy;
 	float repulsion_energy;
 	float sep_energy;
+	float copytrack_energy;
+	float global_copytrack_energy;
+	float normdir_copytrack_energy;
 	float anchor_energy;
 	float total_energy;
 	float force_l1;
 	float backbone_force_l1;
 	float repulsion_force_l1;
 	float sep_force_l1;
+	float copytrack_force_l1;
+	float global_copytrack_force_l1;
+	float normdir_copytrack_force_l1;
 	float anchor_force_l1;
 	int32_t n_force_nonfinite;
 	int32_t n_contact_nonfinite;
 	int32_t n_backbone_nonfinite;
 	int32_t n_repulsion_nonfinite;
 	int32_t n_sep_nonfinite;
+	int32_t n_copytrack_nonfinite;
+	int32_t n_global_copytrack_nonfinite;
+	int32_t n_normdir_copytrack_nonfinite;
 	int32_t n_anchor_nonfinite;
 	int64_t n_backbone_edges;
 	int64_t n_repulsion_pairs_considered;
@@ -398,6 +459,12 @@ struct hk_blind_relax_diag {
 	float final_repulsion_energy;
 	float initial_sep_energy;
 	float final_sep_energy;
+	float initial_copytrack_energy;
+	float final_copytrack_energy;
+	float initial_global_copytrack_energy;
+	float final_global_copytrack_energy;
+	float initial_normdir_copytrack_energy;
+	float final_normdir_copytrack_energy;
 	float initial_anchor_energy;
 	float final_anchor_energy;
 	float max_force_l1;
@@ -408,6 +475,12 @@ struct hk_blind_relax_diag {
 	float final_repulsion_force_l1;
 	float max_sep_force_l1;
 	float final_sep_force_l1;
+	float max_copytrack_force_l1;
+	float final_copytrack_force_l1;
+	float max_global_copytrack_force_l1;
+	float final_global_copytrack_force_l1;
+	float max_normdir_copytrack_force_l1;
+	float final_normdir_copytrack_force_l1;
 	float max_anchor_force_l1;
 	float final_anchor_force_l1;
 	int64_t final_n_repulsion_pairs_considered;
@@ -417,6 +490,9 @@ struct hk_blind_relax_diag {
 	int32_t n_backbone_nonfinite_step;
 	int32_t n_repulsion_nonfinite_step;
 	int32_t n_sep_nonfinite_step;
+	int32_t n_copytrack_nonfinite_step;
+	int32_t n_global_copytrack_nonfinite_step;
+	int32_t n_normdir_copytrack_nonfinite_step;
 	int32_t n_anchor_nonfinite_step;
 	int32_t n_coord_nonfinite;
 	int32_t repulsion_mode;
@@ -431,6 +507,19 @@ struct hk_blind_single_iter_conf {
 	float rho_train_floor;
 	float min_sep_unit;
 	float lambda_sep;
+	float lambda_copytrack;
+	float lambda_global_copytrack;
+	float lambda_normdir_copytrack;
+	float normdir_copytrack_eps_unit;
+	float trans_chr_pair_prior_lambda;
+	float trans_chr_pair_prior_eps;
+	float trans_chr_pair_prior_power;
+	int32_t trans_chr_pair_prior_warmup_iter;
+	float trans_chr_pair_mstep_lambda;
+	float trans_chr_pair_mstep_eps;
+	float trans_chr_pair_mstep_power;
+	int32_t trans_chr_pair_mstep_warmup_iter;
+	int trans_chr_pair_mstep_mode;
 	float chr_sep_unit;
 	float lambda_chr_sep;
 	float relax_step;
@@ -439,9 +528,28 @@ struct hk_blind_single_iter_conf {
 	int repulsion_mode;
 	float repulsion_block_k_min;
 	int rho_train_mode;
-	int d_scale_mode;
-	float d_scale_eps_count;
-	float d_scale_posterior_gamma;
+		int d_scale_mode;
+		float d_scale_eps_count;
+		float d_scale_posterior_gamma;
+		float trans_d_scale_posterior_gamma;
+		float trans_k_multiplier;
+		float trans_dscale_multiplier;
+	int trans_top1_mode;
+	float trans_top1_min_pmax;
+	float trans_top1_min_margin;
+	float trans_top1_mix_weight;
+	int trans_callable_anchor_mode;
+	float trans_callable_anchor_top_frac;
+	float trans_callable_anchor_mix_weight;
+	int32_t trans_callable_anchor_min_n_raw;
+	int32_t trans_callable_anchor_warmup_iter;
+	int trans_gate_mode;
+	float trans_gate_min_pmax;
+	float trans_gate_min_margin;
+	float trans_gate_min_neg_entropy;
+	int readgroup_mode;
+	int32_t readgroup_max_segments;
+	float readgroup_eps;
 	int estep_score_mode;
 };
 
@@ -522,7 +630,16 @@ struct hk_blind_iter_loop_diag {
 	int64_t final_n_repulsion_pairs_active;
 	float final_anchor_energy;
 	float final_anchor_force_l1;
+	float final_copytrack_energy;
+	float final_copytrack_force_l1;
+	float final_global_copytrack_energy;
+	float final_global_copytrack_force_l1;
+	float final_normdir_copytrack_energy;
+	float final_normdir_copytrack_force_l1;
 	int32_t n_repulsion_nonfinite_step;
+	int32_t n_copytrack_nonfinite_step;
+	int32_t n_global_copytrack_nonfinite_step;
+	int32_t n_normdir_copytrack_nonfinite_step;
 	int32_t n_anchor_nonfinite_step;
 	int32_t repulsion_mode;
 	int posterior_refreshed_after_final_relax;
@@ -531,6 +648,7 @@ struct hk_blind_iter_loop_diag {
 	float posterior_refresh_top_state_switch_frac;
 	float posterior_refresh_mean_pU_before;
 	float posterior_refresh_mean_pU_after;
+	struct hk_blind_heldout_diag heldout_diag;
 };
 
 static inline void hk_blind_pair_from_pair(struct hk_blind_pair *dst, const struct hk_pair *src)
@@ -543,6 +661,10 @@ static inline void hk_blind_pair_from_pair(struct hk_blind_pair *dst, const stru
 	dst->pos[1] = (int32_t)src->pos;
 	dst->strand[0] = src->strand[0];
 	dst->strand[1] = src->strand[1];
+	dst->read_group_id = src->read_group_id;
+	dst->read_seg[0] = src->read_seg[0];
+	dst->read_seg[1] = src->read_seg[1];
+	dst->read_n_segments = src->read_n_segments;
 }
 
 struct hk_map {
@@ -650,6 +772,11 @@ const char *hk_blind_d_scale_effective_count_formula(int mode, float gamma);
 const char *hk_blind_estep_score_mode_name(int mode);
 const char *hk_blind_base_k_mode_name(int mode);
 const char *hk_blind_contact_class_name(int contact_class);
+const char *hk_blind_readgroup_mode_name(int mode);
+const char *hk_blind_trans_top1_mode_name(int mode);
+const char *hk_blind_trans_gate_mode_name(int mode);
+const char *hk_blind_trans_chr_pair_mstep_mode_name(int mode);
+const char *hk_blind_trans_callable_anchor_mode_name(int mode);
 int hk_blind_init_mode_valid(int mode);
 int hk_blind_prior_mode_valid(int mode);
 int hk_blind_rho_train_mode_valid(int mode);
@@ -657,10 +784,20 @@ int hk_blind_d_scale_mode_valid(int mode);
 int hk_blind_estep_score_mode_valid(int mode);
 int hk_blind_base_k_mode_valid(int mode);
 int hk_blind_contact_class_valid(int contact_class);
+int hk_blind_readgroup_mode_valid(int mode);
+int hk_blind_trans_chr_pair_mstep_mode_valid(int mode);
+int hk_blind_trans_callable_anchor_mode_valid(int mode);
 struct hk_blind_bpair_set *hk_blind_bpair_set_build(const struct hk_bmap *m, int32_t n_raw, const struct hk_blind_pair *raw);
 void hk_blind_bpair_set_destroy(struct hk_blind_bpair_set *set);
+int hk_blind_bpair_set_build_readgroup_index(struct hk_blind_bpair_set *set);
+int hk_blind_bpair_set_apply_readgroup_marginals(struct hk_blind_bpair_set *set,
+												 int32_t max_segments,
+												 float eps);
+int hk_blind_bpair_set_aggregate_raw_p4_to_bpair(struct hk_blind_bpair_set *set);
 void hk_blind_init_uniform_log_prior(float log_prior[HK_BLIND_N_STATE]);
 void hk_blind_bpair_set_init_uniform_prior(struct hk_blind_bpair_set *set);
+int hk_blind_bpair_set_apply_trans_chr_pair_prior(const struct hk_bmap *bmap, struct hk_blind_bpair_set *set,
+												  float lambda, float eps_count, float power);
 int hk_blind_bpair_set_init_cis_inter_ratio_prior(const struct hk_bmap *bmap, struct hk_blind_bpair_set *set,
 												  float eps_prior, struct hk_blind_prior_diag *diag);
 int hk_blind_bpair_set_apply_base_k_mode(const struct hk_bmap *bmap, struct hk_blind_bpair_set *set,
@@ -711,6 +848,18 @@ float hk_blind_homolog_sep_accumulate_force(int32_t n_haploid, const fvec3_t *co
 float hk_blind_homolog_sep_accumulate_force_ex(int32_t n_haploid, const fvec3_t *coords, fvec3_t *force,
 											  float unit, float min_sep_unit, float lambda_sep,
 											  float *force_l1, int32_t *n_nonfinite);
+float hk_blind_copytrack_accumulate_force(const struct hk_bmap *bmap, const fvec3_t *coords,
+										  fvec3_t *force, float unit, float lambda_copytrack,
+										  float *force_l1, int32_t *n_nonfinite);
+float hk_blind_global_copytrack_accumulate_force(const struct hk_bmap *bmap, const fvec3_t *coords,
+												 fvec3_t *force, float unit, float lambda_global_copytrack,
+												 float *force_l1, int32_t *n_nonfinite);
+float hk_blind_normdir_copytrack_accumulate_force(const struct hk_bmap *bmap, const fvec3_t *coords,
+												  fvec3_t *force, float unit,
+												  float lambda_normdir_copytrack,
+												  float eps_unit,
+												  float *force_l1,
+												  int32_t *n_nonfinite);
 void hk_blind_homolog_sep_stats_init(struct hk_blind_homolog_sep_stats *stats);
 int hk_blind_homolog_sep_compute_stats(int32_t n_haploid, const fvec3_t *coords, float collapse_threshold,
 									   struct hk_blind_homolog_sep_stats *stats);
@@ -827,6 +976,59 @@ int hk_blind_wedge_list_build_softall_mode_gamma(struct hk_blind_wedge_list *out
 												 int d_scale_mode,
 												 float d_scale_eps_count,
 												 float d_scale_posterior_gamma);
+int hk_blind_wedge_list_build_softall_mode_gamma_trans_scale(struct hk_blind_wedge_list *out,
+															 const struct hk_bmap *bmap,
+															 const struct hk_blind_bpair_set *set,
+															 int d_scale_mode,
+															 float d_scale_eps_count,
+															 float d_scale_posterior_gamma,
+															 float trans_d_scale_posterior_gamma,
+															 float trans_k_multiplier,
+															 float trans_dscale_multiplier);
+int hk_blind_wedge_list_build_softall_mode_gamma_trans_control(struct hk_blind_wedge_list *out,
+															  const struct hk_bmap *bmap,
+															  const struct hk_blind_bpair_set *set,
+															  int d_scale_mode,
+															  float d_scale_eps_count,
+															  float d_scale_posterior_gamma,
+															  float trans_d_scale_posterior_gamma,
+															  float trans_k_multiplier,
+															  float trans_dscale_multiplier,
+															  float rho_train,
+															  int rho_train_mode,
+															  float rho_train_floor,
+															  int trans_top1_mode,
+															  float trans_top1_min_pmax,
+															  float trans_top1_min_margin,
+															  float trans_top1_mix_weight);
+int hk_blind_wedge_list_build_softall_mode_gamma_trans_control_chrpair(struct hk_blind_wedge_list *out,
+																	  const struct hk_bmap *bmap,
+																	  const struct hk_blind_bpair_set *set,
+																		  int d_scale_mode,
+																		  float d_scale_eps_count,
+																		  float d_scale_posterior_gamma,
+																		  float trans_d_scale_posterior_gamma,
+																		  float trans_k_multiplier,
+																		  float trans_dscale_multiplier,
+																	  float rho_train,
+																	  int rho_train_mode,
+																	  float rho_train_floor,
+																	  int trans_top1_mode,
+																	  float trans_top1_min_pmax,
+																	  float trans_top1_min_margin,
+																	  float trans_top1_mix_weight,
+																	  int trans_callable_anchor_mode,
+																	  float trans_callable_anchor_top_frac,
+																	  float trans_callable_anchor_mix_weight,
+																	  int32_t trans_callable_anchor_min_n_raw,
+																	  int trans_gate_mode,
+																	  float trans_gate_min_pmax,
+																	  float trans_gate_min_margin,
+																	  float trans_gate_min_neg_entropy,
+																	  float trans_chr_pair_mstep_lambda,
+																	  float trans_chr_pair_mstep_eps,
+																	  float trans_chr_pair_mstep_power,
+																	  int trans_chr_pair_mstep_mode);
 int hk_blind_wedge_list_aggregate_exact(struct hk_blind_wedge_list *list);
 void hk_blind_iter_diag_init(struct hk_blind_iter_diag *diag);
 void hk_blind_iter_diag_validate_bpair_set(const struct hk_blind_bpair_set *set, struct hk_blind_iter_diag *diag);

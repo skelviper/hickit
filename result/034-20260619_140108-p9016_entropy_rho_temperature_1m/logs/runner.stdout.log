@@ -1,0 +1,49 @@
+FULL_RESULT_ROOT=/mnt/ssd/zliu/phase3/test_res/034-20260619_140108-p9016_entropy_rho_temperature_1m
+LIGHT_RESULT_ROOT=/mnt/ssd/zliu/phase3/hickit/result/034-20260619_140108-p9016_entropy_rho_temperature_1m
+rm -rf /mnt/ssd/zliu/phase3/test_res/smoke/hk_blind_p9016_minimal_audit_smoke
+mkdir -p /mnt/ssd/zliu/phase3/test_res/smoke
+env -i PATH="$PATH" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+HK_BLIND_P9016_PAIRS=testdata/p9016_blind_smoke.pairs \
+HK_BLIND_P9016_ALLOW_CUSTOM_PAIRS=1 \
+HK_BLIND_P9016_OUTPUT_ROOT=/mnt/ssd/zliu/phase3/test_res/smoke/hk_blind_p9016_minimal_audit_smoke \
+HK_BLIND_P9016_CONFIG_NAME=minimal_soft_sep_off \
+HK_BLIND_P9016_BIN_SIZE_BP=1000000 \
+HK_BLIND_P9016_MINIMAL_N_ITER=1 \
+HK_BLIND_P9016_MINIMAL_RELAX_STEPS=1 \
+HK_BLIND_P9016_INIT_EPS=0.5 \
+HK_BLIND_P9016_INIT_NOISE_SCALE=0.0 \
+HK_BLIND_P9016_MIN_SEP_UNIT=0.0 \
+HK_BLIND_P9016_LAMBDA_SEP=0.0 \
+HK_BLIND_P9016_INIT_SEED=17 \
+./run_blind_p9016_minimal.bin
+./audit_blind_p9016_full_cpu_output.bin /mnt/ssd/zliu/phase3/test_res/smoke/hk_blind_p9016_minimal_audit_smoke/minimal_soft_sep_off
+cc -g -Wall -O2 -Wc++-compat -fno-fast-math -fno-unsafe-math-optimizations    run_blind_p9016_minimal.c sdict.o io.o pair.o count.o phase.o bin.o blind.o fdg.o image.o view3d.o fdg_gpu.o -o run_blind_p9016_minimal.bin -L/usr/local/cuda/targets/x86_64-linux/lib -Wl,-rpath,/usr/local/cuda/targets/x86_64-linux/lib -lm -lz -lcudart -lstdc++
+make: 'audit_blind_p9016_full_cpu_output.bin' is up to date.
+CONFIG_START=p9016_pcgamma1_rho_constant_temp1_td1_sep0_ieps0p5_noise0_seed17 rho_mode=constant rho_floor=0 temp=1->1 rho=1->1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_rho_entropy_temp1_td1_sep0 rho_mode=entropy rho_floor=0 temp=1->1 rho=1->1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_rho_entropy_floor0p25_temp1_td1_sep0 rho_mode=entropy_with_floor rho_floor=0.25 temp=1->1 rho=1->1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_rho_entropy_floor0p5_temp1_td1_sep0 rho_mode=entropy_with_floor rho_floor=0.5 temp=1->1 rho=1->1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_rho_entropy_temp2to1_td1_sep0 rho_mode=entropy rho_floor=0 temp=2->1 rho=1->1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_rho_entropy_floor0p25_temp2to1_td1_sep0 rho_mode=entropy_with_floor rho_floor=0.25 temp=2->1 rho=1->1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_rho_entropy_floor0p5_temp2to1_td1_sep0 rho_mode=entropy_with_floor rho_floor=0.5 temp=2->1 rho=1->1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_rho_entropy_cis_floor_trans0p25_temp1_td1_sep0 rho_mode=entropy_cis_floor_trans rho_floor=0.25 temp=1->1 rho=1->1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_rho_entropy_cis_floor_trans0p5_temp1_td1_sep0 rho_mode=entropy_cis_floor_trans rho_floor=0.5 temp=1->1 rho=1->1 trans_k=1 trans_dscale=1 min_sep=0 lambda_sep=0
+CONFIG_START=p9016_pcgamma1_rho_constant_temp1_td0p5_sep0 rho_mode=constant rho_floor=0 temp=1->1 rho=1->1 trans_k=1 trans_dscale=0.5 min_sep=0 lambda_sep=0
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_floor0p25_temp1_td1_sep0
+CONFIG_START=p9016_pcgamma1_rho_entropy_floor0p25_temp1_td0p5_sep0 rho_mode=entropy_with_floor rho_floor=0.25 temp=1->1 rho=1->1 trans_k=1 trans_dscale=0.5 min_sep=0 lambda_sep=0
+CONFIG_DONE=p9016_pcgamma1_rho_constant_temp1_td0p5_sep0
+CONFIG_START=p9016_pcgamma1_rho_entropy_floor0p5_temp1_td0p5_sep0 rho_mode=entropy_with_floor rho_floor=0.5 temp=1->1 rho=1->1 trans_k=1 trans_dscale=0.5 min_sep=0 lambda_sep=0
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_floor0p25_temp2to1_td1_sep0
+CONFIG_START=p9016_pcgamma1_rho_entropy_floor0p25_temp2to1_td0p5_sep0 rho_mode=entropy_with_floor rho_floor=0.25 temp=2->1 rho=1->1 trans_k=1 trans_dscale=0.5 min_sep=0 lambda_sep=0
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_temp2to1_td1_sep0
+CONFIG_START=p9016_pcgamma1_rho_entropy_floor0p5_temp2to1_td0p5_sep0 rho_mode=entropy_with_floor rho_floor=0.5 temp=2->1 rho=1->1 trans_k=1 trans_dscale=0.5 min_sep=0 lambda_sep=0
+CONFIG_DONE=p9016_pcgamma1_rho_constant_temp1_td1_sep0_ieps0p5_noise0_seed17
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_temp1_td1_sep0
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_cis_floor_trans0p25_temp1_td1_sep0
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_cis_floor_trans0p5_temp1_td1_sep0
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_floor0p5_temp1_td1_sep0
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_floor0p5_temp2to1_td1_sep0
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_floor0p25_temp1_td0p5_sep0
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_floor0p5_temp1_td0p5_sep0
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_floor0p25_temp2to1_td0p5_sep0
+CONFIG_DONE=p9016_pcgamma1_rho_entropy_floor0p5_temp2to1_td0p5_sep0

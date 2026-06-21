@@ -1,0 +1,419 @@
+minimal P9016: input=/shared/zliu/CHARM/CHARM_mesc/data/pairs/P9016.pairs.gz output_root=/mnt/ssd/zliu/phase3/test_res/019-20260618_224538-p9016_copytrack_continuity_1m/outputs config=p9016_pcgamma1_msep1_lsep1_copytrack0p03_ieps0p5_noise0_seed17 baseline=softall n_iter=100 relax_steps=100 relax_step=0.012 chain=0 init_mode=unphased_scaffold_split init_eps=0.5 init_noise=0 init_scale=10 init_seed=17 min_sep=1 lambda_sep=1 lambda_copytrack=0.029999999 d_scale_mode=posterior_count d_scale_input=posterior_count d_scale_formula=n_raw*posterior_prob^1 d_scale_gamma=1 d_scale_eps=1e-06 relax_backend=gpu
+minimal P9016: stage 1/1 name=1m bin_size_bp=1000000 parent=0
+[M::hk_map_read] read 1703888 pairs
+[M::hk_bmap_gen] generated 2633 beads
+[M::hk_bmap_gen] 489556 bin pairs
+minimal P9016[1m]: build binned contacts
+minimal P9016[1m]: init mode=unphased_scaffold_split seed=17 scale=10
+[M::hk_fdg] mid_dist:1000000 max_nei:69
+[M::hk_fdg1_cpu] iter:10 elapsed:0.33s rep_coef:0.2092 RMS_force:367.1874 n_rep:43.0820 energy:25.1082,6.6566,0.0049 dist:5.6169,6.6204,1.4501
+[M::hk_fdg1_cpu] iter:20 elapsed:0.81s rep_coef:0.6615 RMS_force:336.9308 n_rep:157.7303 energy:7.7515,3.4068,0.0177 dist:3.4076,4.2658,1.4016
+[M::hk_fdg1_cpu] iter:30 elapsed:1.79s rep_coef:0.9352 RMS_force:226.0828 n_rep:592.3505 energy:1.8327,1.0566,0.0354 dist:1.9896,2.3234,1.2554
+[M::hk_fdg1_cpu] iter:40 elapsed:3.22s rep_coef:0.9907 RMS_force:132.8226 n_rep:808.7839 energy:0.5357,0.4158,0.0366 dist:1.4081,1.7237,1.2560
+[M::hk_fdg1_cpu] iter:50 elapsed:4.70s rep_coef:0.9987 RMS_force:99.3491 n_rep:815.5837 energy:0.1678,0.2703,0.0325 dist:1.0643,1.6062,1.3142
+minimal P9016[1m]: run softall, n_iter=100 relax_steps=100 relax_step=0.012 relax_backend=gpu
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 287142 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=292308 n_block_keys=574524 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=574524 avg_deg=109.10 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 286555 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=291657 n_block_keys=573218 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=573218 avg_deg=108.85 max_deg=207
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 270050 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=275129 n_block_keys=540160 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=540160 avg_deg=102.58 max_deg=205
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 255898 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=260973 n_block_keys=511852 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=511852 avg_deg=97.20 max_deg=210
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 244147 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=249213 n_block_keys=488340 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=488340 avg_deg=92.73 max_deg=202
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 235616 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=240733 n_block_keys=471380 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=471380 avg_deg=89.51 max_deg=198
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 229388 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=234503 n_block_keys=458920 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=458920 avg_deg=87.15 max_deg=203
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 224381 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=229486 n_block_keys=448886 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=448886 avg_deg=85.24 max_deg=199
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 221244 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=226354 n_block_keys=442616 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=442616 avg_deg=84.05 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 218927 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=224050 n_block_keys=438010 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=438010 avg_deg=83.18 max_deg=190
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 217293 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=222403 n_block_keys=434714 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=434714 avg_deg=82.55 max_deg=189
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 216503 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=221627 n_block_keys=433156 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=433156 avg_deg=82.26 max_deg=181
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 216273 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=221405 n_block_keys=432712 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=432712 avg_deg=82.17 max_deg=181
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 216372 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=221516 n_block_keys=432936 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=432936 avg_deg=82.21 max_deg=182
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 216184 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=221335 n_block_keys=432572 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=432572 avg_deg=82.14 max_deg=183
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 216133 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=221275 n_block_keys=432454 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=432454 avg_deg=82.12 max_deg=182
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 216038 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=221183 n_block_keys=432270 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=432270 avg_deg=82.09 max_deg=181
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215889 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=221024 n_block_keys=431954 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=431954 avg_deg=82.03 max_deg=182
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215785 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220923 n_block_keys=431750 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=431750 avg_deg=81.99 max_deg=186
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215686 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220827 n_block_keys=431564 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=431564 avg_deg=81.95 max_deg=187
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215621 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220773 n_block_keys=431458 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=431458 avg_deg=81.93 max_deg=185
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215506 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220655 n_block_keys=431224 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=431224 avg_deg=81.89 max_deg=187
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215445 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220593 n_block_keys=431112 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=431112 avg_deg=81.87 max_deg=189
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215344 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220484 n_block_keys=430888 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=430888 avg_deg=81.82 max_deg=189
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215272 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220409 n_block_keys=430732 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=430732 avg_deg=81.79 max_deg=189
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215246 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220379 n_block_keys=430674 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=430674 avg_deg=81.78 max_deg=191
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215222 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220365 n_block_keys=430646 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=430646 avg_deg=81.78 max_deg=191
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215233 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220382 n_block_keys=430682 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=430682 avg_deg=81.79 max_deg=191
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 215171 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220328 n_block_keys=430568 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=430568 avg_deg=81.76 max_deg=192
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214987 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220143 n_block_keys=430196 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=430196 avg_deg=81.69 max_deg=192
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214942 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=220087 n_block_keys=430084 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=430084 avg_deg=81.67 max_deg=192
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214786 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219928 n_block_keys=429766 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=429766 avg_deg=81.61 max_deg=192
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214644 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219791 n_block_keys=429494 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=429494 avg_deg=81.56 max_deg=192
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214543 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219692 n_block_keys=429296 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=429296 avg_deg=81.52 max_deg=192
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214465 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219618 n_block_keys=429148 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=429148 avg_deg=81.49 max_deg=192
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214448 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219600 n_block_keys=429112 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=429112 avg_deg=81.49 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214404 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219560 n_block_keys=429032 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=429032 avg_deg=81.47 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214296 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219449 n_block_keys=428810 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428810 avg_deg=81.43 max_deg=192
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214249 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219402 n_block_keys=428714 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428714 avg_deg=81.41 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214119 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219272 n_block_keys=428456 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428456 avg_deg=81.36 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214113 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219258 n_block_keys=428426 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428426 avg_deg=81.36 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214082 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219229 n_block_keys=428366 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428366 avg_deg=81.35 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214055 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219204 n_block_keys=428318 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428318 avg_deg=81.34 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214066 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219218 n_block_keys=428348 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428348 avg_deg=81.34 max_deg=194
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214054 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219210 n_block_keys=428332 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428332 avg_deg=81.34 max_deg=194
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214079 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219227 n_block_keys=428366 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428366 avg_deg=81.35 max_deg=194
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214050 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219198 n_block_keys=428306 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428306 avg_deg=81.33 max_deg=194
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 214028 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219170 n_block_keys=428254 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428254 avg_deg=81.32 max_deg=194
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213957 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219102 n_block_keys=428118 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428118 avg_deg=81.30 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213913 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219061 n_block_keys=428036 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=428036 avg_deg=81.28 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213832 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218984 n_block_keys=427880 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427880 avg_deg=81.25 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213866 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=219019 n_block_keys=427952 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427952 avg_deg=81.27 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213808 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218954 n_block_keys=427822 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427822 avg_deg=81.24 max_deg=194
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213784 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218919 n_block_keys=427752 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427752 avg_deg=81.23 max_deg=194
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213777 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218911 n_block_keys=427736 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427736 avg_deg=81.23 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213752 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218888 n_block_keys=427690 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427690 avg_deg=81.22 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213720 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218863 n_block_keys=427640 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427640 avg_deg=81.21 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213663 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218814 n_block_keys=427542 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427542 avg_deg=81.19 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213626 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218779 n_block_keys=427472 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427472 avg_deg=81.18 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213630 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218791 n_block_keys=427494 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427494 avg_deg=81.18 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213579 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218742 n_block_keys=427396 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427396 avg_deg=81.16 max_deg=194
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213558 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218716 n_block_keys=427344 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427344 avg_deg=81.15 max_deg=194
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213539 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218696 n_block_keys=427304 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427304 avg_deg=81.14 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213547 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218695 n_block_keys=427302 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427302 avg_deg=81.14 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213530 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218679 n_block_keys=427270 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427270 avg_deg=81.14 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213505 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218654 n_block_keys=427220 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427220 avg_deg=81.13 max_deg=195
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213510 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218658 n_block_keys=427228 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427228 avg_deg=81.13 max_deg=194
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213489 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218637 n_block_keys=427186 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427186 avg_deg=81.12 max_deg=194
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213505 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218656 n_block_keys=427224 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427224 avg_deg=81.13 max_deg=191
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213482 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218630 n_block_keys=427172 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427172 avg_deg=81.12 max_deg=191
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213466 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218610 n_block_keys=427132 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427132 avg_deg=81.11 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213425 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218574 n_block_keys=427060 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427060 avg_deg=81.10 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213453 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218599 n_block_keys=427110 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427110 avg_deg=81.11 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213440 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218590 n_block_keys=427094 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427094 avg_deg=81.10 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213409 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218562 n_block_keys=427038 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427038 avg_deg=81.09 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213413 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218568 n_block_keys=427050 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427050 avg_deg=81.10 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213417 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218571 n_block_keys=427056 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=427056 avg_deg=81.10 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213374 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218526 n_block_keys=426966 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426966 avg_deg=81.08 max_deg=191
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213357 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218510 n_block_keys=426934 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426934 avg_deg=81.07 max_deg=190
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213298 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218448 n_block_keys=426808 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426808 avg_deg=81.05 max_deg=191
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213255 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218393 n_block_keys=426696 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426696 avg_deg=81.03 max_deg=191
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213224 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218364 n_block_keys=426636 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426636 avg_deg=81.02 max_deg=191
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213201 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218345 n_block_keys=426598 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426598 avg_deg=81.01 max_deg=191
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213117 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218265 n_block_keys=426438 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426438 avg_deg=80.98 max_deg=192
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213088 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218232 n_block_keys=426372 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426372 avg_deg=80.97 max_deg=192
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213097 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218240 n_block_keys=426388 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426388 avg_deg=80.97 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213089 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218234 n_block_keys=426376 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426376 avg_deg=80.97 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213072 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218224 n_block_keys=426356 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426356 avg_deg=80.96 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213026 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218177 n_block_keys=426262 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426262 avg_deg=80.95 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213006 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218158 n_block_keys=426226 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426226 avg_deg=80.94 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213021 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218177 n_block_keys=426264 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426264 avg_deg=80.95 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 213013 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218169 n_block_keys=426248 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426248 avg_deg=80.94 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 212982 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218138 n_block_keys=426186 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426186 avg_deg=80.93 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 212962 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218116 n_block_keys=426140 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426140 avg_deg=80.92 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 212952 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218103 n_block_keys=426114 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426114 avg_deg=80.92 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 212937 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218087 n_block_keys=426082 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426082 avg_deg=80.91 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 212891 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218044 n_block_keys=425994 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=425994 avg_deg=80.90 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 212920 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218077 n_block_keys=426060 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=426060 avg_deg=80.91 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 212892 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218045 n_block_keys=425996 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=425996 avg_deg=80.90 max_deg=193
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 212894 bin pairs
+[M::blind-gpu] prepared pair buffers: n_diploid=5266 n_pairs=218045 n_block_keys=425996 n_steps=100
+[I::fdg-gpu] blocklist CSR ready: edges=425996 avg_deg=80.90 max_deg=193
+minimal P9016[1m]: write outputs to /mnt/ssd/zliu/phase3/test_res/019-20260618_224538-p9016_copytrack_continuity_1m/outputs/p9016_pcgamma1_msep1_lsep1_copytrack0p03_ieps0p5_noise0_seed17
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 212868 bin pairs
+minimal P9016[1m]: status=OK final_entropy=0.59802049 final_pU=0.4313806
+minimal P9016: summary /mnt/ssd/zliu/phase3/test_res/019-20260618_224538-p9016_copytrack_continuity_1m/outputs/matrix_summary.tsv

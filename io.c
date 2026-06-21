@@ -23,6 +23,10 @@ char *hk_pair_cols[] = { // when modify this array, append; DON'T insert in the 
 	"loop_q",        // 11
 	"loop_r",        // 12
 	"loop_n",        // 13
+	"read_group_id", // 14
+	"read_seg0",     // 15
+	"read_seg1",     // 16
+	"read_n_segments", // 17
 	NULL
 };
 
@@ -126,6 +130,9 @@ static void hk_parse_pair(struct hk_pair *p, struct hk_sdict *d, int n_extra_col
 	p->chr = (uint64_t)c1 << 32 | c2;
 	p->pos = (uint64_t)p1 << 32 | p2;
 	p->phase[0] = p->phase[1] = -1;
+	p->read_group_id = -1;
+	p->read_seg[0] = p->read_seg[1] = -1;
+	p->read_n_segments = 0;
 	if (n_fields >= 7) {
 		p->strand[0] = *fields[5] == '+'? 1 : *fields[5] == '-'? -1 : 0;
 		p->strand[1] = *fields[6] == '+'? 1 : *fields[6] == '-'? -1 : 0;
@@ -151,6 +158,14 @@ static void hk_parse_pair(struct hk_pair *p, struct hk_sdict *d, int n_extra_col
 				p->_.loop.r = atoi(fields[c]);
 			} else if (e == 13) { // loop_n
 				p->_.loop.n = atoi(fields[c]);
+			} else if (e == 14) { // read_group_id
+				p->read_group_id = atoi(fields[c]);
+			} else if (e == 15) { // read_seg0
+				p->read_seg[0] = (int16_t)atoi(fields[c]);
+			} else if (e == 16) { // read_seg1
+				p->read_seg[1] = (int16_t)atoi(fields[c]);
+			} else if (e == 17) { // read_n_segments
+				p->read_n_segments = (int16_t)atoi(fields[c]);
 			}
 		}
 	}

@@ -197,26 +197,67 @@ def manifest_int(manifest: dict[str, str], key: str) -> int:
         raise ValueError(f"training manifest {key} is not an integer: {manifest[key]}") from exc
 
 
-def validate_train_manifest(manifest: dict[str, str], bin_size: int, expected_sample: str) -> None:
-    required = {
-        "sample": expected_sample,
-        "runner_family": "p9016_minimal",
-        "baseline": "softall",
-        "mstep_graph_mode": "raw_expected_soft_all",
-        "input_contact_source": "raw_pairs",
-        "status": "OK",
-    }
+def validate_train_manifest(
+    manifest: dict[str, str],
+    bin_size: int,
+    expected_sample: str,
+    allow_reference_derived_training: bool = False,
+) -> None:
+    runner_family = manifest.get("runner_family")
+    mstep_graph_mode = manifest.get("mstep_graph_mode")
+    baseline = manifest.get("baseline")
+    is_fixed_posterior_diagnostic = (
+        runner_family == "p9016_fixed_posterior_diagnostic"
+        and mstep_graph_mode == "fixed_bpair_state_edges"
+        and baseline == "fixed_posterior_diagnostic"
+        and manifest.get("fixed_posterior") == "1"
+    )
+    if is_fixed_posterior_diagnostic and not allow_reference_derived_training:
+        raise ValueError("fixed-posterior diagnostics require --allow-reference-derived-training")
+    if is_fixed_posterior_diagnostic:
+        required = {
+            "sample": expected_sample,
+            "status": "OK",
+        }
+    else:
+        required = {
+            "sample": expected_sample,
+            "runner_family": "p9016_minimal",
+            "baseline": "softall",
+            "mstep_graph_mode": "raw_expected_soft_all",
+            "status": "OK",
+        }
     for key, expected in required.items():
         got = manifest.get(key)
         if got != expected:
             raise ValueError(f"training manifest {key}={got!r}; expected {expected!r}")
+    source = manifest.get("input_contact_source")
+    blind_safe_sources = {"raw_pairs", "contacts_seg_derived_pairs"}
+    reference_derived_sources = {"charm3dg_derived_pairs", "imputed_or_positive_control_pairs"}
+    if allow_reference_derived_training:
+        allowed_sources = blind_safe_sources | reference_derived_sources
+        if source not in allowed_sources:
+            raise ValueError(f"training manifest input_contact_source={source!r}; expected one of {sorted(allowed_sources)}")
+    elif source not in blind_safe_sources:
+        raise ValueError(f"training manifest input_contact_source={source!r}; expected one of {sorted(blind_safe_sources)}")
     if manifest_int(manifest, "resolution") != bin_size:
         raise ValueError("training manifest resolution disagrees with --bin-size")
     if manifest_int(manifest, "bin_size_bp") != bin_size:
         raise ValueError("training manifest bin_size_bp disagrees with --bin-size")
-    for key in ("uses_phase_labels", "uses_charm_or_reference", "uses_charm_for_training"):
-        if manifest_int(manifest, key) != 0:
-            raise ValueError(f"training manifest {key} must be 0")
+    if manifest_int(manifest, "uses_phase_labels") != 0:
+        raise ValueError("training manifest uses_phase_labels must be 0")
+    for key in ("uses_charm_or_reference", "uses_charm_for_training"):
+        value = manifest_int(manifest, key)
+        if source in blind_safe_sources and value != 0:
+            raise ValueError(f"training manifest {key} must be 0 for blind-safe raw-derived training")
+        if source in reference_derived_sources and not allow_reference_derived_training:
+            raise ValueError(f"training manifest {key} is reference-derived but eval did not opt in")
+        if source in reference_derived_sources and value != 1:
+            raise ValueError(f"training manifest {key} must be 1 for reference-derived positive controls")
+    if source == "contacts_seg_derived_pairs":
+        for key in ("readgroup_uses_phase_labels", "readgroup_uses_charm_or_reference"):
+            if key in manifest and manifest_int(manifest, key) != 0:
+                raise ValueError(f"training manifest {key} must be 0 for contacts.seg-derived blind training")
     if manifest_int(manifest, "copy_labels_are_gauge_only") != 1:
         raise ValueError("training manifest copy_labels_are_gauge_only must be 1")
     for key in ("n_raw", "n_bpair", "n_beads"):
@@ -1493,6 +1534,31 @@ def write_readme(
     volume_rows_data: list[dict[str, object]],
     contact_distance_rows: list[dict[str, object]],
 ) -> None:
+    train_input_source = str(summary.get("train_manifest_input_contact_source", "raw_pairs"))
+    uses_reference_training = str(summary.get("train_manifest_uses_charm_for_training", "0")) == "1"
+    allow_reference_eval = int(summary.get("allow_reference_derived_training_eval", 0)) == 1
+    if train_input_source == "raw_pairs" and not uses_reference_training:
+        training_input_desc = f"raw {args.expected_sample} pairs: `{args.pairs}`"
+        boundary_desc = (
+            f"training used raw {args.expected_sample} contact information only; "
+            "phase labels and CHARM/3DG were read only by this post-training evaluator."
+        )
+    elif uses_reference_training or allow_reference_eval:
+        reference_source = summary.get("train_manifest_reference_training_source_3dg", "")
+        source_suffix = f" from `{reference_source}`" if reference_source else ""
+        training_input_desc = f"{train_input_source}{source_suffix}"
+        boundary_desc = (
+            "training used reference-derived positive-control contacts; this is not a blind baseline. "
+            "SNP phase labels were still eval-only, and CHARM/3DG was used by training only through "
+            "the pre-generated contact input recorded in the training manifest."
+        )
+    else:
+        training_input_desc = f"{train_input_source}: `{args.pairs}`"
+        boundary_desc = (
+            "training input was not recognized as the standard raw-pairs blind baseline; "
+            "interpret this report according to the training manifest."
+        )
+
     model_all = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_all")
     model_cis = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_cis")
     model_trans = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_trans")
@@ -1552,11 +1618,11 @@ def write_readme(
         fh.write(f"# {args.outdir.name}\n\n")
         fh.write(f"- label: `{args.label}`\n")
         fh.write(f"- created_at: `{summary['created_at']}`\n")
-        fh.write(f"- training input: `{args.pairs}`\n")
+        fh.write(f"- training input: {training_input_desc}\n")
         fh.write(f"- reconstruction: `{args.reconstruction}`\n")
         fh.write(f"- CHARM/3DG eval reference: `{args.reference_3dg}`\n")
         fh.write(f"- train manifest: `{args.train_manifest}`\n")
-        fh.write(f"- boundary: training used raw {args.expected_sample} contact information only; phase labels and CHARM/3DG were read only by this post-training evaluator.\n")
+        fh.write(f"- boundary: {boundary_desc}\n")
         fh.write("- copy gauge: structure plots and distance metrics use per-chromosome cis distance-matrix Spearman correlation to select a geometry gauge. Contact identity metrics report the reconstruction under a whole-chromosome SNP cis-top1 oracle gauge, which is eval-only and exists because copy0/copy1 are gauge labels that can be swapped independently per chromosome.\n")
         fh.write("- contact denominator: contact accuracy uses eval-only raw contacts with both `phase0` and `phase1`, excluding same-bin contacts, and requiring a matching posterior bpair.\n")
         fh.write("- alignment: 3D scatter plots and Procrustes RMSD use rigid alignment only: translation and rotation are fitted, reconstruction scale is not fitted to CHARM/3DG. The reported similarity scale is diagnostic only and is not applied.\n\n")
@@ -1617,6 +1683,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bin-size", type=int, default=4_000_000, help="Evaluation bin size in bp.")
     parser.add_argument("--label", default="P9016 softall baseline", help="Human-readable run label.")
     parser.add_argument("--expected-sample", default="P9016", help="Expected sample name in the training manifest.")
+    parser.add_argument(
+        "--allow-reference-derived-training",
+        action="store_true",
+        help="Permit positive-control runs whose training contacts were derived from CHARM/3DG.",
+    )
     return parser.parse_args()
 
 
@@ -1633,7 +1704,7 @@ def main() -> int:
     posterior = read_posterior(posterior_path)
     contact_counts = read_contact_truth_counts(args.pairs, args.bin_size, posterior)
     train_manifest = read_train_manifest(args.train_manifest)
-    validate_train_manifest(train_manifest, args.bin_size, args.expected_sample)
+    validate_train_manifest(train_manifest, args.bin_size, args.expected_sample, args.allow_reference_derived_training)
     chroms = sorted({key[0] for key in reference} | {key[0] for key in reconstruction}, key=chrom_sort_key)
 
     distance_swaps, cis_rows = choose_distance_swaps(chroms, reference, reconstruction)
@@ -1819,9 +1890,24 @@ def main() -> int:
                 float(np.mean(values)) if values else float("nan")
             )
     summary.update(pair_stats)
-    for key in ["n_raw", "n_bpair", "n_beads", "resolution", "bin_size_bp", "mstep_graph_mode", "input_contact_source", "uses_charm_or_reference", "uses_phase_labels", "copy_labels_are_gauge_only"]:
+    for key in [
+        "n_raw",
+        "n_bpair",
+        "n_beads",
+        "resolution",
+        "bin_size_bp",
+        "mstep_graph_mode",
+        "input_contact_source",
+        "uses_charm_or_reference",
+        "uses_charm_for_training",
+        "reference_derived_positive_control",
+        "reference_training_source_3dg",
+        "uses_phase_labels",
+        "copy_labels_are_gauge_only",
+    ]:
         if key in train_manifest:
             summary[f"train_manifest_{key}"] = train_manifest[key]
+    summary["allow_reference_derived_training_eval"] = int(args.allow_reference_derived_training)
 
     write_table(args.outdir / "cis_distance_correlations.tsv", cis_rows)
     write_table(args.outdir / "cis_distance_correlation_matrix.tsv", cis_matrix_rows)

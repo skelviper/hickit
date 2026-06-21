@@ -1,0 +1,13 @@
+key	value
+run_id	038-20260620_000233-p9016_trans_decoder_audit_1m
+purpose	post-training blind trans decoder audit; no retraining
+full_run_root	/mnt/ssd/zliu/phase3/test_res/038-20260620_000233-p9016_trans_decoder_audit_1m
+light_result_root	/mnt/ssd/zliu/phase3/hickit/result/038-20260620_000233-p9016_trans_decoder_audit_1m
+source_run_root	/mnt/ssd/zliu/phase3/test_res/037-20260619_230802-p9016_trans_chrpair_mstep_1m
+pairs_path	/shared/zliu/CHARM/CHARM_mesc/data/pairs/P9016.pairs.gz
+reference_3dg_path	/shared/zliu/CHARM/CHARM_mesc/data/tdg/P9016.1m.3dg.gz
+bin_size_bp	1000000
+git_commit	1037ee5f79d54e943eef5c37e5aeb2d841698cb8
+git_dirty_count	82
+training_boundary	no training; SNP labels and CHARM/3DG are eval-only for scoring and denominator matching
+decoder_boundary	blind_* decoder policies select chromosome-pair swaps from raw posterior bpair weights and reconstruction geometry only; SNP labels and CHARM/3DG enter only after selection for scoring/denominator matching

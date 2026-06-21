@@ -1,0 +1,27 @@
+CONFIG=p9016_seg_all_pairwise_pcgamma1_ieps0p5_noise0_seed17
+pairs=/tmp/hk_blind_test_res_029_smoke/029-smoke-p9016_readgroup_joint_marginal_1m/generated_pairs/P9016.seg_all.readgroup.pairs.gz
+allow_custom=1
+source=contacts_seg_derived_pairs
+readgroup_mode=off
+minimal P9016: input=/tmp/hk_blind_test_res_029_smoke/029-smoke-p9016_readgroup_joint_marginal_1m/generated_pairs/P9016.seg_all.readgroup.pairs.gz output_root=/tmp/hk_blind_test_res_029_smoke/029-smoke-p9016_readgroup_joint_marginal_1m/work_outputs/p9016_seg_all_pairwise_pcgamma1_ieps0p5_noise0_seed17 config=p9016_seg_all_pairwise_pcgamma1_ieps0p5_noise0_seed17 baseline=softall n_iter=1 relax_steps=1 relax_step=0.012 chain=0 init_mode=unphased_scaffold_split init_eps=0.5 init_noise=0 init_scale=10 init_seed=17 min_sep=0 lambda_sep=0 lambda_copytrack=0 trans_chr_pair_prior_lambda=0 trans_chr_pair_prior_eps=0.001 trans_chr_pair_prior_power=1 trans_chr_pair_prior_warmup_iter=0 d_scale_mode=posterior_count d_scale_input=posterior_count d_scale_formula=n_raw*posterior_prob^1 d_scale_gamma=1 d_scale_eps=1e-06 readgroup_mode=off readgroup_max_segments=8 readgroup_eps=1e-06 relax_backend=cpu
+minimal P9016: stage 1/1 name=1m bin_size_bp=1000000 parent=0
+[M::hk_map_read] read 20000 pairs
+[M::hk_bmap_gen] generated 2633 beads
+[M::hk_bmap_gen] 17105 bin pairs
+minimal P9016[1m]: build binned contacts
+minimal P9016[1m]: init mode=unphased_scaffold_split seed=17 scale=10
+[M::hk_fdg] mid_dist:1000000 max_nei:6
+[M::hk_fdg1_cpu] iter:10 elapsed:0.05s rep_coef:0.2092 RMS_force:30.4928 n_rep:22.3004 energy:38.9939,6.1109,0.0043 dist:6.9502,7.5811,1.4902
+[M::hk_fdg1_cpu] iter:20 elapsed:0.22s rep_coef:0.6615 RMS_force:20.4839 n_rep:101.3635 energy:13.3879,2.9157,0.0142 dist:4.3762,4.5591,1.4773
+[M::hk_fdg1_cpu] iter:30 elapsed:0.61s rep_coef:0.9352 RMS_force:11.4663 n_rep:220.0418 energy:4.6087,1.5050,0.0212 dist:2.9397,3.2334,1.4587
+[M::hk_fdg1_cpu] iter:40 elapsed:1.11s rep_coef:0.9907 RMS_force:6.8292 n_rep:203.5636 energy:1.4999,0.9383,0.0222 dist:2.0334,2.7764,1.4627
+[M::hk_fdg1_cpu] iter:50 elapsed:1.47s rep_coef:0.9987 RMS_force:4.1022 n_rep:140.0467 energy:0.4249,0.6537,0.0217 dist:1.4628,2.6100,1.4724
+minimal P9016[1m]: run softall, n_iter=1 relax_steps=1 relax_step=0.012 relax_backend=cpu
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 477 bin pairs
+minimal P9016[1m]: write outputs to /tmp/hk_blind_test_res_029_smoke/029-smoke-p9016_readgroup_joint_marginal_1m/work_outputs/p9016_seg_all_pairwise_pcgamma1_ieps0p5_noise0_seed17/p9016_seg_all_pairwise_pcgamma1_ieps0p5_noise0_seed17
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 442 bin pairs
+minimal P9016[1m]: status=OK final_entropy=1.3495231 final_pU=0.9734751
+minimal P9016: summary /tmp/hk_blind_test_res_029_smoke/029-smoke-p9016_readgroup_joint_marginal_1m/work_outputs/p9016_seg_all_pairwise_pcgamma1_ieps0p5_noise0_seed17/matrix_summary.tsv
+audit status: OK n_raw=20000 n_bpair=17105 n_beads=2633 bpair_rows=17105 coord_rows=5266 raw_rows=0 posterior_bad_rows=0 coord_bad_rows=0 raw_bad_rows=0 forbidden_string_hits=0

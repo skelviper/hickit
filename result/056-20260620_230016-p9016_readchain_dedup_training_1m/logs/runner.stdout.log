@@ -1,0 +1,20 @@
+cc -g -Wall -O2 -Wc++-compat -fno-fast-math -fno-unsafe-math-optimizations    run_blind_p9016_minimal.c sdict.o io.o pair.o count.o phase.o bin.o blind.o fdg.o image.o view3d.o fdg_gpu.o -o run_blind_p9016_minimal.bin -L/usr/local/cuda/targets/x86_64-linux/lib -Wl,-rpath,/usr/local/cuda/targets/x86_64-linux/lib -lm -lz -lcudart -lstdc++
+make: 'audit_blind_p9016_full_cpu_output.bin' is up to date.
+FULL_RESULT_ROOT=/mnt/ssd/zliu/phase3/test_res/056-20260620_230016-p9016_readchain_dedup_training_1m
+LIGHT_RESULT_ROOT=/mnt/ssd/zliu/phase3/hickit/result/056-20260620_230016-p9016_readchain_dedup_training_1m
+READCHAIN_ADJ=/mnt/ssd/zliu/phase3/test_res/056-20260620_230016-p9016_readchain_dedup_training_1m/exports/sharec/readchain_dup100_maxseg8_adjacent.pairs.gz
+READCHAIN_ALL=/mnt/ssd/zliu/phase3/test_res/056-20260620_230016-p9016_readchain_dedup_training_1m/exports/sharec/readchain_dup100_maxseg8_allcomb.pairs.gz
+CONFIG_START=approved_baseline_pairs_only pairs=/shared/zliu/CHARM/CHARM_mesc/data/pairs/P9016.pairs.gz readgroup=off
+CONFIG_START=hickit_like_dup100_pairwise pairs=/mnt/ssd/zliu/phase3/test_res/054-20260620_163922-p9016_contacts_seg_readgroup_dedup_audit_1m/exports/sharec/hickit_like_dup100.pairs.gz readgroup=off
+CONFIG_START=old_readgroup_adjacent_joint pairs=/mnt/ssd/zliu/phase3/test_res/054-20260620_163922-p9016_contacts_seg_readgroup_dedup_audit_1m/exports/sharec/readgroup_adjacent_maxseg10_annotated.pairs.gz readgroup=joint_marginal
+CONFIG_START=readchain_adjacent_pairwise pairs=/mnt/ssd/zliu/phase3/test_res/056-20260620_230016-p9016_readchain_dedup_training_1m/exports/sharec/readchain_dup100_maxseg8_adjacent.pairs.gz readgroup=off
+CONFIG_START=readchain_adjacent_joint pairs=/mnt/ssd/zliu/phase3/test_res/056-20260620_230016-p9016_readchain_dedup_training_1m/exports/sharec/readchain_dup100_maxseg8_adjacent.pairs.gz readgroup=joint_marginal
+CONFIG_START=readchain_allcomb_pairwise pairs=/mnt/ssd/zliu/phase3/test_res/056-20260620_230016-p9016_readchain_dedup_training_1m/exports/sharec/readchain_dup100_maxseg8_allcomb.pairs.gz readgroup=off
+CONFIG_DONE=approved_baseline_pairs_only
+CONFIG_START=readchain_allcomb_joint pairs=/mnt/ssd/zliu/phase3/test_res/056-20260620_230016-p9016_readchain_dedup_training_1m/exports/sharec/readchain_dup100_maxseg8_allcomb.pairs.gz readgroup=joint_marginal
+CONFIG_DONE=hickit_like_dup100_pairwise
+CONFIG_DONE=readchain_adjacent_pairwise
+CONFIG_DONE=readchain_allcomb_joint
+CONFIG_DONE=readchain_allcomb_pairwise
+CONFIG_DONE=readchain_adjacent_joint
+CONFIG_DONE=old_readgroup_adjacent_joint

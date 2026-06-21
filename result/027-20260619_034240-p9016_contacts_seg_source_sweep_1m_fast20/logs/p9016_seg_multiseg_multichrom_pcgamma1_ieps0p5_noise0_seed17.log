@@ -1,0 +1,64 @@
+CONFIG=p9016_seg_multiseg_multichrom_pcgamma1_ieps0p5_noise0_seed17
+pairs=/mnt/ssd/zliu/phase3/test_res/027-20260619_034240-p9016_contacts_seg_source_sweep_1m_fast20/generated_pairs/P9016.seg_multiseg_multichrom.pairs.gz
+allow_custom=1
+source=raw_pairs
+minimal P9016: input=/mnt/ssd/zliu/phase3/test_res/027-20260619_034240-p9016_contacts_seg_source_sweep_1m_fast20/generated_pairs/P9016.seg_multiseg_multichrom.pairs.gz output_root=/mnt/ssd/zliu/phase3/test_res/027-20260619_034240-p9016_contacts_seg_source_sweep_1m_fast20/work_outputs/p9016_seg_multiseg_multichrom_pcgamma1_ieps0p5_noise0_seed17 config=p9016_seg_multiseg_multichrom_pcgamma1_ieps0p5_noise0_seed17 baseline=softall n_iter=20 relax_steps=50 relax_step=0.012 chain=0 init_mode=unphased_scaffold_split init_eps=0.5 init_noise=0 init_scale=10 init_seed=17 min_sep=0 lambda_sep=0 lambda_copytrack=0 trans_chr_pair_prior_lambda=0 trans_chr_pair_prior_eps=0.001 trans_chr_pair_prior_power=1 trans_chr_pair_prior_warmup_iter=0 d_scale_mode=posterior_count d_scale_input=posterior_count d_scale_formula=n_raw*posterior_prob^1 d_scale_gamma=1 d_scale_eps=1e-06 relax_backend=cpu
+minimal P9016: stage 1/1 name=1m bin_size_bp=1000000 parent=0
+[M::hk_map_read] read 1000000 pairs
+[M::hk_bmap_gen] generated 2633 beads
+[M::hk_bmap_gen] 276017 bin pairs
+minimal P9016[1m]: build binned contacts
+minimal P9016[1m]: init mode=unphased_scaffold_split seed=17 scale=10
+[M::hk_fdg] mid_dist:1000000 max_nei:113
+[M::hk_fdg1_cpu] iter:10 elapsed:0.25s rep_coef:0.2092 RMS_force:218.2721 n_rep:46.6597 energy:25.3257,8.1476,0.0049 dist:5.6467,7.7203,1.4517
+[M::hk_fdg1_cpu] iter:20 elapsed:0.65s rep_coef:0.6615 RMS_force:198.7734 n_rep:167.1728 energy:7.1798,4.2566,0.0174 dist:3.3236,4.9123,1.4097
+[M::hk_fdg1_cpu] iter:30 elapsed:1.50s rep_coef:0.9352 RMS_force:136.9878 n_rep:605.4717 energy:1.7391,1.5266,0.0316 dist:2.0038,2.7750,1.3023
+[M::hk_fdg1_cpu] iter:40 elapsed:2.78s rep_coef:0.9907 RMS_force:67.3584 n_rep:903.1610 energy:0.6038,0.5971,0.0370 dist:1.5086,1.9506,1.2491
+[M::hk_fdg1_cpu] iter:50 elapsed:4.19s rep_coef:0.9987 RMS_force:49.4218 n_rep:915.9689 energy:0.3514,0.5025,0.0341 dist:1.3822,1.8869,1.2931
+minimal P9016[1m]: run softall, n_iter=20 relax_steps=50 relax_step=0.012 relax_backend=cpu
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 291328 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 211803 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 202306 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 198780 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 196412 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 194719 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 193567 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 192714 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 191958 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 191378 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 190861 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 190407 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 189922 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 189392 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 189094 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 188789 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 188571 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 188274 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 187988 bin pairs
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 187840 bin pairs
+minimal P9016[1m]: write outputs to /mnt/ssd/zliu/phase3/test_res/027-20260619_034240-p9016_contacts_seg_source_sweep_1m_fast20/work_outputs/p9016_seg_multiseg_multichrom_pcgamma1_ieps0p5_noise0_seed17/p9016_seg_multiseg_multichrom_pcgamma1_ieps0p5_noise0_seed17
+[M::hk_bmap_gen] generated 5266 beads
+[M::hk_bmap_gen] 187532 bin pairs
+minimal P9016[1m]: status=OK final_entropy=0.70960099 final_pU=0.51186889
+minimal P9016: summary /mnt/ssd/zliu/phase3/test_res/027-20260619_034240-p9016_contacts_seg_source_sweep_1m_fast20/work_outputs/p9016_seg_multiseg_multichrom_pcgamma1_ieps0p5_noise0_seed17/matrix_summary.tsv
+audit status: OK n_raw=1000000 n_bpair=276017 n_beads=2633 bpair_rows=276017 coord_rows=5266 raw_rows=0 posterior_bad_rows=0 coord_bad_rows=0 raw_bad_rows=0 forbidden_string_hits=0

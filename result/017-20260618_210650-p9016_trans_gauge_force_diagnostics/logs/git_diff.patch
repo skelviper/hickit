@@ -1,0 +1,287 @@
+diff --git a/audit_blind_p9016_full_cpu_output.c b/audit_blind_p9016_full_cpu_output.c
+index fcfeaf2..b686c70 100644
+--- a/audit_blind_p9016_full_cpu_output.c
++++ b/audit_blind_p9016_full_cpu_output.c
+@@ -460,6 +460,8 @@ static int manifest_optional_current_key(const char *key)
+ 		   strcmp(key, "copy_labels_are_gauge_only") == 0 ||
+ 		   strcmp(key, "uses_charm_or_reference") == 0 ||
+ 		   strcmp(key, "uses_charm_for_training") == 0 ||
++		   strcmp(key, "reference_derived_positive_control") == 0 ||
++		   strcmp(key, "reference_training_source_3dg") == 0 ||
+ 		   strcmp(key, "repulsion_multiplier") == 0 ||
+ 		   strcmp(key, "k_rel_rep_effective") == 0 ||
+ 		   strcmp(key, "output_coords_gz") == 0 ||
+diff --git a/eval/evaluate_p9016_baseline.py b/eval/evaluate_p9016_baseline.py
+index a78ac9d..c4ea525 100644
+--- a/eval/evaluate_p9016_baseline.py
++++ b/eval/evaluate_p9016_baseline.py
+@@ -197,26 +197,44 @@ def manifest_int(manifest: dict[str, str], key: str) -> int:
+         raise ValueError(f"training manifest {key} is not an integer: {manifest[key]}") from exc
+ 
+ 
+-def validate_train_manifest(manifest: dict[str, str], bin_size: int, expected_sample: str) -> None:
++def validate_train_manifest(
++    manifest: dict[str, str],
++    bin_size: int,
++    expected_sample: str,
++    allow_reference_derived_training: bool = False,
++) -> None:
+     required = {
+         "sample": expected_sample,
+         "runner_family": "p9016_minimal",
+         "baseline": "softall",
+         "mstep_graph_mode": "raw_expected_soft_all",
+-        "input_contact_source": "raw_pairs",
+         "status": "OK",
+     }
+     for key, expected in required.items():
+         got = manifest.get(key)
+         if got != expected:
+             raise ValueError(f"training manifest {key}={got!r}; expected {expected!r}")
++    source = manifest.get("input_contact_source")
++    if allow_reference_derived_training:
++        allowed_sources = {"raw_pairs", "charm3dg_derived_pairs", "imputed_or_positive_control_pairs"}
++        if source not in allowed_sources:
++            raise ValueError(f"training manifest input_contact_source={source!r}; expected one of {sorted(allowed_sources)}")
++    elif source != "raw_pairs":
++        raise ValueError(f"training manifest input_contact_source={source!r}; expected 'raw_pairs'")
+     if manifest_int(manifest, "resolution") != bin_size:
+         raise ValueError("training manifest resolution disagrees with --bin-size")
+     if manifest_int(manifest, "bin_size_bp") != bin_size:
+         raise ValueError("training manifest bin_size_bp disagrees with --bin-size")
+-    for key in ("uses_phase_labels", "uses_charm_or_reference", "uses_charm_for_training"):
+-        if manifest_int(manifest, key) != 0:
+-            raise ValueError(f"training manifest {key} must be 0")
++    if manifest_int(manifest, "uses_phase_labels") != 0:
++        raise ValueError("training manifest uses_phase_labels must be 0")
++    for key in ("uses_charm_or_reference", "uses_charm_for_training"):
++        value = manifest_int(manifest, key)
++        if source == "raw_pairs" and value != 0:
++            raise ValueError(f"training manifest {key} must be 0 for raw-pairs blind training")
++        if source != "raw_pairs" and not allow_reference_derived_training:
++            raise ValueError(f"training manifest {key} is reference-derived but eval did not opt in")
++        if source != "raw_pairs" and value != 1:
++            raise ValueError(f"training manifest {key} must be 1 for reference-derived positive controls")
+     if manifest_int(manifest, "copy_labels_are_gauge_only") != 1:
+         raise ValueError("training manifest copy_labels_are_gauge_only must be 1")
+     for key in ("n_raw", "n_bpair", "n_beads"):
+@@ -1493,6 +1511,31 @@ def write_readme(
+     volume_rows_data: list[dict[str, object]],
+     contact_distance_rows: list[dict[str, object]],
+ ) -> None:
++    train_input_source = str(summary.get("train_manifest_input_contact_source", "raw_pairs"))
++    uses_reference_training = str(summary.get("train_manifest_uses_charm_for_training", "0")) == "1"
++    allow_reference_eval = int(summary.get("allow_reference_derived_training_eval", 0)) == 1
++    if train_input_source == "raw_pairs" and not uses_reference_training:
++        training_input_desc = f"raw {args.expected_sample} pairs: `{args.pairs}`"
++        boundary_desc = (
++            f"training used raw {args.expected_sample} contact information only; "
++            "phase labels and CHARM/3DG were read only by this post-training evaluator."
++        )
++    elif uses_reference_training or allow_reference_eval:
++        reference_source = summary.get("train_manifest_reference_training_source_3dg", "")
++        source_suffix = f" from `{reference_source}`" if reference_source else ""
++        training_input_desc = f"{train_input_source}{source_suffix}"
++        boundary_desc = (
++            "training used reference-derived positive-control contacts; this is not a blind baseline. "
++            "SNP phase labels were still eval-only, and CHARM/3DG was used by training only through "
++            "the pre-generated contact input recorded in the training manifest."
++        )
++    else:
++        training_input_desc = f"{train_input_source}: `{args.pairs}`"
++        boundary_desc = (
++            "training input was not recognized as the standard raw-pairs blind baseline; "
++            "interpret this report according to the training manifest."
++        )
++
+     model_all = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_all")
+     model_cis = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_cis")
+     model_trans = first_row(accuracy_rows, source="reconstruction_posterior", copy_swap_policy=WHOLE_CHROM_SNP_POLICY, scope="genome_trans")
+@@ -1552,11 +1595,11 @@ def write_readme(
+         fh.write(f"# {args.outdir.name}\n\n")
+         fh.write(f"- label: `{args.label}`\n")
+         fh.write(f"- created_at: `{summary['created_at']}`\n")
+-        fh.write(f"- training input: `{args.pairs}`\n")
++        fh.write(f"- training input: {training_input_desc}\n")
+         fh.write(f"- reconstruction: `{args.reconstruction}`\n")
+         fh.write(f"- CHARM/3DG eval reference: `{args.reference_3dg}`\n")
+         fh.write(f"- train manifest: `{args.train_manifest}`\n")
+-        fh.write(f"- boundary: training used raw {args.expected_sample} contact information only; phase labels and CHARM/3DG were read only by this post-training evaluator.\n")
++        fh.write(f"- boundary: {boundary_desc}\n")
+         fh.write("- copy gauge: structure plots and distance metrics use per-chromosome cis distance-matrix Spearman correlation to select a geometry gauge. Contact identity metrics report the reconstruction under a whole-chromosome SNP cis-top1 oracle gauge, which is eval-only and exists because copy0/copy1 are gauge labels that can be swapped independently per chromosome.\n")
+         fh.write("- contact denominator: contact accuracy uses eval-only raw contacts with both `phase0` and `phase1`, excluding same-bin contacts, and requiring a matching posterior bpair.\n")
+         fh.write("- alignment: 3D scatter plots and Procrustes RMSD use rigid alignment only: translation and rotation are fitted, reconstruction scale is not fitted to CHARM/3DG. The reported similarity scale is diagnostic only and is not applied.\n\n")
+@@ -1617,6 +1660,11 @@ def parse_args() -> argparse.Namespace:
+     parser.add_argument("--bin-size", type=int, default=4_000_000, help="Evaluation bin size in bp.")
+     parser.add_argument("--label", default="P9016 softall baseline", help="Human-readable run label.")
+     parser.add_argument("--expected-sample", default="P9016", help="Expected sample name in the training manifest.")
++    parser.add_argument(
++        "--allow-reference-derived-training",
++        action="store_true",
++        help="Permit positive-control runs whose training contacts were derived from CHARM/3DG.",
++    )
+     return parser.parse_args()
+ 
+ 
+@@ -1633,7 +1681,7 @@ def main() -> int:
+     posterior = read_posterior(posterior_path)
+     contact_counts = read_contact_truth_counts(args.pairs, args.bin_size, posterior)
+     train_manifest = read_train_manifest(args.train_manifest)
+-    validate_train_manifest(train_manifest, args.bin_size, args.expected_sample)
++    validate_train_manifest(train_manifest, args.bin_size, args.expected_sample, args.allow_reference_derived_training)
+     chroms = sorted({key[0] for key in reference} | {key[0] for key in reconstruction}, key=chrom_sort_key)
+ 
+     distance_swaps, cis_rows = choose_distance_swaps(chroms, reference, reconstruction)
+@@ -1819,9 +1867,24 @@ def main() -> int:
+                 float(np.mean(values)) if values else float("nan")
+             )
+     summary.update(pair_stats)
+-    for key in ["n_raw", "n_bpair", "n_beads", "resolution", "bin_size_bp", "mstep_graph_mode", "input_contact_source", "uses_charm_or_reference", "uses_phase_labels", "copy_labels_are_gauge_only"]:
++    for key in [
++        "n_raw",
++        "n_bpair",
++        "n_beads",
++        "resolution",
++        "bin_size_bp",
++        "mstep_graph_mode",
++        "input_contact_source",
++        "uses_charm_or_reference",
++        "uses_charm_for_training",
++        "reference_derived_positive_control",
++        "reference_training_source_3dg",
++        "uses_phase_labels",
++        "copy_labels_are_gauge_only",
++    ]:
+         if key in train_manifest:
+             summary[f"train_manifest_{key}"] = train_manifest[key]
++    summary["allow_reference_derived_training_eval"] = int(args.allow_reference_derived_training)
+ 
+     write_table(args.outdir / "cis_distance_correlations.tsv", cis_rows)
+     write_table(args.outdir / "cis_distance_correlation_matrix.tsv", cis_matrix_rows)
+diff --git a/run_blind_p9016_minimal.c b/run_blind_p9016_minimal.c
+index 82049a5..7ca83fe 100644
+--- a/run_blind_p9016_minimal.c
++++ b/run_blind_p9016_minimal.c
+@@ -361,14 +361,28 @@ static const char *relax_backend_name(int backend)
+ 
+ static const char *input_contact_source_from_path(const char *path)
+ {
++	const char *source_override = getenv("HK_BLIND_P9016_INPUT_CONTACT_SOURCE");
++	if (source_override && source_override[0])
++		return source_override;
+ 	if (path == 0)
+ 		return "unknown";
++	if (strstr(path, "charm3dg") || strstr(path, "charm_3dg") ||
++		strstr(path, "charm-derived") || strstr(path, "charm_derived") ||
++		strstr(path, "synthetic_charm"))
++		return "charm3dg_derived_pairs";
+ 	if (strstr(path, "impute") || strstr(path, "positive_control") ||
+ 		strstr(path, "native_hickit"))
+ 		return "imputed_or_positive_control_pairs";
+ 	return "raw_pairs";
+ }
+ 
++static int input_contact_source_uses_reference(const char *source)
++{
++	if (source == 0)
++		return 0;
++	return strcmp(source, "raw_pairs") != 0;
++}
++
+ static int approved_pairs_realpath_match(const char *pairs_path)
+ {
+ 	char approved[PATH_MAX];
+@@ -924,6 +938,7 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
+ 	const char *sample_name;
+ 	double final_refreshed_sum_wedge_k;
+ 	int64_t final_refreshed_n_wedges;
++	int uses_reference_training;
+ 	char label[32];
+ 	if (fp == 0) return -1;
+ 	assert(p);
+@@ -940,6 +955,7 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
+ 	git_dirty_count = env_or_default("HK_BLIND_GIT_DIRTY_COUNT", "NA");
+ 	binary_hash = env_or_default("HK_BLIND_BINARY_HASH", "NA");
+ 	sample_name = env_or_default("HK_BLIND_SAMPLE", env_or_default("HK_BLIND_P9016_SAMPLE", "P9016"));
++	uses_reference_training = input_contact_source_uses_reference(input_contact_source);
+ 	if (fprintf(fp,
+ 				"key\tvalue\n"
+ 				"sample\t%s\n"
+@@ -1031,8 +1047,10 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
+ 				"raw_posterior_same_bin_policy\tuniform_unknown_rows\n"
+ 				"copy_labels_are_gauge_only\t1\n"
+ 				"uses_phase_labels\t0\n"
+-				"uses_charm_or_reference\t0\n"
+-				"uses_charm_for_training\t0\n"
++				"uses_charm_or_reference\t%d\n"
++				"uses_charm_for_training\t%d\n"
++				"reference_derived_positive_control\t%d\n"
++				"reference_training_source_3dg\t%s\n"
+ 				"min_sep_unit\t%.9g\n"
+ 				"lambda_sep\t%.9g\n"
+ 				"chr_sep_unit\t%.9g\n"
+@@ -1089,6 +1107,8 @@ static int write_manifest(const char *manifest_path, const char *pairs_path, con
+ 				(long long)set->n_raw_same_bin_excluded,
+ 				set->n_bpair_same_bin_excluded, (long long)set->n_raw_cis,
+ 				(long long)set->n_raw_trans, set->n_bpair_cis, set->n_bpair_trans,
++				uses_reference_training, uses_reference_training, uses_reference_training,
++				env_or_default("HK_BLIND_P9016_REFERENCE_SOURCE_TDG", "NA"),
+ 				p->min_sep_unit, p->lambda_sep, 0.0f, 0.0f,
+ 				relax_step, relax_steps, HK_BLIND_REPULSION_CELL,
+ 				HK_P9016_REPULSION_MULTIPLIER, k_rel_rep_effective, write_raw,
+@@ -1507,9 +1527,11 @@ int main(void)
+ 	if (make_output_root(root_dir, sizeof(root_dir)) != 0)
+ 		return 1;
+ 	input_contact_source = input_contact_source_from_path(pairs_path);
+-	if (strcmp(input_contact_source, "raw_pairs") != 0) {
+-		fprintf(stderr, "minimal P9016 requires raw P9016 pairs, got source=%s path=%s\n",
++	if (strcmp(input_contact_source, "raw_pairs") != 0 &&
++		!env_flag_enabled("HK_BLIND_P9016_ALLOW_REFERENCE_DERIVED_PAIRS")) {
++		fprintf(stderr, "minimal P9016 blind baseline requires raw pairs, got source=%s path=%s\n",
+ 				input_contact_source, pairs_path);
++		fprintf(stderr, "set HK_BLIND_P9016_ALLOW_REFERENCE_DERIVED_PAIRS=1 only for explicit positive-control diagnostics\n");
+ 		return 1;
+ 	}
+ 	approved_pairs_realpath = approved_pairs_realpath_match(pairs_path);
+diff --git a/scripts/p9016_common_eval.sh b/scripts/p9016_common_eval.sh
+index 8c0a251..60fbe61 100755
+--- a/scripts/p9016_common_eval.sh
++++ b/scripts/p9016_common_eval.sh
+@@ -33,6 +33,9 @@ cmd=(
+ 	--label "$(basename "$CONFIG_OUTPUT_DIR")"
+ 	--expected-sample "$SAMPLE"
+ )
++if [ "${HK_BLIND_ALLOW_REFERENCE_DERIVED_TRAINING:-0}" = "1" ]; then
++	cmd+=(--allow-reference-derived-training)
++fi
+ {
+ 	for i in "${!cmd[@]}"; do
+ 		if [ "$i" -gt 0 ]; then
+diff --git a/scripts/p9016_publish_light_result.sh b/scripts/p9016_publish_light_result.sh
+index 05ea8f5..8628cb8 100755
+--- a/scripts/p9016_publish_light_result.sh
++++ b/scripts/p9016_publish_light_result.sh
+@@ -23,6 +23,7 @@ RSYNC_ARGS=(
+ 	--include='gamma_delta.tsv'
+ 	--include='sep_delta.tsv'
+ 	--include='sample_delta.tsv'
++	--include='synthetic_contact_summary.tsv'
+ 	--include='regression_audit.tsv'
+ 	--include='dscale_semantics_audit.tsv'
+ 	--include='dscale_semantics_headline.txt'
+@@ -31,6 +32,15 @@ RSYNC_ARGS=(
+ 	--include='logs/*.log'
+ 	--include='logs/*.txt'
+ 	--include='logs/*.sh'
++	--include='logs/*.patch'
++	--include='contact_matrix_qc/*.tsv'
++	--include='contact_matrix_qc/plots/*.png'
++	--include='diagnostics/*/*.tsv'
++	--include='diagnostics/*/*.md'
++	--include='diagnostics/*/*.txt'
++	--include='diagnostics/*/*.log'
++	--include='synthetic_pairs/*.metadata.tsv'
++	--include='synthetic_pairs/*.json'
+ 	--include='outputs/*/*.manifest.tsv'
+ 	--include='outputs/*/*.loop_diag.tsv'
+ 	--include='outputs/*/*.force_class_diag.tsv'

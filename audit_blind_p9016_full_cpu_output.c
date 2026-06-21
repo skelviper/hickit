@@ -50,7 +50,23 @@ enum manifest_key {
 	MK_RHO_TRAIN,
 	MK_D_SCALE_MODE,
 	MK_D_SCALE_EPS_COUNT,
+	MK_D_SCALE_POSTERIOR_GAMMA,
 	MK_SAME_BIN_FILTER_ENABLED,
+	MK_HELDOUT_ENABLED,
+	MK_HELDOUT_FRACTION,
+	MK_HELDOUT_SEED,
+	MK_HELDOUT_N_INPUT_RAW_TOTAL,
+	MK_HELDOUT_N_RAW_TRAIN,
+	MK_HELDOUT_N_RAW_HELDOUT,
+	MK_HELDOUT_N_BPAIR_HELDOUT,
+	MK_HELDOUT_N_BPAIR_EVAL,
+	MK_HELDOUT_N_RAW_EVAL,
+	MK_HELDOUT_MEAN_EXPECTED_ENERGY,
+	MK_HELDOUT_MEAN_MIN_ENERGY,
+	MK_HELDOUT_MEAN_ENTROPY,
+	MK_HELDOUT_MEAN_PU,
+	MK_HELDOUT_MEAN_BEST_NORMALIZED_DISTANCE,
+	MK_HELDOUT_SHORT_DISTANCE_FRAC,
 	MK_N_RAW_SAME_BIN_EXCLUDED,
 	MK_N_BPAIR_SAME_BIN_EXCLUDED,
 	MK_RAW_POSTERIOR_SAME_BIN_POLICY,
@@ -98,11 +114,73 @@ enum manifest_key {
 	MK_USES_PHASE_LABELS,
 	MK_INIT_SCALE_EFFECTIVE,
 	MK_CONFIG_NAME,
+	MK_INPUT_CONTACT_SOURCE,
+	MK_APPROVED_P9016_RAW_PAIRS_REALPATH,
 	MK_INIT_EPS,
 	MK_INIT_NOISE_SCALE,
 	MK_INIT_SCALE,
 	MK_CHR_SEP_UNIT,
 	MK_LAMBDA_CHR_SEP,
+	MK_LAMBDA_COPYTRACK,
+	MK_COPYTRACK_USES_PHASE_LABELS,
+	MK_COPYTRACK_USES_CHARM_OR_REFERENCE,
+	MK_LAMBDA_GLOBAL_COPYTRACK,
+	MK_GLOBAL_COPYTRACK_USES_PHASE_LABELS,
+	MK_GLOBAL_COPYTRACK_USES_CHARM_OR_REFERENCE,
+	MK_LAMBDA_NORMDIR_COPYTRACK,
+	MK_NORMDIR_COPYTRACK_EPS_UNIT,
+	MK_NORMDIR_COPYTRACK_USES_PHASE_LABELS,
+	MK_NORMDIR_COPYTRACK_USES_CHARM_OR_REFERENCE,
+	MK_USES_CHARM_OR_REFERENCE,
+	MK_USES_CHARM_FOR_TRAINING,
+	MK_REFERENCE_DERIVED_POSITIVE_CONTROL,
+	MK_TRANS_CHR_PAIR_PRIOR_MODE,
+	MK_TRANS_CHR_PAIR_PRIOR_LAMBDA,
+	MK_TRANS_CHR_PAIR_PRIOR_EPS,
+	MK_TRANS_CHR_PAIR_PRIOR_POWER,
+	MK_TRANS_CHR_PAIR_PRIOR_WARMUP_ITER,
+	MK_TRANS_CHR_PAIR_PRIOR_USES_PHASE_LABELS,
+	MK_TRANS_CHR_PAIR_PRIOR_USES_CHARM_OR_REFERENCE,
+	MK_TRANS_CHR_PAIR_MSTEP_MODE,
+	MK_TRANS_CHR_PAIR_MSTEP_LAMBDA,
+	MK_TRANS_CHR_PAIR_MSTEP_EPS,
+	MK_TRANS_CHR_PAIR_MSTEP_POWER,
+	MK_TRANS_CHR_PAIR_MSTEP_WARMUP_ITER,
+	MK_TRANS_CHR_PAIR_MSTEP_SCOPE,
+	MK_TRANS_CHR_PAIR_MSTEP_APPLICATION_POINT,
+	MK_TRANS_CHR_PAIR_MSTEP_USES_PHASE_LABELS,
+	MK_TRANS_CHR_PAIR_MSTEP_USES_CHARM_OR_REFERENCE,
+	MK_TRANS_CONTACT_SCALING_MODE,
+	MK_TRANS_K_MULTIPLIER,
+	MK_TRANS_DSCALE_MULTIPLIER,
+	MK_TRANS_D_SCALE_POSTERIOR_GAMMA,
+	MK_TRANS_CONTACT_SCALING_SCOPE,
+	MK_TRANS_CONTACT_SCALING_USES_PHASE_LABELS,
+	MK_TRANS_CONTACT_SCALING_USES_CHARM_OR_REFERENCE,
+	MK_TRANS_TOP1_MSTEP_MODE,
+	MK_TRANS_TOP1_MSTEP_MIN_PMAX,
+	MK_TRANS_TOP1_MSTEP_MIN_MARGIN,
+	MK_TRANS_TOP1_MSTEP_MIX_WEIGHT,
+	MK_TRANS_TOP1_MSTEP_SCOPE,
+	MK_TRANS_TOP1_MSTEP_APPLICATION_POINT,
+	MK_TRANS_TOP1_MSTEP_USES_PHASE_LABELS,
+	MK_TRANS_TOP1_MSTEP_USES_CHARM_OR_REFERENCE,
+	MK_TRANS_CALLABLE_ANCHOR_MODE,
+	MK_TRANS_CALLABLE_ANCHOR_TOP_FRAC,
+	MK_TRANS_CALLABLE_ANCHOR_MIX_WEIGHT,
+	MK_TRANS_CALLABLE_ANCHOR_MIN_N_RAW,
+	MK_TRANS_CALLABLE_ANCHOR_WARMUP_ITER,
+	MK_TRANS_CALLABLE_ANCHOR_USES_PHASE_LABELS,
+	MK_TRANS_CALLABLE_ANCHOR_USES_CHARM_OR_REFERENCE,
+	MK_TRANS_GATE_MODE,
+	MK_TRANS_GATE_MIN_PMAX,
+	MK_TRANS_GATE_MIN_MARGIN,
+	MK_TRANS_GATE_MIN_NEG_ENTROPY,
+	MK_TRANS_GATE_SCOPE,
+	MK_TRANS_GATE_APPLICATION_POINT,
+	MK_TRANS_GATE_SOURCE,
+	MK_TRANS_GATE_USES_PHASE_LABELS,
+	MK_TRANS_GATE_USES_CHARM_OR_REFERENCE,
 	MK_N_KEYS
 };
 
@@ -132,6 +210,14 @@ struct manifest_info {
 	int64_t write_raw_posterior;
 	int64_t base_k_n_nonfinite;
 	int64_t same_bin_filter_enabled;
+	int64_t heldout_enabled;
+	int64_t heldout_seed;
+	int64_t heldout_n_input_raw_total;
+	int64_t heldout_n_raw_train;
+	int64_t heldout_n_raw_heldout;
+	int64_t heldout_n_bpair_heldout;
+	int64_t heldout_n_bpair_eval;
+	int64_t heldout_n_raw_eval;
 	int64_t n_raw_same_bin_excluded;
 	int64_t n_bpair_same_bin_excluded;
 	int64_t n_raw_cis;
@@ -139,6 +225,10 @@ struct manifest_info {
 	int64_t n_bpair_cis;
 	int64_t n_bpair_trans;
 	int64_t uses_phase_labels;
+	int64_t uses_charm_or_reference;
+	int64_t uses_charm_for_training;
+	int64_t reference_derived_positive_control;
+	int64_t approved_p9016_raw_pairs_realpath;
 	int64_t posterior_refreshed_after_final_relax;
 	int64_t n_bad_iter;
 	int64_t n_relax_nonfinite_iter;
@@ -150,8 +240,17 @@ struct manifest_info {
 	double base_k_mean;
 	double base_k_max;
 	double d_scale_eps_count;
+	double d_scale_posterior_gamma;
+	double heldout_fraction;
+	double heldout_mean_expected_energy;
+	double heldout_mean_min_energy;
+	double heldout_mean_entropy;
+	double heldout_mean_pU;
+	double heldout_mean_best_normalized_distance;
+	double heldout_short_distance_frac;
 	double min_sep_unit;
 	double lambda_sep;
+	double lambda_copytrack;
 	double relax_step;
 	double temperature_start;
 	double temperature_end;
@@ -167,6 +266,9 @@ struct manifest_info {
 	double init_scale_effective;
 	double chr_sep_unit;
 	double lambda_chr_sep;
+	double lambda_global_copytrack;
+	double lambda_normdir_copytrack;
+	double normdir_copytrack_eps_unit;
 	double prior_eps;
 	double prior_inter_density;
 	double prior_observed_inter;
@@ -184,11 +286,64 @@ struct manifest_info {
 	double posterior_refresh_top_state_switch_frac;
 	double posterior_refresh_mean_pU_before;
 	double posterior_refresh_mean_pU_after;
+	double trans_chr_pair_prior_lambda;
+	double trans_chr_pair_prior_eps;
+	double trans_chr_pair_prior_power;
+	double trans_chr_pair_mstep_lambda;
+	double trans_chr_pair_mstep_eps;
+	double trans_chr_pair_mstep_power;
+	double trans_k_multiplier;
+	double trans_dscale_multiplier;
+	double trans_d_scale_posterior_gamma;
+	double trans_top1_mstep_min_pmax;
+	double trans_top1_mstep_min_margin;
+	double trans_top1_mstep_mix_weight;
+	double trans_callable_anchor_top_frac;
+	double trans_callable_anchor_mix_weight;
+	double trans_gate_min_pmax;
+	double trans_gate_min_margin;
+	double trans_gate_min_neg_entropy;
 	int64_t prior_n_distance_bins;
 	int64_t prior_n_alpha;
+	int64_t trans_chr_pair_prior_warmup_iter;
+	int64_t trans_chr_pair_prior_uses_phase_labels;
+	int64_t trans_chr_pair_prior_uses_charm_or_reference;
+	int64_t trans_chr_pair_mstep_warmup_iter;
+	int64_t trans_chr_pair_mstep_uses_phase_labels;
+	int64_t trans_chr_pair_mstep_uses_charm_or_reference;
+	int64_t trans_contact_scaling_uses_phase_labels;
+	int64_t trans_contact_scaling_uses_charm_or_reference;
+	int64_t trans_top1_mstep_uses_phase_labels;
+	int64_t trans_top1_mstep_uses_charm_or_reference;
+	int64_t trans_callable_anchor_min_n_raw;
+	int64_t trans_callable_anchor_warmup_iter;
+	int64_t trans_callable_anchor_uses_phase_labels;
+	int64_t trans_callable_anchor_uses_charm_or_reference;
+	int64_t trans_gate_uses_phase_labels;
+	int64_t trans_gate_uses_charm_or_reference;
+	int64_t copytrack_uses_phase_labels;
+	int64_t copytrack_uses_charm_or_reference;
+	int64_t global_copytrack_uses_phase_labels;
+	int64_t global_copytrack_uses_charm_or_reference;
+	int64_t normdir_copytrack_uses_phase_labels;
+	int64_t normdir_copytrack_uses_charm_or_reference;
 	char base_k_mode[64];
 	char init_mode[128];
 	char prior_mode[128];
+	char trans_chr_pair_prior_mode[128];
+	char trans_chr_pair_mstep_mode[128];
+	char trans_chr_pair_mstep_scope[128];
+	char trans_chr_pair_mstep_application_point[128];
+	char trans_contact_scaling_mode[128];
+	char trans_contact_scaling_scope[128];
+	char trans_top1_mstep_mode[128];
+	char trans_top1_mstep_scope[128];
+	char trans_top1_mstep_application_point[128];
+	char trans_callable_anchor_mode[128];
+	char trans_gate_mode[128];
+	char trans_gate_scope[128];
+	char trans_gate_application_point[128];
+	char trans_gate_source[128];
 	char prior_smoothing_method[128];
 	char rho_train_mode[128];
 	char d_scale_mode[128];
@@ -197,6 +352,7 @@ struct manifest_info {
 	char posterior_refresh_prior_mode[128];
 	char baseline[64];
 	char config_name[128];
+	char input_contact_source[128];
 };
 
 struct file_audit {
@@ -245,6 +401,17 @@ static int recognized_init_mode(const char *mode)
 		   strcmp(mode, "toy_split") == 0;
 }
 
+static int recognized_rho_train_mode(const char *mode)
+{
+	return strcmp(mode, "constant") == 0 ||
+		   strcmp(mode, "entropy") == 0 ||
+		   strcmp(mode, "entropy_with_floor") == 0 ||
+		   strcmp(mode, "entropy_cis_constant_trans") == 0 ||
+		   strcmp(mode, "entropy_cis_floor_trans") == 0 ||
+		   strcmp(mode, "trans_entropy") == 0 ||
+		   strcmp(mode, "trans_entropy_with_floor") == 0;
+}
+
 static int file_exists(const char *path)
 {
 	FILE *fp = fopen(path, "rb");
@@ -274,6 +441,12 @@ static void add_example(struct file_audit *audit, const char *msg)
 	if (audit->n_examples >= HK_AUDIT_EXAMPLE_MAX) return;
 	snprintf(audit->examples[audit->n_examples], sizeof(audit->examples[audit->n_examples]), "%s", msg);
 	++audit->n_examples;
+}
+
+static int env_flag_enabled(const char *name)
+{
+	const char *v = getenv(name);
+	return v && strcmp(v, "1") == 0;
 }
 
 static void add_example_fmt(struct file_audit *audit, const char *prefix, int64_t row, const char *detail, double value)
@@ -374,7 +547,24 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "rho_train") == 0) return MK_RHO_TRAIN;
 	if (strcmp(key, "d_scale_mode") == 0) return MK_D_SCALE_MODE;
 	if (strcmp(key, "d_scale_eps_count") == 0) return MK_D_SCALE_EPS_COUNT;
+	if (strcmp(key, "d_scale_posterior_gamma") == 0) return MK_D_SCALE_POSTERIOR_GAMMA;
+	if (strcmp(key, "dscale_posterior_gamma") == 0) return MK_D_SCALE_POSTERIOR_GAMMA;
 	if (strcmp(key, "same_bin_filter_enabled") == 0) return MK_SAME_BIN_FILTER_ENABLED;
+	if (strcmp(key, "heldout_enabled") == 0) return MK_HELDOUT_ENABLED;
+	if (strcmp(key, "heldout_fraction") == 0) return MK_HELDOUT_FRACTION;
+	if (strcmp(key, "heldout_seed") == 0) return MK_HELDOUT_SEED;
+	if (strcmp(key, "heldout_n_input_raw_total") == 0) return MK_HELDOUT_N_INPUT_RAW_TOTAL;
+	if (strcmp(key, "heldout_n_raw_train") == 0) return MK_HELDOUT_N_RAW_TRAIN;
+	if (strcmp(key, "heldout_n_raw_heldout") == 0) return MK_HELDOUT_N_RAW_HELDOUT;
+	if (strcmp(key, "heldout_n_bpair_heldout") == 0) return MK_HELDOUT_N_BPAIR_HELDOUT;
+	if (strcmp(key, "heldout_n_bpair_eval") == 0) return MK_HELDOUT_N_BPAIR_EVAL;
+	if (strcmp(key, "heldout_n_raw_eval") == 0) return MK_HELDOUT_N_RAW_EVAL;
+	if (strcmp(key, "heldout_mean_expected_energy") == 0) return MK_HELDOUT_MEAN_EXPECTED_ENERGY;
+	if (strcmp(key, "heldout_mean_min_energy") == 0) return MK_HELDOUT_MEAN_MIN_ENERGY;
+	if (strcmp(key, "heldout_mean_entropy") == 0) return MK_HELDOUT_MEAN_ENTROPY;
+	if (strcmp(key, "heldout_mean_pU") == 0) return MK_HELDOUT_MEAN_PU;
+	if (strcmp(key, "heldout_mean_best_normalized_distance") == 0) return MK_HELDOUT_MEAN_BEST_NORMALIZED_DISTANCE;
+	if (strcmp(key, "heldout_short_distance_frac") == 0) return MK_HELDOUT_SHORT_DISTANCE_FRAC;
 	if (strcmp(key, "n_raw_same_bin_excluded") == 0) return MK_N_RAW_SAME_BIN_EXCLUDED;
 	if (strcmp(key, "n_bpair_same_bin_excluded") == 0) return MK_N_BPAIR_SAME_BIN_EXCLUDED;
 	if (strcmp(key, "raw_posterior_same_bin_policy") == 0) return MK_RAW_POSTERIOR_SAME_BIN_POLICY;
@@ -398,11 +588,73 @@ static int manifest_key_index(const char *key)
 	if (strcmp(key, "init_noise_scale_effective") == 0) return MK_INIT_NOISE_SCALE_EFFECTIVE;
 	if (strcmp(key, "init_scale_effective") == 0) return MK_INIT_SCALE_EFFECTIVE;
 	if (strcmp(key, "config_name") == 0) return MK_CONFIG_NAME;
+	if (strcmp(key, "input_contact_source") == 0) return MK_INPUT_CONTACT_SOURCE;
+	if (strcmp(key, "approved_p9016_raw_pairs_realpath") == 0) return MK_APPROVED_P9016_RAW_PAIRS_REALPATH;
 	if (strcmp(key, "init_eps") == 0) return MK_INIT_EPS;
 	if (strcmp(key, "init_noise_scale") == 0) return MK_INIT_NOISE_SCALE;
 	if (strcmp(key, "init_scale") == 0) return MK_INIT_SCALE;
 	if (strcmp(key, "chr_sep_unit") == 0) return MK_CHR_SEP_UNIT;
 	if (strcmp(key, "lambda_chr_sep") == 0) return MK_LAMBDA_CHR_SEP;
+	if (strcmp(key, "lambda_copytrack") == 0) return MK_LAMBDA_COPYTRACK;
+	if (strcmp(key, "copytrack_uses_phase_labels") == 0) return MK_COPYTRACK_USES_PHASE_LABELS;
+	if (strcmp(key, "copytrack_uses_charm_or_reference") == 0) return MK_COPYTRACK_USES_CHARM_OR_REFERENCE;
+	if (strcmp(key, "lambda_global_copytrack") == 0) return MK_LAMBDA_GLOBAL_COPYTRACK;
+	if (strcmp(key, "global_copytrack_uses_phase_labels") == 0) return MK_GLOBAL_COPYTRACK_USES_PHASE_LABELS;
+	if (strcmp(key, "global_copytrack_uses_charm_or_reference") == 0) return MK_GLOBAL_COPYTRACK_USES_CHARM_OR_REFERENCE;
+	if (strcmp(key, "lambda_normdir_copytrack") == 0) return MK_LAMBDA_NORMDIR_COPYTRACK;
+	if (strcmp(key, "normdir_copytrack_eps_unit") == 0) return MK_NORMDIR_COPYTRACK_EPS_UNIT;
+	if (strcmp(key, "normdir_copytrack_uses_phase_labels") == 0) return MK_NORMDIR_COPYTRACK_USES_PHASE_LABELS;
+	if (strcmp(key, "normdir_copytrack_uses_charm_or_reference") == 0) return MK_NORMDIR_COPYTRACK_USES_CHARM_OR_REFERENCE;
+	if (strcmp(key, "uses_charm_or_reference") == 0) return MK_USES_CHARM_OR_REFERENCE;
+	if (strcmp(key, "uses_charm_for_training") == 0) return MK_USES_CHARM_FOR_TRAINING;
+	if (strcmp(key, "reference_derived_positive_control") == 0) return MK_REFERENCE_DERIVED_POSITIVE_CONTROL;
+	if (strcmp(key, "trans_chr_pair_prior_mode") == 0) return MK_TRANS_CHR_PAIR_PRIOR_MODE;
+	if (strcmp(key, "trans_chr_pair_prior_lambda") == 0) return MK_TRANS_CHR_PAIR_PRIOR_LAMBDA;
+	if (strcmp(key, "trans_chr_pair_prior_eps") == 0) return MK_TRANS_CHR_PAIR_PRIOR_EPS;
+	if (strcmp(key, "trans_chr_pair_prior_power") == 0) return MK_TRANS_CHR_PAIR_PRIOR_POWER;
+	if (strcmp(key, "trans_chr_pair_prior_warmup_iter") == 0) return MK_TRANS_CHR_PAIR_PRIOR_WARMUP_ITER;
+	if (strcmp(key, "trans_chr_pair_prior_uses_phase_labels") == 0) return MK_TRANS_CHR_PAIR_PRIOR_USES_PHASE_LABELS;
+	if (strcmp(key, "trans_chr_pair_prior_uses_charm_or_reference") == 0) return MK_TRANS_CHR_PAIR_PRIOR_USES_CHARM_OR_REFERENCE;
+	if (strcmp(key, "trans_chr_pair_mstep_mode") == 0) return MK_TRANS_CHR_PAIR_MSTEP_MODE;
+	if (strcmp(key, "trans_chr_pair_mstep_lambda") == 0) return MK_TRANS_CHR_PAIR_MSTEP_LAMBDA;
+	if (strcmp(key, "trans_chr_pair_mstep_eps") == 0) return MK_TRANS_CHR_PAIR_MSTEP_EPS;
+	if (strcmp(key, "trans_chr_pair_mstep_power") == 0) return MK_TRANS_CHR_PAIR_MSTEP_POWER;
+	if (strcmp(key, "trans_chr_pair_mstep_warmup_iter") == 0) return MK_TRANS_CHR_PAIR_MSTEP_WARMUP_ITER;
+	if (strcmp(key, "trans_chr_pair_mstep_scope") == 0) return MK_TRANS_CHR_PAIR_MSTEP_SCOPE;
+	if (strcmp(key, "trans_chr_pair_mstep_application_point") == 0) return MK_TRANS_CHR_PAIR_MSTEP_APPLICATION_POINT;
+	if (strcmp(key, "trans_chr_pair_mstep_uses_phase_labels") == 0) return MK_TRANS_CHR_PAIR_MSTEP_USES_PHASE_LABELS;
+	if (strcmp(key, "trans_chr_pair_mstep_uses_charm_or_reference") == 0) return MK_TRANS_CHR_PAIR_MSTEP_USES_CHARM_OR_REFERENCE;
+	if (strcmp(key, "trans_contact_scaling_mode") == 0) return MK_TRANS_CONTACT_SCALING_MODE;
+	if (strcmp(key, "trans_k_multiplier") == 0) return MK_TRANS_K_MULTIPLIER;
+	if (strcmp(key, "trans_dscale_multiplier") == 0) return MK_TRANS_DSCALE_MULTIPLIER;
+	if (strcmp(key, "trans_d_scale_posterior_gamma") == 0) return MK_TRANS_D_SCALE_POSTERIOR_GAMMA;
+	if (strcmp(key, "trans_contact_scaling_scope") == 0) return MK_TRANS_CONTACT_SCALING_SCOPE;
+	if (strcmp(key, "trans_contact_scaling_uses_phase_labels") == 0) return MK_TRANS_CONTACT_SCALING_USES_PHASE_LABELS;
+	if (strcmp(key, "trans_contact_scaling_uses_charm_or_reference") == 0) return MK_TRANS_CONTACT_SCALING_USES_CHARM_OR_REFERENCE;
+	if (strcmp(key, "trans_top1_mstep_mode") == 0) return MK_TRANS_TOP1_MSTEP_MODE;
+	if (strcmp(key, "trans_top1_mstep_min_pmax") == 0) return MK_TRANS_TOP1_MSTEP_MIN_PMAX;
+	if (strcmp(key, "trans_top1_mstep_min_margin") == 0) return MK_TRANS_TOP1_MSTEP_MIN_MARGIN;
+	if (strcmp(key, "trans_top1_mstep_mix_weight") == 0) return MK_TRANS_TOP1_MSTEP_MIX_WEIGHT;
+	if (strcmp(key, "trans_top1_mstep_scope") == 0) return MK_TRANS_TOP1_MSTEP_SCOPE;
+	if (strcmp(key, "trans_top1_mstep_application_point") == 0) return MK_TRANS_TOP1_MSTEP_APPLICATION_POINT;
+	if (strcmp(key, "trans_top1_mstep_uses_phase_labels") == 0) return MK_TRANS_TOP1_MSTEP_USES_PHASE_LABELS;
+	if (strcmp(key, "trans_top1_mstep_uses_charm_or_reference") == 0) return MK_TRANS_TOP1_MSTEP_USES_CHARM_OR_REFERENCE;
+	if (strcmp(key, "trans_callable_anchor_mode") == 0) return MK_TRANS_CALLABLE_ANCHOR_MODE;
+	if (strcmp(key, "trans_callable_anchor_top_frac") == 0) return MK_TRANS_CALLABLE_ANCHOR_TOP_FRAC;
+	if (strcmp(key, "trans_callable_anchor_mix_weight") == 0) return MK_TRANS_CALLABLE_ANCHOR_MIX_WEIGHT;
+	if (strcmp(key, "trans_callable_anchor_min_n_raw") == 0) return MK_TRANS_CALLABLE_ANCHOR_MIN_N_RAW;
+	if (strcmp(key, "trans_callable_anchor_warmup_iter") == 0) return MK_TRANS_CALLABLE_ANCHOR_WARMUP_ITER;
+	if (strcmp(key, "trans_callable_anchor_uses_phase_labels") == 0) return MK_TRANS_CALLABLE_ANCHOR_USES_PHASE_LABELS;
+	if (strcmp(key, "trans_callable_anchor_uses_charm_or_reference") == 0) return MK_TRANS_CALLABLE_ANCHOR_USES_CHARM_OR_REFERENCE;
+	if (strcmp(key, "trans_gate_mode") == 0) return MK_TRANS_GATE_MODE;
+	if (strcmp(key, "trans_gate_min_pmax") == 0) return MK_TRANS_GATE_MIN_PMAX;
+	if (strcmp(key, "trans_gate_min_margin") == 0) return MK_TRANS_GATE_MIN_MARGIN;
+	if (strcmp(key, "trans_gate_min_neg_entropy") == 0) return MK_TRANS_GATE_MIN_NEG_ENTROPY;
+	if (strcmp(key, "trans_gate_scope") == 0) return MK_TRANS_GATE_SCOPE;
+	if (strcmp(key, "trans_gate_application_point") == 0) return MK_TRANS_GATE_APPLICATION_POINT;
+	if (strcmp(key, "trans_gate_source") == 0) return MK_TRANS_GATE_SOURCE;
+	if (strcmp(key, "trans_gate_uses_phase_labels") == 0) return MK_TRANS_GATE_USES_PHASE_LABELS;
+	if (strcmp(key, "trans_gate_uses_charm_or_reference") == 0) return MK_TRANS_GATE_USES_CHARM_OR_REFERENCE;
 	if (strcmp(key, "init_seed") == 0) return MK_INIT_SEED;
 	if (strcmp(key, "enable_repulsion") == 0) return MK_ENABLE_REPULSION;
 	if (strcmp(key, "repulsion_mode") == 0) return MK_REPULSION_MODE;
@@ -430,8 +682,7 @@ static int manifest_key_index(const char *key)
 
 static int manifest_optional_current_key(const char *key)
 {
-	return strcmp(key, "input_contact_source") == 0 ||
-		   strcmp(key, "resolution_label") == 0 ||
+	return strcmp(key, "resolution_label") == 0 ||
 		   strcmp(key, "refinement_stage") == 0 ||
 		   strcmp(key, "refinement_stage_index") == 0 ||
 		   strcmp(key, "refinement_n_stages") == 0 ||
@@ -440,32 +691,54 @@ static int manifest_optional_current_key(const char *key)
 		   strcmp(key, "refinement_child_offset_step") == 0 ||
 			   strcmp(key, "refinement_parent_anchor_k") == 0 ||
 			   strcmp(key, "relax_backend") == 0 ||
-			   strcmp(key, "approved_p9016_raw_pairs_realpath") == 0 ||
 			   strcmp(key, "scaffold_source") == 0 ||
 		   strcmp(key, "scaffold_fdg_n_iter") == 0 ||
-			   strcmp(key, "training_graph_weighted_filter") == 0 ||
+			   strcmp(key, "trans_chr_pair_prior_source") == 0 ||
+			   strcmp(key, "trans_chr_pair_prior_scope") == 0 ||
+				   strcmp(key, "trans_chr_pair_mstep_source") == 0 ||
+				   strcmp(key, "trans_chr_pair_mstep_update_rule") == 0 ||
+				   strcmp(key, "trans_chr_pair_mstep_aggregate_mode") == 0 ||
+				   strcmp(key, "trans_callable_anchor_scope") == 0 ||
+				   strcmp(key, "trans_callable_anchor_application_point") == 0 ||
+				   strcmp(key, "trans_callable_anchor_score_source") == 0 ||
+				   strcmp(key, "trans_callable_anchor_training_rule") == 0 ||
+				   strcmp(key, "training_graph_weighted_filter") == 0 ||
 			   strcmp(key, "training_graph_probability_weighted") == 0 ||
 				   strcmp(key, "edge_k_probability_weighted") == 0 ||
-				   strcmp(key, "dscale_mode") == 0 ||
-				   strcmp(key, "d_scale_mode_input_string") == 0 ||
-				   strcmp(key, "d_scale_posterior_gamma") == 0 ||
-				   strcmp(key, "dscale_posterior_gamma") == 0 ||
-				   strcmp(key, "dscale_effective_count_formula") == 0 ||
+					   strcmp(key, "dscale_mode") == 0 ||
+					   strcmp(key, "d_scale_mode_input_string") == 0 ||
+					   strcmp(key, "dscale_effective_count_formula") == 0 ||
 				   strcmp(key, "dscale_probability_weighted") == 0 ||
+				   strcmp(key, "trans_dscale_effective_count_formula") == 0 ||
+				   strcmp(key, "trans_dscale_probability_weighted") == 0 ||
 				   strcmp(key, "legacy_expected_count_alias_used") == 0 ||
-				   strcmp(key, "training_graph_dscale_probability_weighted") == 0 ||
+			   strcmp(key, "training_graph_dscale_probability_weighted") == 0 ||
+			   strcmp(key, "trans_gate_confidence_unit") == 0 ||
+			   strcmp(key, "trans_gate_neg_entropy_formula") == 0 ||
+			   strcmp(key, "trans_gate_active_criteria") == 0 ||
+			   strcmp(key, "readgroup_mode") == 0 ||
+				   strcmp(key, "readgroup_max_segments") == 0 ||
+				   strcmp(key, "readgroup_eps") == 0 ||
+				   strcmp(key, "readgroup_entries") == 0 ||
+				   strcmp(key, "readgroup_groups") == 0 ||
+				   strcmp(key, "readgroup_groups_used") == 0 ||
+				   strcmp(key, "readgroup_raw_decoded") == 0 ||
+				   strcmp(key, "readgroup_groups_skipped_too_large") == 0 ||
+				   strcmp(key, "readgroup_groups_skipped_bad") == 0 ||
+				   strcmp(key, "readgroup_uses_phase_labels") == 0 ||
+				   strcmp(key, "readgroup_uses_charm_or_reference") == 0 ||
 				   strcmp(key, "training_graph_mode") == 0 ||
 		   strcmp(key, "softall_mode") == 0 ||
 		   strcmp(key, "estep_score_mode") == 0 ||
 		   strcmp(key, "copy_labels_are_gauge_only") == 0 ||
-		   strcmp(key, "uses_charm_or_reference") == 0 ||
-		   strcmp(key, "uses_charm_for_training") == 0 ||
+		   strcmp(key, "reference_training_source_3dg") == 0 ||
 		   strcmp(key, "repulsion_multiplier") == 0 ||
 		   strcmp(key, "k_rel_rep_effective") == 0 ||
 		   strcmp(key, "output_coords_gz") == 0 ||
-		   strcmp(key, "output_force_class_diag") == 0 ||
-		   strcmp(key, "output_sep_diag") == 0 ||
-		   strcmp(key, "output_coarse_to_fine_map") == 0 ||
+			   strcmp(key, "output_force_class_diag") == 0 ||
+			   strcmp(key, "output_sep_diag") == 0 ||
+			   strcmp(key, "output_heldout_diag") == 0 ||
+			   strcmp(key, "output_coarse_to_fine_map") == 0 ||
 		   strcmp(key, "final_mean_sep") == 0 ||
 		   strcmp(key, "final_min_sep") == 0 ||
 		   strcmp(key, "final_max_sep") == 0 ||
@@ -480,6 +753,37 @@ static int manifest_optional_current_key(const char *key)
 			   strcmp(key, "final_backbone_energy") == 0 ||
 			   strcmp(key, "final_sep_energy") == 0 ||
 			   strcmp(key, "final_sep_force_l1") == 0 ||
+				   strcmp(key, "copytrack_prior_mode") == 0 ||
+				   strcmp(key, "copytrack_scope") == 0 ||
+				   strcmp(key, "copytrack_vector_definition") == 0 ||
+				   strcmp(key, "init_coord_anchor_enabled") == 0 ||
+				   strcmp(key, "init_coord_anchor_k") == 0 ||
+				   strcmp(key, "init_coord_anchor_mode") == 0 ||
+				   strcmp(key, "init_coord_anchor_source") == 0 ||
+				   strcmp(key, "init_coord_anchor_map_type") == 0 ||
+				   strcmp(key, "init_coord_anchor_uses_phase_labels") == 0 ||
+				   strcmp(key, "init_coord_anchor_uses_charm_or_reference") == 0 ||
+				   strcmp(key, "global_copytrack_prior_mode") == 0 ||
+			   strcmp(key, "global_copytrack_scope") == 0 ||
+			   strcmp(key, "global_copytrack_vector_definition") == 0 ||
+			   strcmp(key, "global_copytrack_reference") == 0 ||
+			   strcmp(key, "global_copytrack_weight_mode") == 0 ||
+			   strcmp(key, "normdir_copytrack_prior_mode") == 0 ||
+			   strcmp(key, "normdir_copytrack_scope") == 0 ||
+			   strcmp(key, "normdir_copytrack_vector_definition") == 0 ||
+			   strcmp(key, "normdir_copytrack_short_vector_skip_eps_unit") == 0 ||
+			   strcmp(key, "final_copytrack_energy") == 0 ||
+			   strcmp(key, "final_copytrack_force_l1") == 0 ||
+			   strcmp(key, "final_global_copytrack_energy") == 0 ||
+				   strcmp(key, "final_global_copytrack_force_l1") == 0 ||
+				   strcmp(key, "final_normdir_copytrack_energy") == 0 ||
+				   strcmp(key, "final_normdir_copytrack_force_l1") == 0 ||
+				   strcmp(key, "final_anchor_energy") == 0 ||
+				   strcmp(key, "final_anchor_force_l1") == 0 ||
+				   strcmp(key, "n_copytrack_nonfinite_step") == 0 ||
+				   strcmp(key, "n_global_copytrack_nonfinite_step") == 0 ||
+				   strcmp(key, "n_normdir_copytrack_nonfinite_step") == 0 ||
+				   strcmp(key, "n_anchor_nonfinite_step") == 0 ||
 			   strcmp(key, "git_commit") == 0 ||
 			   strcmp(key, "git_dirty_count") == 0 ||
 			   strcmp(key, "binary_hash") == 0;
@@ -583,6 +887,20 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_BASE_K_MODE: snprintf(info->base_k_mode, sizeof(info->base_k_mode), "%s", value); return 0;
 	case MK_INIT_MODE: snprintf(info->init_mode, sizeof(info->init_mode), "%s", value); return 0;
 	case MK_PRIOR_MODE: snprintf(info->prior_mode, sizeof(info->prior_mode), "%s", value); return 0;
+	case MK_TRANS_CHR_PAIR_PRIOR_MODE: snprintf(info->trans_chr_pair_prior_mode, sizeof(info->trans_chr_pair_prior_mode), "%s", value); return 0;
+	case MK_TRANS_CHR_PAIR_MSTEP_MODE: snprintf(info->trans_chr_pair_mstep_mode, sizeof(info->trans_chr_pair_mstep_mode), "%s", value); return 0;
+	case MK_TRANS_CHR_PAIR_MSTEP_SCOPE: snprintf(info->trans_chr_pair_mstep_scope, sizeof(info->trans_chr_pair_mstep_scope), "%s", value); return 0;
+	case MK_TRANS_CHR_PAIR_MSTEP_APPLICATION_POINT: snprintf(info->trans_chr_pair_mstep_application_point, sizeof(info->trans_chr_pair_mstep_application_point), "%s", value); return 0;
+	case MK_TRANS_CONTACT_SCALING_MODE: snprintf(info->trans_contact_scaling_mode, sizeof(info->trans_contact_scaling_mode), "%s", value); return 0;
+	case MK_TRANS_CONTACT_SCALING_SCOPE: snprintf(info->trans_contact_scaling_scope, sizeof(info->trans_contact_scaling_scope), "%s", value); return 0;
+	case MK_TRANS_TOP1_MSTEP_MODE: snprintf(info->trans_top1_mstep_mode, sizeof(info->trans_top1_mstep_mode), "%s", value); return 0;
+		case MK_TRANS_TOP1_MSTEP_SCOPE: snprintf(info->trans_top1_mstep_scope, sizeof(info->trans_top1_mstep_scope), "%s", value); return 0;
+		case MK_TRANS_TOP1_MSTEP_APPLICATION_POINT: snprintf(info->trans_top1_mstep_application_point, sizeof(info->trans_top1_mstep_application_point), "%s", value); return 0;
+		case MK_TRANS_CALLABLE_ANCHOR_MODE: snprintf(info->trans_callable_anchor_mode, sizeof(info->trans_callable_anchor_mode), "%s", value); return 0;
+		case MK_TRANS_GATE_MODE: snprintf(info->trans_gate_mode, sizeof(info->trans_gate_mode), "%s", value); return 0;
+	case MK_TRANS_GATE_SCOPE: snprintf(info->trans_gate_scope, sizeof(info->trans_gate_scope), "%s", value); return 0;
+	case MK_TRANS_GATE_APPLICATION_POINT: snprintf(info->trans_gate_application_point, sizeof(info->trans_gate_application_point), "%s", value); return 0;
+	case MK_TRANS_GATE_SOURCE: snprintf(info->trans_gate_source, sizeof(info->trans_gate_source), "%s", value); return 0;
 	case MK_PRIOR_SMOOTHING_METHOD: snprintf(info->prior_smoothing_method, sizeof(info->prior_smoothing_method), "%s", value); return 0;
 	case MK_RHO_TRAIN_MODE: snprintf(info->rho_train_mode, sizeof(info->rho_train_mode), "%s", value); return 0;
 	case MK_D_SCALE_MODE: snprintf(info->d_scale_mode, sizeof(info->d_scale_mode), "%s", value); return 0;
@@ -592,6 +910,7 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_BASELINE: snprintf(info->baseline, sizeof(info->baseline), "%s", value); return 0;
 	case MK_MSTEP_GRAPH_MODE: snprintf(info->mstep_graph_mode, sizeof(info->mstep_graph_mode), "%s", value); return 0;
 	case MK_CONFIG_NAME: snprintf(info->config_name, sizeof(info->config_name), "%s", value); return 0;
+	case MK_INPUT_CONTACT_SOURCE: snprintf(info->input_contact_source, sizeof(info->input_contact_source), "%s", value); return 0;
 	case MK_N_RAW: return parse_i64_value(value, &info->n_raw);
 	case MK_N_BPAIR: return parse_i64_value(value, &info->n_bpair);
 	case MK_N_BEADS: return parse_i64_value(value, &info->n_beads);
@@ -605,15 +924,43 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_ENABLE_REPULSION: return parse_i64_value(value, &info->enable_repulsion);
 	case MK_REPULSION_MODE: return parse_i64_value(value, &info->repulsion_mode);
 	case MK_WRITE_RAW_POSTERIOR: return parse_i64_value(value, &info->write_raw_posterior);
-	case MK_BASE_K_N_NONFINITE: return parse_i64_value(value, &info->base_k_n_nonfinite);
-	case MK_SAME_BIN_FILTER_ENABLED: return parse_i64_value(value, &info->same_bin_filter_enabled);
-	case MK_N_RAW_SAME_BIN_EXCLUDED: return parse_i64_value(value, &info->n_raw_same_bin_excluded);
+		case MK_BASE_K_N_NONFINITE: return parse_i64_value(value, &info->base_k_n_nonfinite);
+		case MK_SAME_BIN_FILTER_ENABLED: return parse_i64_value(value, &info->same_bin_filter_enabled);
+		case MK_HELDOUT_ENABLED: return parse_i64_value(value, &info->heldout_enabled);
+		case MK_HELDOUT_SEED: return parse_i64_value(value, &info->heldout_seed);
+		case MK_HELDOUT_N_INPUT_RAW_TOTAL: return parse_i64_value(value, &info->heldout_n_input_raw_total);
+		case MK_HELDOUT_N_RAW_TRAIN: return parse_i64_value(value, &info->heldout_n_raw_train);
+		case MK_HELDOUT_N_RAW_HELDOUT: return parse_i64_value(value, &info->heldout_n_raw_heldout);
+		case MK_HELDOUT_N_BPAIR_HELDOUT: return parse_i64_value(value, &info->heldout_n_bpair_heldout);
+		case MK_HELDOUT_N_BPAIR_EVAL: return parse_i64_value(value, &info->heldout_n_bpair_eval);
+		case MK_HELDOUT_N_RAW_EVAL: return parse_i64_value(value, &info->heldout_n_raw_eval);
+		case MK_N_RAW_SAME_BIN_EXCLUDED: return parse_i64_value(value, &info->n_raw_same_bin_excluded);
 	case MK_N_BPAIR_SAME_BIN_EXCLUDED: return parse_i64_value(value, &info->n_bpair_same_bin_excluded);
 	case MK_N_RAW_CIS: return parse_i64_value(value, &info->n_raw_cis);
 	case MK_N_RAW_TRANS: return parse_i64_value(value, &info->n_raw_trans);
 	case MK_N_BPAIR_CIS: return parse_i64_value(value, &info->n_bpair_cis);
 	case MK_N_BPAIR_TRANS: return parse_i64_value(value, &info->n_bpair_trans);
 	case MK_USES_PHASE_LABELS: return parse_i64_value(value, &info->uses_phase_labels);
+	case MK_APPROVED_P9016_RAW_PAIRS_REALPATH: return parse_i64_value(value, &info->approved_p9016_raw_pairs_realpath);
+	case MK_USES_CHARM_OR_REFERENCE: return parse_i64_value(value, &info->uses_charm_or_reference);
+	case MK_USES_CHARM_FOR_TRAINING: return parse_i64_value(value, &info->uses_charm_for_training);
+	case MK_REFERENCE_DERIVED_POSITIVE_CONTROL: return parse_i64_value(value, &info->reference_derived_positive_control);
+	case MK_TRANS_CHR_PAIR_PRIOR_USES_PHASE_LABELS: return parse_i64_value(value, &info->trans_chr_pair_prior_uses_phase_labels);
+	case MK_TRANS_CHR_PAIR_PRIOR_USES_CHARM_OR_REFERENCE: return parse_i64_value(value, &info->trans_chr_pair_prior_uses_charm_or_reference);
+	case MK_TRANS_CHR_PAIR_PRIOR_WARMUP_ITER: return parse_i64_value(value, &info->trans_chr_pair_prior_warmup_iter);
+	case MK_TRANS_CHR_PAIR_MSTEP_USES_PHASE_LABELS: return parse_i64_value(value, &info->trans_chr_pair_mstep_uses_phase_labels);
+	case MK_TRANS_CHR_PAIR_MSTEP_USES_CHARM_OR_REFERENCE: return parse_i64_value(value, &info->trans_chr_pair_mstep_uses_charm_or_reference);
+	case MK_TRANS_CHR_PAIR_MSTEP_WARMUP_ITER: return parse_i64_value(value, &info->trans_chr_pair_mstep_warmup_iter);
+	case MK_TRANS_CONTACT_SCALING_USES_PHASE_LABELS: return parse_i64_value(value, &info->trans_contact_scaling_uses_phase_labels);
+	case MK_TRANS_CONTACT_SCALING_USES_CHARM_OR_REFERENCE: return parse_i64_value(value, &info->trans_contact_scaling_uses_charm_or_reference);
+		case MK_TRANS_TOP1_MSTEP_USES_PHASE_LABELS: return parse_i64_value(value, &info->trans_top1_mstep_uses_phase_labels);
+		case MK_TRANS_TOP1_MSTEP_USES_CHARM_OR_REFERENCE: return parse_i64_value(value, &info->trans_top1_mstep_uses_charm_or_reference);
+		case MK_TRANS_CALLABLE_ANCHOR_USES_PHASE_LABELS: return parse_i64_value(value, &info->trans_callable_anchor_uses_phase_labels);
+		case MK_TRANS_CALLABLE_ANCHOR_USES_CHARM_OR_REFERENCE: return parse_i64_value(value, &info->trans_callable_anchor_uses_charm_or_reference);
+		case MK_TRANS_CALLABLE_ANCHOR_MIN_N_RAW: return parse_i64_value(value, &info->trans_callable_anchor_min_n_raw);
+		case MK_TRANS_CALLABLE_ANCHOR_WARMUP_ITER: return parse_i64_value(value, &info->trans_callable_anchor_warmup_iter);
+		case MK_TRANS_GATE_USES_PHASE_LABELS: return parse_i64_value(value, &info->trans_gate_uses_phase_labels);
+	case MK_TRANS_GATE_USES_CHARM_OR_REFERENCE: return parse_i64_value(value, &info->trans_gate_uses_charm_or_reference);
 	case MK_POSTERIOR_REFRESHED_AFTER_FINAL_RELAX: return parse_i64_value(value, &info->posterior_refreshed_after_final_relax);
 	case MK_N_BAD_ITER: return parse_i64_value(value, &info->n_bad_iter);
 	case MK_N_RELAX_NONFINITE_ITER: return parse_i64_value(value, &info->n_relax_nonfinite_iter);
@@ -625,8 +972,43 @@ static int manifest_set_value(struct manifest_info *info, const char *key, const
 	case MK_BASE_K_MEAN: return parse_double_value(value, &info->base_k_mean);
 	case MK_BASE_K_MAX: return parse_double_value(value, &info->base_k_max);
 	case MK_D_SCALE_EPS_COUNT: return parse_double_value(value, &info->d_scale_eps_count);
-	case MK_MIN_SEP_UNIT: return parse_double_value(value, &info->min_sep_unit);
+	case MK_D_SCALE_POSTERIOR_GAMMA: return parse_double_value(value, &info->d_scale_posterior_gamma);
+	case MK_HELDOUT_FRACTION: return parse_double_value(value, &info->heldout_fraction);
+		case MK_HELDOUT_MEAN_EXPECTED_ENERGY: return parse_double_value(value, &info->heldout_mean_expected_energy);
+		case MK_HELDOUT_MEAN_MIN_ENERGY: return parse_double_value(value, &info->heldout_mean_min_energy);
+		case MK_HELDOUT_MEAN_ENTROPY: return parse_double_value(value, &info->heldout_mean_entropy);
+		case MK_HELDOUT_MEAN_PU: return parse_double_value(value, &info->heldout_mean_pU);
+		case MK_HELDOUT_MEAN_BEST_NORMALIZED_DISTANCE: return parse_double_value(value, &info->heldout_mean_best_normalized_distance);
+		case MK_HELDOUT_SHORT_DISTANCE_FRAC: return parse_double_value(value, &info->heldout_short_distance_frac);
+		case MK_MIN_SEP_UNIT: return parse_double_value(value, &info->min_sep_unit);
 	case MK_LAMBDA_SEP: return parse_double_value(value, &info->lambda_sep);
+	case MK_LAMBDA_COPYTRACK: return parse_double_value(value, &info->lambda_copytrack);
+	case MK_COPYTRACK_USES_PHASE_LABELS: return parse_i64_value(value, &info->copytrack_uses_phase_labels);
+	case MK_COPYTRACK_USES_CHARM_OR_REFERENCE: return parse_i64_value(value, &info->copytrack_uses_charm_or_reference);
+	case MK_LAMBDA_GLOBAL_COPYTRACK: return parse_double_value(value, &info->lambda_global_copytrack);
+	case MK_GLOBAL_COPYTRACK_USES_PHASE_LABELS: return parse_i64_value(value, &info->global_copytrack_uses_phase_labels);
+	case MK_GLOBAL_COPYTRACK_USES_CHARM_OR_REFERENCE: return parse_i64_value(value, &info->global_copytrack_uses_charm_or_reference);
+	case MK_LAMBDA_NORMDIR_COPYTRACK: return parse_double_value(value, &info->lambda_normdir_copytrack);
+	case MK_NORMDIR_COPYTRACK_EPS_UNIT: return parse_double_value(value, &info->normdir_copytrack_eps_unit);
+	case MK_NORMDIR_COPYTRACK_USES_PHASE_LABELS: return parse_i64_value(value, &info->normdir_copytrack_uses_phase_labels);
+	case MK_NORMDIR_COPYTRACK_USES_CHARM_OR_REFERENCE: return parse_i64_value(value, &info->normdir_copytrack_uses_charm_or_reference);
+	case MK_TRANS_CHR_PAIR_PRIOR_LAMBDA: return parse_double_value(value, &info->trans_chr_pair_prior_lambda);
+	case MK_TRANS_CHR_PAIR_PRIOR_EPS: return parse_double_value(value, &info->trans_chr_pair_prior_eps);
+	case MK_TRANS_CHR_PAIR_PRIOR_POWER: return parse_double_value(value, &info->trans_chr_pair_prior_power);
+	case MK_TRANS_CHR_PAIR_MSTEP_LAMBDA: return parse_double_value(value, &info->trans_chr_pair_mstep_lambda);
+	case MK_TRANS_CHR_PAIR_MSTEP_EPS: return parse_double_value(value, &info->trans_chr_pair_mstep_eps);
+	case MK_TRANS_CHR_PAIR_MSTEP_POWER: return parse_double_value(value, &info->trans_chr_pair_mstep_power);
+	case MK_TRANS_K_MULTIPLIER: return parse_double_value(value, &info->trans_k_multiplier);
+	case MK_TRANS_DSCALE_MULTIPLIER: return parse_double_value(value, &info->trans_dscale_multiplier);
+	case MK_TRANS_D_SCALE_POSTERIOR_GAMMA: return parse_double_value(value, &info->trans_d_scale_posterior_gamma);
+	case MK_TRANS_TOP1_MSTEP_MIN_PMAX: return parse_double_value(value, &info->trans_top1_mstep_min_pmax);
+		case MK_TRANS_TOP1_MSTEP_MIN_MARGIN: return parse_double_value(value, &info->trans_top1_mstep_min_margin);
+		case MK_TRANS_TOP1_MSTEP_MIX_WEIGHT: return parse_double_value(value, &info->trans_top1_mstep_mix_weight);
+		case MK_TRANS_CALLABLE_ANCHOR_TOP_FRAC: return parse_double_value(value, &info->trans_callable_anchor_top_frac);
+		case MK_TRANS_CALLABLE_ANCHOR_MIX_WEIGHT: return parse_double_value(value, &info->trans_callable_anchor_mix_weight);
+		case MK_TRANS_GATE_MIN_PMAX: return parse_double_value(value, &info->trans_gate_min_pmax);
+	case MK_TRANS_GATE_MIN_MARGIN: return parse_double_value(value, &info->trans_gate_min_margin);
+	case MK_TRANS_GATE_MIN_NEG_ENTROPY: return parse_double_value(value, &info->trans_gate_min_neg_entropy);
 	case MK_RELAX_STEP: return parse_double_value(value, &info->relax_step);
 	case MK_TEMPERATURE_START: return parse_double_value(value, &info->temperature_start);
 	case MK_TEMPERATURE_END: return parse_double_value(value, &info->temperature_end);
@@ -691,6 +1073,23 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 	info->init_scale = NAN;
 	info->chr_sep_unit = NAN;
 	info->lambda_chr_sep = NAN;
+	info->lambda_copytrack = 0.0;
+	info->lambda_global_copytrack = 0.0;
+	info->lambda_normdir_copytrack = 0.0;
+	info->normdir_copytrack_eps_unit = 0.0;
+	info->copytrack_uses_phase_labels = 0;
+	info->copytrack_uses_charm_or_reference = 0;
+	info->normdir_copytrack_uses_phase_labels = 0;
+	info->normdir_copytrack_uses_charm_or_reference = 0;
+	snprintf(info->trans_gate_mode, sizeof(info->trans_gate_mode), "off");
+	snprintf(info->trans_gate_scope, sizeof(info->trans_gate_scope), "trans_raw_contacts_by_bpair_posterior");
+	snprintf(info->trans_gate_application_point, sizeof(info->trans_gate_application_point), "post_estep_pre_softall_mstep");
+	snprintf(info->trans_gate_source, sizeof(info->trans_gate_source), "blind_current_posterior_confidence");
+	info->trans_gate_min_pmax = 1.0;
+	info->trans_gate_min_margin = 1.0;
+	info->trans_gate_min_neg_entropy = -log((double)HK_BLIND_N_STATE);
+	info->trans_gate_uses_phase_labels = 0;
+	info->trans_gate_uses_charm_or_reference = 0;
 	audit_init(audit);
 	if (fp == 0) {
 		add_example(audit, "manifest open failed");
@@ -834,13 +1233,13 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest uniform prior smoothing method is not none");
 		failed = 1;
 	}
-	if (strcmp(info->rho_train_mode, "constant") != 0) {
+	if (!recognized_rho_train_mode(info->rho_train_mode)) {
 		add_example(audit, "manifest rho_train_mode is not recognized");
 		failed = 1;
 	}
 	if (info->seen[MK_RHO_TRAIN] &&
-		(!isfinite(info->rho_train) || !check_close(info->rho_train, 1.0))) {
-		add_example(audit, "manifest rho_train must remain one");
+		(!isfinite(info->rho_train) || info->rho_train < 0.0)) {
+		add_example(audit, "manifest rho_train is out of range");
 		failed = 1;
 	}
 	if (strcmp(info->d_scale_mode, "raw_count") != 0 &&
@@ -855,14 +1254,136 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest same-bin filter fields out of range");
 		failed = 1;
 	}
+	if (info->seen[MK_HELDOUT_ENABLED] || info->seen[MK_HELDOUT_FRACTION] ||
+		info->seen[MK_HELDOUT_N_RAW_TRAIN] || info->seen[MK_HELDOUT_N_RAW_HELDOUT]) {
+		if (!(info->seen[MK_HELDOUT_ENABLED] && info->seen[MK_HELDOUT_FRACTION] &&
+			  info->seen[MK_HELDOUT_SEED] && info->seen[MK_HELDOUT_N_INPUT_RAW_TOTAL] &&
+			  info->seen[MK_HELDOUT_N_RAW_TRAIN] && info->seen[MK_HELDOUT_N_RAW_HELDOUT] &&
+			  info->seen[MK_HELDOUT_N_BPAIR_HELDOUT] && info->seen[MK_HELDOUT_N_BPAIR_EVAL] &&
+			  info->seen[MK_HELDOUT_N_RAW_EVAL] &&
+			  info->seen[MK_HELDOUT_MEAN_EXPECTED_ENERGY] &&
+			  info->seen[MK_HELDOUT_MEAN_MIN_ENERGY] &&
+			  info->seen[MK_HELDOUT_MEAN_ENTROPY] &&
+			  info->seen[MK_HELDOUT_MEAN_PU] &&
+			  info->seen[MK_HELDOUT_MEAN_BEST_NORMALIZED_DISTANCE] &&
+			  info->seen[MK_HELDOUT_SHORT_DISTANCE_FRAC])) {
+			add_example(audit, "manifest heldout fields are incomplete");
+			failed = 1;
+		} else if ((info->heldout_enabled != 0 && info->heldout_enabled != 1) ||
+				   !isfinite(info->heldout_fraction) || info->heldout_fraction < 0.0 ||
+				   info->heldout_fraction >= 1.0 || info->heldout_seed < 0 ||
+				   info->heldout_n_input_raw_total < 0 ||
+				   info->heldout_n_raw_train < 0 ||
+				   info->heldout_n_raw_heldout < 0 ||
+				   info->heldout_n_bpair_heldout < 0 ||
+				   info->heldout_n_bpair_eval < 0 ||
+				   info->heldout_n_raw_eval < 0 ||
+				   info->heldout_n_raw_train + info->heldout_n_raw_heldout !=
+				   info->heldout_n_input_raw_total ||
+				   info->heldout_n_raw_train != info->n_raw ||
+				   info->heldout_n_bpair_eval > info->heldout_n_bpair_heldout ||
+				   info->heldout_n_raw_eval > info->heldout_n_raw_heldout ||
+				   !isfinite(info->heldout_mean_expected_energy) ||
+				   !isfinite(info->heldout_mean_min_energy) ||
+				   !isfinite(info->heldout_mean_entropy) ||
+				   !isfinite(info->heldout_mean_pU) ||
+				   !isfinite(info->heldout_mean_best_normalized_distance) ||
+				   !isfinite(info->heldout_short_distance_frac) ||
+				   info->heldout_mean_entropy < 0.0 ||
+				   info->heldout_mean_pU < 0.0 || info->heldout_mean_pU > 1.0 ||
+				   info->heldout_short_distance_frac < 0.0 ||
+				   info->heldout_short_distance_frac > 1.0) {
+			add_example(audit, "manifest heldout fields are out of range");
+			failed = 1;
+		} else if (info->heldout_enabled == 0 &&
+				   (info->heldout_n_raw_heldout != 0 ||
+					info->heldout_n_bpair_eval != 0 ||
+					info->heldout_n_raw_eval != 0 ||
+					info->heldout_fraction != 0.0)) {
+			add_example(audit, "manifest heldout disabled fields are inconsistent");
+			failed = 1;
+		} else if (info->heldout_enabled == 1 &&
+				   (info->heldout_fraction <= 0.0 ||
+					info->heldout_n_raw_heldout <= 0 ||
+					info->heldout_n_bpair_heldout <= 0)) {
+			add_example(audit, "manifest heldout enabled fields are inconsistent");
+			failed = 1;
+		}
+	}
+	if (!info->seen[MK_USES_PHASE_LABELS]) {
+		add_example(audit, "manifest missing uses_phase_labels");
+		failed = 1;
+	} else if (info->uses_phase_labels != 0) {
+		add_example(audit, "manifest top-level uses_phase_labels must be 0");
+		failed = 1;
+	}
+	if (!(info->seen[MK_INPUT_CONTACT_SOURCE] &&
+		  info->seen[MK_USES_CHARM_OR_REFERENCE] &&
+		  info->seen[MK_USES_CHARM_FOR_TRAINING] &&
+		  info->seen[MK_REFERENCE_DERIVED_POSITIVE_CONTROL])) {
+		add_example(audit, "manifest missing top-level training-boundary fields");
+		failed = 1;
+		} else {
+			const int allow_reference = env_flag_enabled("HK_BLIND_AUDIT_ALLOW_REFERENCE_DERIVED_TRAINING");
+			const int allow_nonstandard = env_flag_enabled("HK_BLIND_AUDIT_ALLOW_NONSTANDARD_PAIRS");
+			if (info->uses_charm_or_reference != 0 ||
+				info->uses_charm_for_training != 0 ||
+				info->reference_derived_positive_control != 0) {
+			if (!allow_reference) {
+				add_example(audit, "manifest top-level reference/CHARM training flags are nonzero");
+				failed = 1;
+				}
+			} else if (strcmp(info->input_contact_source, "raw_pairs") != 0) {
+				if (!(allow_nonstandard &&
+					  strcmp(info->input_contact_source, "contacts_seg_derived_pairs") == 0)) {
+					add_example(audit, "manifest input_contact_source is not raw_pairs for blind training");
+					failed = 1;
+				}
+			}
+		}
+	if (!info->seen[MK_APPROVED_P9016_RAW_PAIRS_REALPATH]) {
+		add_example(audit, "manifest missing approved_p9016_raw_pairs_realpath");
+		failed = 1;
+		} else if (info->approved_p9016_raw_pairs_realpath != 1) {
+			const int allow_custom = env_flag_enabled("HK_BLIND_AUDIT_ALLOW_CUSTOM_RAW_PAIRS");
+			const int allow_nonstandard = env_flag_enabled("HK_BLIND_AUDIT_ALLOW_NONSTANDARD_PAIRS");
+			const int allow_reference = env_flag_enabled("HK_BLIND_AUDIT_ALLOW_REFERENCE_DERIVED_TRAINING");
+			if (!allow_custom && !allow_nonstandard && !allow_reference) {
+				add_example(audit, "manifest approved_p9016_raw_pairs_realpath is not 1");
+				failed = 1;
+			}
+	}
 	if (strcmp(info->raw_posterior_same_bin_policy, "uniform_unknown_rows") != 0) {
 		add_example(audit, "manifest raw posterior same-bin policy is not uniform_unknown_rows");
 		failed = 1;
 	}
 	if (!isfinite(info->min_sep_unit) || info->min_sep_unit < 0.0 ||
 		!isfinite(info->lambda_sep) || info->lambda_sep < 0.0 ||
+		!isfinite(info->lambda_copytrack) || info->lambda_copytrack < 0.0 ||
+		!isfinite(info->lambda_global_copytrack) || info->lambda_global_copytrack < 0.0 ||
+		!isfinite(info->lambda_normdir_copytrack) || info->lambda_normdir_copytrack < 0.0 ||
+		!isfinite(info->normdir_copytrack_eps_unit) || info->normdir_copytrack_eps_unit < 0.0 ||
 		!isfinite(info->relax_step) || info->relax_step < 0.0) {
 		add_example(audit, "manifest separation/relax value out of range");
+		failed = 1;
+	}
+	if (info->lambda_normdir_copytrack > 0.0 && info->normdir_copytrack_eps_unit <= 0.0) {
+		add_example(audit, "normdir copytrack eps must be positive when normdir force is enabled");
+		failed = 1;
+	}
+	if (info->copytrack_uses_phase_labels != 0 ||
+		info->copytrack_uses_charm_or_reference != 0) {
+		add_example(audit, "copytrack manifest is not blind-safe");
+		failed = 1;
+	}
+	if (info->global_copytrack_uses_phase_labels != 0 ||
+		info->global_copytrack_uses_charm_or_reference != 0) {
+		add_example(audit, "global copytrack manifest is not blind-safe");
+		failed = 1;
+	}
+	if (info->normdir_copytrack_uses_phase_labels != 0 ||
+		info->normdir_copytrack_uses_charm_or_reference != 0) {
+		add_example(audit, "normdir copytrack manifest is not blind-safe");
 		failed = 1;
 	}
 	if (!isfinite(info->temperature_start) || info->temperature_start <= 0.0 ||
@@ -926,9 +1447,312 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example(audit, "manifest lambda_chr_sep must remain zero");
 		failed = 1;
 	}
-	if (strcmp(info->init_mode, "random_diploid") == 0) {
-		if (!check_close(info->init_eps_effective, 0.0) ||
-			info->init_scale_effective <= 0.0) {
+	if (info->seen[MK_TRANS_CHR_PAIR_PRIOR_LAMBDA] ||
+		info->seen[MK_TRANS_CHR_PAIR_PRIOR_EPS] ||
+		info->seen[MK_TRANS_CHR_PAIR_PRIOR_POWER] ||
+		info->seen[MK_TRANS_CHR_PAIR_PRIOR_WARMUP_ITER] ||
+		info->seen[MK_TRANS_CHR_PAIR_PRIOR_MODE]) {
+		if (!(info->seen[MK_TRANS_CHR_PAIR_PRIOR_LAMBDA] &&
+			  info->seen[MK_TRANS_CHR_PAIR_PRIOR_EPS] &&
+			  info->seen[MK_TRANS_CHR_PAIR_PRIOR_POWER] &&
+			  info->seen[MK_TRANS_CHR_PAIR_PRIOR_WARMUP_ITER] &&
+			  info->seen[MK_TRANS_CHR_PAIR_PRIOR_MODE]) ||
+			!isfinite(info->trans_chr_pair_prior_lambda) ||
+			info->trans_chr_pair_prior_lambda < 0.0 ||
+			info->trans_chr_pair_prior_lambda > 1.0 ||
+			!isfinite(info->trans_chr_pair_prior_eps) ||
+			info->trans_chr_pair_prior_eps < 0.0 ||
+			!isfinite(info->trans_chr_pair_prior_power) ||
+			info->trans_chr_pair_prior_power < 0.0 ||
+			info->trans_chr_pair_prior_warmup_iter < 0) {
+			add_example(audit, "manifest trans chromosome-pair prior metadata out of range");
+			failed = 1;
+		}
+		if (info->trans_chr_pair_prior_lambda > 0.0) {
+			if (strcmp(info->trans_chr_pair_prior_mode, "blind_posterior_chrom_pair") != 0) {
+				add_example(audit, "manifest trans chromosome-pair prior mode is inconsistent");
+				failed = 1;
+			}
+		} else if (strcmp(info->trans_chr_pair_prior_mode, "off") != 0) {
+			add_example(audit, "manifest trans chromosome-pair prior mode should be off");
+			failed = 1;
+		}
+		if (info->seen[MK_TRANS_CHR_PAIR_PRIOR_USES_PHASE_LABELS] &&
+			info->trans_chr_pair_prior_uses_phase_labels != 0) {
+			add_example(audit, "manifest trans chromosome-pair prior uses phase labels");
+			failed = 1;
+		}
+		if (info->seen[MK_TRANS_CHR_PAIR_PRIOR_USES_CHARM_OR_REFERENCE] &&
+			info->trans_chr_pair_prior_uses_charm_or_reference != 0) {
+			add_example(audit, "manifest trans chromosome-pair prior uses CHARM/reference");
+			failed = 1;
+		}
+	}
+	if (info->seen[MK_TRANS_CHR_PAIR_MSTEP_LAMBDA] ||
+		info->seen[MK_TRANS_CHR_PAIR_MSTEP_EPS] ||
+		info->seen[MK_TRANS_CHR_PAIR_MSTEP_POWER] ||
+		info->seen[MK_TRANS_CHR_PAIR_MSTEP_WARMUP_ITER] ||
+		info->seen[MK_TRANS_CHR_PAIR_MSTEP_MODE]) {
+		if (!(info->seen[MK_TRANS_CHR_PAIR_MSTEP_LAMBDA] &&
+			  info->seen[MK_TRANS_CHR_PAIR_MSTEP_EPS] &&
+				  info->seen[MK_TRANS_CHR_PAIR_MSTEP_POWER] &&
+				  info->seen[MK_TRANS_CHR_PAIR_MSTEP_WARMUP_ITER] &&
+				  info->seen[MK_TRANS_CHR_PAIR_MSTEP_MODE] &&
+				  info->seen[MK_TRANS_CHR_PAIR_MSTEP_SCOPE] &&
+				  info->seen[MK_TRANS_CHR_PAIR_MSTEP_APPLICATION_POINT] &&
+				  info->seen[MK_TRANS_CHR_PAIR_MSTEP_USES_PHASE_LABELS] &&
+				  info->seen[MK_TRANS_CHR_PAIR_MSTEP_USES_CHARM_OR_REFERENCE]) ||
+			!isfinite(info->trans_chr_pair_mstep_lambda) ||
+			info->trans_chr_pair_mstep_lambda < 0.0 ||
+			info->trans_chr_pair_mstep_lambda > 1.0 ||
+			!isfinite(info->trans_chr_pair_mstep_eps) ||
+			info->trans_chr_pair_mstep_eps < 0.0 ||
+			!isfinite(info->trans_chr_pair_mstep_power) ||
+			info->trans_chr_pair_mstep_power < 0.0 ||
+			info->trans_chr_pair_mstep_warmup_iter < 0) {
+			add_example(audit, "manifest trans chromosome-pair M-step metadata out of range");
+			failed = 1;
+		}
+		if (info->trans_chr_pair_mstep_lambda > 0.0) {
+			if (strcmp(info->trans_chr_pair_mstep_mode, "blind_posterior_chrom_pair_mstep") != 0) {
+				add_example(audit, "manifest trans chromosome-pair M-step mode is inconsistent");
+				failed = 1;
+			}
+		} else if (strcmp(info->trans_chr_pair_mstep_mode, "off") != 0) {
+			add_example(audit, "manifest trans chromosome-pair M-step mode should be off");
+			failed = 1;
+		}
+		if (strcmp(info->trans_chr_pair_mstep_scope, "trans_edges_only") != 0) {
+			add_example(audit, "manifest trans chromosome-pair M-step scope is wrong");
+			failed = 1;
+		}
+		if (strcmp(info->trans_chr_pair_mstep_application_point, "post_estep_pre_softall_mstep") != 0) {
+			add_example(audit, "manifest trans chromosome-pair M-step application point is wrong");
+			failed = 1;
+		}
+			if (info->trans_chr_pair_mstep_uses_phase_labels != 0) {
+				add_example(audit, "manifest trans chromosome-pair M-step uses phase labels");
+				failed = 1;
+			}
+			if (info->trans_chr_pair_mstep_uses_charm_or_reference != 0) {
+				add_example(audit, "manifest trans chromosome-pair M-step uses CHARM/reference");
+				failed = 1;
+			}
+	}
+		if (info->seen[MK_TRANS_CONTACT_SCALING_MODE] ||
+			info->seen[MK_TRANS_K_MULTIPLIER] ||
+			info->seen[MK_TRANS_DSCALE_MULTIPLIER] ||
+			info->seen[MK_TRANS_D_SCALE_POSTERIOR_GAMMA] ||
+			info->seen[MK_TRANS_CONTACT_SCALING_SCOPE]) {
+			if (!(info->seen[MK_TRANS_CONTACT_SCALING_MODE] &&
+				  info->seen[MK_TRANS_K_MULTIPLIER] &&
+				  info->seen[MK_TRANS_DSCALE_MULTIPLIER] &&
+				  info->seen[MK_D_SCALE_POSTERIOR_GAMMA] &&
+				  info->seen[MK_TRANS_D_SCALE_POSTERIOR_GAMMA] &&
+				  info->seen[MK_TRANS_CONTACT_SCALING_SCOPE]) ||
+				!isfinite(info->trans_k_multiplier) ||
+				info->trans_k_multiplier < 0.0 ||
+				!isfinite(info->trans_dscale_multiplier) ||
+				info->trans_dscale_multiplier <= 0.0 ||
+				!isfinite(info->trans_d_scale_posterior_gamma) ||
+				info->trans_d_scale_posterior_gamma < 0.0) {
+			add_example(audit, "manifest trans contact scaling metadata out of range");
+			failed = 1;
+		}
+		if (strcmp(info->trans_contact_scaling_scope, "trans_edges_only") != 0) {
+			add_example(audit, "manifest trans contact scaling scope is not trans_edges_only");
+			failed = 1;
+		}
+			if (check_close(info->trans_k_multiplier, 1.0) &&
+				check_close(info->trans_dscale_multiplier, 1.0) &&
+				check_close(info->trans_d_scale_posterior_gamma,
+							info->d_scale_posterior_gamma)) {
+			if (strcmp(info->trans_contact_scaling_mode, "off") != 0) {
+				add_example(audit, "manifest trans contact scaling mode should be off");
+				failed = 1;
+			}
+		} else if (strcmp(info->trans_contact_scaling_mode, "trans_edge_scaling") != 0) {
+			add_example(audit, "manifest trans contact scaling mode is inconsistent");
+			failed = 1;
+		}
+		if (info->seen[MK_TRANS_CONTACT_SCALING_USES_PHASE_LABELS] &&
+			info->trans_contact_scaling_uses_phase_labels != 0) {
+			add_example(audit, "manifest trans contact scaling uses phase labels");
+			failed = 1;
+		}
+		if (info->seen[MK_TRANS_CONTACT_SCALING_USES_CHARM_OR_REFERENCE] &&
+			info->trans_contact_scaling_uses_charm_or_reference != 0) {
+			add_example(audit, "manifest trans contact scaling uses CHARM/reference");
+			failed = 1;
+		}
+	}
+		if (info->seen[MK_TRANS_TOP1_MSTEP_MODE] ||
+			info->seen[MK_TRANS_TOP1_MSTEP_MIN_PMAX] ||
+			info->seen[MK_TRANS_TOP1_MSTEP_MIN_MARGIN] ||
+		info->seen[MK_TRANS_TOP1_MSTEP_MIX_WEIGHT] ||
+		info->seen[MK_TRANS_TOP1_MSTEP_SCOPE] ||
+		info->seen[MK_TRANS_TOP1_MSTEP_APPLICATION_POINT]) {
+		if (!(info->seen[MK_TRANS_TOP1_MSTEP_MODE] &&
+			  info->seen[MK_TRANS_TOP1_MSTEP_MIN_PMAX] &&
+			  info->seen[MK_TRANS_TOP1_MSTEP_MIN_MARGIN] &&
+			  info->seen[MK_TRANS_TOP1_MSTEP_MIX_WEIGHT] &&
+			  info->seen[MK_TRANS_TOP1_MSTEP_SCOPE] &&
+			  info->seen[MK_TRANS_TOP1_MSTEP_APPLICATION_POINT]) ||
+			!isfinite(info->trans_top1_mstep_min_pmax) ||
+			info->trans_top1_mstep_min_pmax < 0.0 ||
+			info->trans_top1_mstep_min_pmax > 1.0 ||
+			!isfinite(info->trans_top1_mstep_min_margin) ||
+			info->trans_top1_mstep_min_margin < 0.0 ||
+			info->trans_top1_mstep_min_margin > 1.0 ||
+			!isfinite(info->trans_top1_mstep_mix_weight) ||
+			info->trans_top1_mstep_mix_weight < 0.0 ||
+			info->trans_top1_mstep_mix_weight > 1.0) {
+			add_example(audit, "manifest trans top1 M-step metadata out of range");
+			failed = 1;
+		}
+		if (strcmp(info->trans_top1_mstep_mode, "off") != 0 &&
+			strcmp(info->trans_top1_mstep_mode, "hard") != 0 &&
+			strcmp(info->trans_top1_mstep_mode, "mix") != 0) {
+			add_example(audit, "manifest trans top1 M-step mode is invalid");
+			failed = 1;
+		}
+		if (strcmp(info->trans_top1_mstep_scope, "trans_edges_only") != 0) {
+			add_example(audit, "manifest trans top1 M-step scope is not trans_edges_only");
+			failed = 1;
+		}
+		if (strcmp(info->trans_top1_mstep_application_point, "post_estep_pre_softall_mstep") != 0) {
+			add_example(audit, "manifest trans top1 M-step application point is wrong");
+			failed = 1;
+		}
+		if (strcmp(info->trans_top1_mstep_mode, "off") == 0 &&
+			(!check_close(info->trans_top1_mstep_min_pmax, 1.0) ||
+			 !check_close(info->trans_top1_mstep_min_margin, 1.0) ||
+			 !check_close(info->trans_top1_mstep_mix_weight, 0.0))) {
+			add_example(audit, "manifest trans top1 M-step off defaults are inconsistent");
+			failed = 1;
+		}
+		if (strcmp(info->trans_top1_mstep_mode, "hard") == 0 &&
+			!check_close(info->trans_top1_mstep_mix_weight, 1.0)) {
+			add_example(audit, "manifest trans top1 hard mode should have mix weight 1");
+			failed = 1;
+		}
+		if (info->seen[MK_TRANS_TOP1_MSTEP_USES_PHASE_LABELS] &&
+			info->trans_top1_mstep_uses_phase_labels != 0) {
+			add_example(audit, "manifest trans top1 M-step uses phase labels");
+			failed = 1;
+		}
+			if (info->seen[MK_TRANS_TOP1_MSTEP_USES_CHARM_OR_REFERENCE] &&
+				info->trans_top1_mstep_uses_charm_or_reference != 0) {
+				add_example(audit, "manifest trans top1 M-step uses CHARM/reference");
+					failed = 1;
+				}
+			}
+		if (info->seen[MK_TRANS_CALLABLE_ANCHOR_MODE] ||
+			info->seen[MK_TRANS_CALLABLE_ANCHOR_TOP_FRAC] ||
+			info->seen[MK_TRANS_CALLABLE_ANCHOR_MIX_WEIGHT] ||
+			info->seen[MK_TRANS_CALLABLE_ANCHOR_MIN_N_RAW] ||
+			info->seen[MK_TRANS_CALLABLE_ANCHOR_WARMUP_ITER]) {
+			if (!(info->seen[MK_TRANS_CALLABLE_ANCHOR_MODE] &&
+					  info->seen[MK_TRANS_CALLABLE_ANCHOR_TOP_FRAC] &&
+					  info->seen[MK_TRANS_CALLABLE_ANCHOR_MIX_WEIGHT] &&
+					  info->seen[MK_TRANS_CALLABLE_ANCHOR_MIN_N_RAW] &&
+					  info->seen[MK_TRANS_CALLABLE_ANCHOR_WARMUP_ITER] &&
+					  info->seen[MK_TRANS_CALLABLE_ANCHOR_USES_PHASE_LABELS] &&
+					  info->seen[MK_TRANS_CALLABLE_ANCHOR_USES_CHARM_OR_REFERENCE]) ||
+				!isfinite(info->trans_callable_anchor_top_frac) ||
+				info->trans_callable_anchor_top_frac < 0.0 ||
+				info->trans_callable_anchor_top_frac > 1.0 ||
+				!isfinite(info->trans_callable_anchor_mix_weight) ||
+				info->trans_callable_anchor_mix_weight < 0.0 ||
+				info->trans_callable_anchor_mix_weight > 1.0 ||
+				info->trans_callable_anchor_min_n_raw < 0 ||
+				info->trans_callable_anchor_warmup_iter < 0) {
+				add_example(audit, "manifest trans callable-anchor metadata out of range");
+				failed = 1;
+			}
+			if (strcmp(info->trans_callable_anchor_mode, "off") != 0 &&
+				strcmp(info->trans_callable_anchor_mode, "neg_entropy") != 0 &&
+				strcmp(info->trans_callable_anchor_mode, "pmax") != 0 &&
+				strcmp(info->trans_callable_anchor_mode, "margin") != 0) {
+				add_example(audit, "manifest trans callable-anchor mode is invalid");
+				failed = 1;
+			}
+				if (info->trans_callable_anchor_uses_phase_labels != 0) {
+					add_example(audit, "manifest trans callable-anchor uses phase labels");
+					failed = 1;
+				}
+				if (info->trans_callable_anchor_uses_charm_or_reference != 0) {
+					add_example(audit, "manifest trans callable-anchor uses CHARM/reference");
+					failed = 1;
+				}
+		}
+			if (info->seen[MK_TRANS_GATE_MODE] ||
+				info->seen[MK_TRANS_GATE_MIN_PMAX] ||
+			info->seen[MK_TRANS_GATE_MIN_MARGIN] ||
+			info->seen[MK_TRANS_GATE_MIN_NEG_ENTROPY] ||
+			info->seen[MK_TRANS_GATE_SCOPE] ||
+			info->seen[MK_TRANS_GATE_APPLICATION_POINT] ||
+			info->seen[MK_TRANS_GATE_SOURCE]) {
+			if (!(info->seen[MK_TRANS_GATE_MODE] &&
+				  info->seen[MK_TRANS_GATE_MIN_PMAX] &&
+				  info->seen[MK_TRANS_GATE_MIN_MARGIN] &&
+				  info->seen[MK_TRANS_GATE_MIN_NEG_ENTROPY] &&
+				  info->seen[MK_TRANS_GATE_SCOPE] &&
+				  info->seen[MK_TRANS_GATE_APPLICATION_POINT] &&
+				  info->seen[MK_TRANS_GATE_SOURCE]) ||
+				!isfinite(info->trans_gate_min_pmax) ||
+				info->trans_gate_min_pmax < 0.0 ||
+				info->trans_gate_min_pmax > 1.0 ||
+				!isfinite(info->trans_gate_min_margin) ||
+				info->trans_gate_min_margin < 0.0 ||
+				info->trans_gate_min_margin > 1.0 ||
+				!isfinite(info->trans_gate_min_neg_entropy) ||
+				info->trans_gate_min_neg_entropy < -log((double)HK_BLIND_N_STATE) - HK_AUDIT_TOL ||
+				info->trans_gate_min_neg_entropy > 0.0) {
+				add_example(audit, "manifest trans gate metadata out of range");
+				failed = 1;
+			}
+			if (strcmp(info->trans_gate_mode, "off") != 0 &&
+				strcmp(info->trans_gate_mode, "pmax") != 0 &&
+				strcmp(info->trans_gate_mode, "margin") != 0 &&
+				strcmp(info->trans_gate_mode, "neg_entropy") != 0 &&
+				strcmp(info->trans_gate_mode, "pmax_margin") != 0) {
+				add_example(audit, "manifest trans gate mode is invalid");
+				failed = 1;
+			}
+		if (strcmp(info->trans_gate_scope, "trans_raw_contacts_by_bpair_posterior") != 0) {
+			add_example(audit, "manifest trans gate scope is not trans_raw_contacts_by_bpair_posterior");
+			failed = 1;
+		}
+			if (strcmp(info->trans_gate_application_point, "post_estep_pre_softall_mstep") != 0) {
+				add_example(audit, "manifest trans gate application point is wrong");
+				failed = 1;
+			}
+			if (strcmp(info->trans_gate_source, "blind_current_posterior_confidence") != 0) {
+				add_example(audit, "manifest trans gate source is not blind posterior confidence");
+				failed = 1;
+			}
+			if (strcmp(info->trans_gate_mode, "off") == 0 &&
+				(!check_close(info->trans_gate_min_pmax, 1.0) ||
+				 !check_close(info->trans_gate_min_margin, 1.0) ||
+				 !check_close(info->trans_gate_min_neg_entropy, -log((double)HK_BLIND_N_STATE)))) {
+				add_example(audit, "manifest trans gate off defaults are inconsistent");
+				failed = 1;
+			}
+			if (info->seen[MK_TRANS_GATE_USES_PHASE_LABELS] &&
+				info->trans_gate_uses_phase_labels != 0) {
+				add_example(audit, "manifest trans gate uses phase labels");
+				failed = 1;
+			}
+			if (info->seen[MK_TRANS_GATE_USES_CHARM_OR_REFERENCE] &&
+				info->trans_gate_uses_charm_or_reference != 0) {
+				add_example(audit, "manifest trans gate uses CHARM/reference");
+				failed = 1;
+			}
+		}
+		if (strcmp(info->init_mode, "random_diploid") == 0) {
+			if (!check_close(info->init_eps_effective, 0.0) ||
+				info->init_scale_effective <= 0.0) {
 			add_example(audit, "manifest random_diploid init metadata is inconsistent");
 			failed = 1;
 		}
@@ -966,10 +1790,14 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 		add_example_fmt(audit, "manifest", 0, "bad final_sum_wedge_k", info->final_sum_wedge_k);
 		failed = 1;
 	}
+	const int trans_pair_prior_on = info->seen[MK_TRANS_CHR_PAIR_PRIOR_LAMBDA] &&
+		info->trans_chr_pair_prior_lambda > 0.0;
+	const char *expected_refresh_prior_mode = trans_pair_prior_on?
+		"blind_posterior_chrom_pair" : info->prior_mode;
 	if (info->posterior_refreshed_after_final_relax != 1 ||
 		!isfinite(info->posterior_refresh_temperature) ||
 		info->posterior_refresh_temperature <= 0.0 ||
-		strcmp(info->posterior_refresh_prior_mode, info->prior_mode) != 0 ||
+		strcmp(info->posterior_refresh_prior_mode, expected_refresh_prior_mode) != 0 ||
 		!isfinite(info->posterior_refresh_mean_kl) ||
 		info->posterior_refresh_mean_kl < -HK_AUDIT_TOL ||
 		!in_unit_range(info->posterior_refresh_top_state_switch_frac) ||
@@ -1002,6 +1830,26 @@ static int audit_manifest(const char *path, struct manifest_info *info, struct f
 	if (audit->forbidden_hits > 0) failed = 1;
 	if (failed && audit->bad_rows == 0) audit->bad_rows = 1;
 	return failed;
+}
+
+static int manifest_has_heldout_fields(const struct manifest_info *info)
+{
+	assert(info);
+	return info->seen[MK_HELDOUT_ENABLED] ||
+		   info->seen[MK_HELDOUT_FRACTION] ||
+		   info->seen[MK_HELDOUT_SEED] ||
+		   info->seen[MK_HELDOUT_N_INPUT_RAW_TOTAL] ||
+		   info->seen[MK_HELDOUT_N_RAW_TRAIN] ||
+		   info->seen[MK_HELDOUT_N_RAW_HELDOUT] ||
+		   info->seen[MK_HELDOUT_N_BPAIR_HELDOUT] ||
+		   info->seen[MK_HELDOUT_N_BPAIR_EVAL] ||
+		   info->seen[MK_HELDOUT_N_RAW_EVAL] ||
+		   info->seen[MK_HELDOUT_MEAN_EXPECTED_ENERGY] ||
+		   info->seen[MK_HELDOUT_MEAN_MIN_ENERGY] ||
+		   info->seen[MK_HELDOUT_MEAN_ENTROPY] ||
+		   info->seen[MK_HELDOUT_MEAN_PU] ||
+		   info->seen[MK_HELDOUT_MEAN_BEST_NORMALIZED_DISTANCE] ||
+		   info->seen[MK_HELDOUT_SHORT_DISTANCE_FRAC];
 }
 
 static void mark_bad_row(struct file_audit *audit, int *row_bad)
@@ -1268,7 +2116,10 @@ static int audit_loop_diag_file(const char *path, const struct manifest_info *in
 		"n_bad_iter", "n_relax_nonfinite_iter", "n_coord_nonfinite", "final_sum_wedge_k",
 		"final_mean_rho_train_bpair", "final_n_skipped_same_bin_bpairs",
 		"final_repulsion_energy", "final_repulsion_force_l1", "n_repulsion_nonfinite_step",
-		"repulsion_mode", "posterior_refreshed_after_final_relax", "posterior_refresh_temperature"
+		"repulsion_mode", "posterior_refreshed_after_final_relax", "posterior_refresh_temperature",
+		"final_copytrack_energy", "final_copytrack_force_l1", "n_copytrack_nonfinite_step",
+		"final_global_copytrack_energy", "final_global_copytrack_force_l1", "n_global_copytrack_nonfinite_step",
+		"final_normdir_copytrack_energy", "final_normdir_copytrack_force_l1", "n_normdir_copytrack_nonfinite_step"
 	};
 	FILE *fp = fopen(path, "r");
 	char header_line[HK_AUDIT_LINE_MAX];
@@ -1288,6 +2139,10 @@ static int audit_loop_diag_file(const char *path, const struct manifest_info *in
 	long long n_rep_considered, n_rep_blocked, n_rep_active;
 	double rep_energy, rep_force;
 	int n_rep_bad, rep_mode, posterior_refreshed;
+	double copytrack_energy, copytrack_force;
+	double global_copytrack_energy, global_copytrack_force;
+	double normdir_copytrack_energy, normdir_copytrack_force;
+	int n_copytrack_bad, n_global_copytrack_bad, n_normdir_copytrack_bad;
 	double refresh_temperature, refresh_kl, refresh_switch_frac, refresh_pu_before, refresh_pu_after;
 
 	audit_init(audit);
@@ -1350,7 +2205,16 @@ static int audit_loop_diag_file(const char *path, const struct manifest_info *in
 		tsv_get_double(header_fields, value_fields, n_header, n_value, "posterior_refresh_mean_kl", &refresh_kl) != 0 ||
 		tsv_get_double(header_fields, value_fields, n_header, n_value, "posterior_refresh_top_state_switch_frac", &refresh_switch_frac) != 0 ||
 		tsv_get_double(header_fields, value_fields, n_header, n_value, "posterior_refresh_mean_pU_before", &refresh_pu_before) != 0 ||
-		tsv_get_double(header_fields, value_fields, n_header, n_value, "posterior_refresh_mean_pU_after", &refresh_pu_after) != 0) {
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "posterior_refresh_mean_pU_after", &refresh_pu_after) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_copytrack_energy", &copytrack_energy) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_copytrack_force_l1", &copytrack_force) != 0 ||
+		tsv_get_i32(header_fields, value_fields, n_header, n_value, "n_copytrack_nonfinite_step", &n_copytrack_bad) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_global_copytrack_energy", &global_copytrack_energy) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_global_copytrack_force_l1", &global_copytrack_force) != 0 ||
+		tsv_get_i32(header_fields, value_fields, n_header, n_value, "n_global_copytrack_nonfinite_step", &n_global_copytrack_bad) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_normdir_copytrack_energy", &normdir_copytrack_energy) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "final_normdir_copytrack_force_l1", &normdir_copytrack_force) != 0 ||
+		tsv_get_i32(header_fields, value_fields, n_header, n_value, "n_normdir_copytrack_nonfinite_step", &n_normdir_copytrack_bad) != 0) {
 		add_example(audit, "loop diag parse failed");
 		++audit->bad_rows;
 		fclose(fp);
@@ -1383,6 +2247,18 @@ static int audit_loop_diag_file(const char *path, const struct manifest_info *in
 		add_example(audit, "loop diag repulsion bad counter is nonzero");
 		mark_bad_row(audit, &row_bad);
 	}
+	if (n_copytrack_bad != 0) {
+		add_example(audit, "loop diag copytrack bad counter is nonzero");
+		mark_bad_row(audit, &row_bad);
+	}
+	if (n_global_copytrack_bad != 0) {
+		add_example(audit, "loop diag global copytrack bad counter is nonzero");
+		mark_bad_row(audit, &row_bad);
+	}
+	if (n_normdir_copytrack_bad != 0) {
+		add_example(audit, "loop diag normdir copytrack bad counter is nonzero");
+		mark_bad_row(audit, &row_bad);
+	}
 	if (rep_mode != HK_BLIND_REPULSION_N2 && rep_mode != HK_BLIND_REPULSION_CELL) {
 		add_example(audit, "loop diag repulsion_mode is not N2/CELL");
 		mark_bad_row(audit, &row_bad);
@@ -1405,6 +2281,21 @@ static int audit_loop_diag_file(const char *path, const struct manifest_info *in
 	}
 	if (!isfinite(rep_energy) || rep_energy < 0.0 || !isfinite(rep_force) || rep_force < 0.0) {
 		add_example(audit, "loop diag bad repulsion summary value");
+		mark_bad_row(audit, &row_bad);
+	}
+	if (!isfinite(copytrack_energy) || copytrack_energy < 0.0 ||
+		!isfinite(copytrack_force) || copytrack_force < 0.0) {
+		add_example(audit, "loop diag bad copytrack summary value");
+		mark_bad_row(audit, &row_bad);
+	}
+	if (!isfinite(global_copytrack_energy) || global_copytrack_energy < 0.0 ||
+		!isfinite(global_copytrack_force) || global_copytrack_force < 0.0) {
+		add_example(audit, "loop diag bad global copytrack summary value");
+		mark_bad_row(audit, &row_bad);
+	}
+	if (!isfinite(normdir_copytrack_energy) || normdir_copytrack_energy < 0.0 ||
+		!isfinite(normdir_copytrack_force) || normdir_copytrack_force < 0.0) {
+		add_example(audit, "loop diag bad normdir copytrack summary value");
 		mark_bad_row(audit, &row_bad);
 	}
 	if (n_rep_considered < 0 || n_rep_blocked < 0 || n_rep_active < 0 ||
@@ -1558,6 +2449,122 @@ static int audit_raw_file(const char *path, const struct manifest_info *info, st
 	return failed;
 }
 
+static int audit_heldout_diag_file(const char *path, const struct manifest_info *info, struct file_audit *audit)
+{
+	static const char *const header_tokens[] = {
+		"enabled", "fraction", "seed", "n_input_raw_total", "n_raw_train", "n_raw_heldout",
+		"n_bpair_heldout", "n_bpair_eval", "n_raw_eval", "n_bpair_same_bin_skipped",
+		"n_raw_same_bin_skipped", "mean_expected_energy", "mean_min_energy", "mean_entropy",
+		"mean_pU", "mean_best_normalized_distance", "short_distance_frac"
+	};
+	FILE *fp = fopen(path, "r");
+	char header_line[HK_AUDIT_LINE_MAX];
+	char value_line[HK_AUDIT_LINE_MAX];
+	char *header_fields[HK_AUDIT_MAX_FIELDS];
+	char *value_fields[HK_AUDIT_MAX_FIELDS];
+	int n_header, n_value;
+	int failed = 0;
+	int row_bad = 0;
+	int enabled;
+	long long seed, n_input_raw_total, n_raw_train, n_raw_heldout;
+	long long n_bpair_heldout, n_bpair_eval, n_raw_eval;
+	long long n_bpair_same_bin_skipped, n_raw_same_bin_skipped;
+	double fraction, mean_expected_energy, mean_min_energy, mean_entropy;
+	double mean_pU, mean_best_normalized_distance, short_distance_frac;
+
+	audit_init(audit);
+	if (fp == 0) {
+		add_example(audit, "heldout diag open failed");
+		audit->bad_rows++;
+		return 1;
+	}
+	if (fgets(header_line, sizeof(header_line), fp) == 0) {
+		add_example(audit, "heldout diag missing header");
+		audit->bad_rows++;
+		fclose(fp);
+		return 1;
+	}
+	scan_forbidden_line(audit, "heldout_diag", 0, header_line);
+	failed |= check_header_tokens(audit, "heldout_diag", header_line, header_tokens,
+								  (int)(sizeof(header_tokens) / sizeof(header_tokens[0])));
+	if (fgets(value_line, sizeof(value_line), fp) == 0) {
+		add_example(audit, "heldout diag missing data row");
+		audit->bad_rows++;
+		fclose(fp);
+		return 1;
+	}
+	scan_forbidden_line(audit, "heldout_diag", 1, value_line);
+	audit->rows = 1;
+	trim_line(header_line);
+	trim_line(value_line);
+	n_header = split_tsv_line(header_line, header_fields, HK_AUDIT_MAX_FIELDS);
+	n_value = split_tsv_line(value_line, value_fields, HK_AUDIT_MAX_FIELDS);
+	if (tsv_get_i32(header_fields, value_fields, n_header, n_value, "enabled", &enabled) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "fraction", &fraction) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "seed", &seed) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "n_input_raw_total", &n_input_raw_total) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "n_raw_train", &n_raw_train) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "n_raw_heldout", &n_raw_heldout) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "n_bpair_heldout", &n_bpair_heldout) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "n_bpair_eval", &n_bpair_eval) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "n_raw_eval", &n_raw_eval) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "n_bpair_same_bin_skipped", &n_bpair_same_bin_skipped) != 0 ||
+		tsv_get_i64(header_fields, value_fields, n_header, n_value, "n_raw_same_bin_skipped", &n_raw_same_bin_skipped) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "mean_expected_energy", &mean_expected_energy) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "mean_min_energy", &mean_min_energy) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "mean_entropy", &mean_entropy) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "mean_pU", &mean_pU) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "mean_best_normalized_distance", &mean_best_normalized_distance) != 0 ||
+		tsv_get_double(header_fields, value_fields, n_header, n_value, "short_distance_frac", &short_distance_frac) != 0) {
+		add_example(audit, "heldout diag parse failed");
+		++audit->bad_rows;
+		fclose(fp);
+		return 1;
+	}
+	if (fgets(value_line, sizeof(value_line), fp) != 0) {
+		add_example(audit, "heldout diag has more than one data row");
+		++audit->bad_rows;
+		failed = 1;
+	}
+	fclose(fp);
+	if (enabled != info->heldout_enabled ||
+		!check_close(fraction, info->heldout_fraction) ||
+		seed != info->heldout_seed ||
+		n_input_raw_total != info->heldout_n_input_raw_total ||
+		n_raw_train != info->heldout_n_raw_train ||
+		n_raw_heldout != info->heldout_n_raw_heldout ||
+		n_bpair_heldout != info->heldout_n_bpair_heldout ||
+		n_bpair_eval != info->heldout_n_bpair_eval ||
+		n_raw_eval != info->heldout_n_raw_eval ||
+		!check_close(mean_expected_energy, info->heldout_mean_expected_energy) ||
+		!check_close(mean_min_energy, info->heldout_mean_min_energy) ||
+		!check_close(mean_entropy, info->heldout_mean_entropy) ||
+		!check_close(mean_pU, info->heldout_mean_pU) ||
+		!check_close(mean_best_normalized_distance, info->heldout_mean_best_normalized_distance) ||
+		!check_close(short_distance_frac, info->heldout_short_distance_frac)) {
+		add_example(audit, "heldout diag disagrees with manifest");
+		mark_bad_row(audit, &row_bad);
+	}
+	if ((enabled != 0 && enabled != 1) || !isfinite(fraction) || fraction < 0.0 ||
+		fraction >= 1.0 || n_input_raw_total < 0 || n_raw_train < 0 ||
+		n_raw_heldout < 0 || n_bpair_heldout < 0 || n_bpair_eval < 0 ||
+		n_raw_eval < 0 || n_bpair_same_bin_skipped < 0 ||
+		n_raw_same_bin_skipped < 0 ||
+		n_raw_train + n_raw_heldout != n_input_raw_total ||
+		n_bpair_eval + n_bpair_same_bin_skipped > n_bpair_heldout ||
+		n_raw_eval + n_raw_same_bin_skipped > n_raw_heldout ||
+		!isfinite(mean_expected_energy) || !isfinite(mean_min_energy) ||
+		!isfinite(mean_entropy) || !isfinite(mean_pU) ||
+		!isfinite(mean_best_normalized_distance) || !isfinite(short_distance_frac) ||
+		mean_entropy < 0.0 || mean_pU < 0.0 || mean_pU > 1.0 ||
+		short_distance_frac < 0.0 || short_distance_frac > 1.0) {
+		add_example(audit, "heldout diag fields are out of range");
+		mark_bad_row(audit, &row_bad);
+	}
+	if (row_bad || audit->bad_rows > 0 || audit->forbidden_hits > 0) failed = 1;
+	return failed;
+}
+
 static void print_examples(const char *label, const struct file_audit *audit)
 {
 	int i;
@@ -1581,11 +2588,13 @@ static int require_file(const char *label, const char *path)
 int main(int argc, char **argv)
 {
 	struct manifest_info info;
-	struct file_audit manifest_audit, bpair_audit, coords_audit, diag_audit, raw_audit;
-	char manifest_path[1024], bpair_path[1024], coords_path[1024], diag_path[1024], raw_path[1024];
+	struct file_audit manifest_audit, bpair_audit, coords_audit, diag_audit, raw_audit, heldout_audit;
+	char manifest_path[1024], bpair_path[1024], coords_path[1024], diag_path[1024];
+	char raw_path[1024], heldout_path[1024];
 	const char *outdir;
 	int failed = 0;
 	int audit_failed = 0;
+	int audit_heldout = 0;
 	int64_t raw_rows = 0, raw_bad_rows = 0, raw_forbidden_hits = 0;
 	int64_t forbidden_hits;
 
@@ -1595,6 +2604,7 @@ int main(int argc, char **argv)
 	audit_init(&coords_audit);
 	audit_init(&diag_audit);
 	audit_init(&raw_audit);
+	audit_init(&heldout_audit);
 
 	if (argc != 2 || argv[1][0] == 0) {
 		fprintf(stderr, "usage: %s OUTDIR\n", argv[0]);
@@ -1606,6 +2616,7 @@ int main(int argc, char **argv)
 	path_join(coords_path, sizeof(coords_path), outdir, "p9016_full.coords.tsv");
 	path_join(diag_path, sizeof(diag_path), outdir, "p9016_full.loop_diag.tsv");
 	path_join(raw_path, sizeof(raw_path), outdir, "p9016_full.raw_posterior.tsv");
+	path_join(heldout_path, sizeof(heldout_path), outdir, "p9016_full.heldout_diag.tsv");
 
 	failed |= require_file("manifest", manifest_path);
 	failed |= require_file("bpair posterior", bpair_path);
@@ -1617,6 +2628,9 @@ int main(int argc, char **argv)
 	if (audit_failed) {
 		goto summary;
 	}
+	audit_heldout = manifest_has_heldout_fields(&info) || file_exists(heldout_path);
+	if (audit_heldout)
+		failed |= require_file("heldout diag", heldout_path);
 	if (info.write_raw_posterior == 1)
 		failed |= require_file("raw posterior", raw_path);
 	if (failed) {
@@ -1627,6 +2641,8 @@ int main(int argc, char **argv)
 	audit_failed |= audit_bpair_file(bpair_path, &info, &bpair_audit);
 	audit_failed |= audit_coords_file(coords_path, &info, &coords_audit);
 	audit_failed |= audit_loop_diag_file(diag_path, &info, &diag_audit);
+	if (audit_heldout)
+		audit_failed |= audit_heldout_diag_file(heldout_path, &info, &heldout_audit);
 	if (info.write_raw_posterior == 1) {
 		audit_failed |= audit_raw_file(raw_path, &info, &raw_audit);
 		raw_rows = raw_audit.rows;
@@ -1638,12 +2654,14 @@ int main(int argc, char **argv)
 
 summary:
 	forbidden_hits = manifest_audit.forbidden_hits + bpair_audit.forbidden_hits +
-		coords_audit.forbidden_hits + diag_audit.forbidden_hits + raw_forbidden_hits;
+		coords_audit.forbidden_hits + diag_audit.forbidden_hits +
+		heldout_audit.forbidden_hits + raw_forbidden_hits;
 	if (audit_failed) {
 		print_examples("manifest", &manifest_audit);
 		print_examples("bpair", &bpair_audit);
 		print_examples("coords", &coords_audit);
 		print_examples("loop_diag", &diag_audit);
+		print_examples("heldout_diag", &heldout_audit);
 		print_examples("raw", &raw_audit);
 	}
 	fprintf(stderr,

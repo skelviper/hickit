@@ -68,6 +68,9 @@ test: smoke_blind_p9016_minimal
 run_blind_p9016_minimal.bin: run_blind_p9016_minimal.c $(BLIND_COMMON_OBJS) $(FDG_GPU_STAMP) hickit.h hkpriv.h krng.h
 	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) run_blind_p9016_minimal.c $(BLIND_COMMON_OBJS) -o $@ $(LDFLAGS) $(LIBS)
 
+run_blind_p9016_fixed_posterior_relax.bin: run_blind_p9016_fixed_posterior_relax.c $(BLIND_COMMON_OBJS) $(FDG_GPU_STAMP) hickit.h hkpriv.h krng.h
+	$(CC) $(CFLAGS) $(ASAN_FLAG) $(CPPFLAGS) $(INCLUDES) run_blind_p9016_fixed_posterior_relax.c $(BLIND_COMMON_OBJS) -o $@ $(LDFLAGS) $(LIBS)
+
 smoke_blind_p9016_minimal: run_blind_p9016_minimal.bin audit_blind_p9016_full_cpu_output.bin testdata/p9016_blind_smoke.pairs
 	rm -rf $(P9016_MINIMAL_SMOKE_ROOT)
 	mkdir -p $(SMOKE_RES_ROOT)
@@ -85,7 +88,7 @@ smoke_blind_p9016_minimal: run_blind_p9016_minimal.bin audit_blind_p9016_full_cp
 	HK_BLIND_P9016_LAMBDA_SEP=0.0 \
 	HK_BLIND_P9016_INIT_SEED=17 \
 	./run_blind_p9016_minimal.bin
-	./audit_blind_p9016_full_cpu_output.bin $(P9016_MINIMAL_SMOKE_ROOT)/minimal_soft_sep_off
+	HK_BLIND_AUDIT_ALLOW_CUSTOM_RAW_PAIRS=1 ./audit_blind_p9016_full_cpu_output.bin $(P9016_MINIMAL_SMOKE_ROOT)/minimal_soft_sep_off
 
 smoke_blind_p9016_sep_on: run_blind_p9016_minimal.bin audit_blind_p9016_full_cpu_output.bin testdata/p9016_blind_smoke.pairs
 	rm -rf $(P9016_SEP_ON_SMOKE_ROOT)
@@ -103,7 +106,7 @@ smoke_blind_p9016_sep_on: run_blind_p9016_minimal.bin audit_blind_p9016_full_cpu
 	HK_BLIND_P9016_MIN_SEP_UNIT=2.0 \
 	HK_BLIND_P9016_LAMBDA_SEP=0.05 \
 	./run_blind_p9016_minimal.bin
-	./audit_blind_p9016_full_cpu_output.bin $(P9016_SEP_ON_SMOKE_ROOT)/minimal_soft_sep_on_smoke
+	HK_BLIND_AUDIT_ALLOW_CUSTOM_RAW_PAIRS=1 ./audit_blind_p9016_full_cpu_output.bin $(P9016_SEP_ON_SMOKE_ROOT)/minimal_soft_sep_on_smoke
 	awk -F'\t' 'function abs(x){return x<0?-x:x} $$1=="min_sep_unit" && abs(($$2+0)-2.0)<1e-6 { found=1 } END { exit found?0:1 }' $(P9016_SEP_ON_SMOKE_ROOT)/minimal_soft_sep_on_smoke/p9016_full.manifest.tsv
 	awk -F'\t' 'function abs(x){return x<0?-x:x} $$1=="lambda_sep" && abs(($$2+0)-0.05)<1e-6 { found=1 } END { exit found?0:1 }' $(P9016_SEP_ON_SMOKE_ROOT)/minimal_soft_sep_on_smoke/p9016_full.manifest.tsv
 
@@ -125,7 +128,7 @@ smoke_blind_p9016_expected_sep: run_blind_p9016_minimal.bin audit_blind_p9016_fu
 	HK_BLIND_P9016_D_SCALE_MODE=expected_count \
 	HK_BLIND_P9016_D_SCALE_EPS_COUNT=0.001 \
 	./run_blind_p9016_minimal.bin
-	./audit_blind_p9016_full_cpu_output.bin $(P9016_EXPECTED_SEP_SMOKE_ROOT)/scaffold_expected_msep1p5_lsep0p5_smoke
+	HK_BLIND_AUDIT_ALLOW_CUSTOM_RAW_PAIRS=1 ./audit_blind_p9016_full_cpu_output.bin $(P9016_EXPECTED_SEP_SMOKE_ROOT)/scaffold_expected_msep1p5_lsep0p5_smoke
 	awk -F'\t' '$$1=="d_scale_mode" && $$2=="posterior_count" { found=1 } END { exit found?0:1 }' $(P9016_EXPECTED_SEP_SMOKE_ROOT)/scaffold_expected_msep1p5_lsep0p5_smoke/p9016_full.manifest.tsv
 	awk -F'\t' '$$1=="d_scale_mode_input_string" && $$2=="expected_count" { found=1 } END { exit found?0:1 }' $(P9016_EXPECTED_SEP_SMOKE_ROOT)/scaffold_expected_msep1p5_lsep0p5_smoke/p9016_full.manifest.tsv
 	awk -F'\t' '$$1=="legacy_expected_count_alias_used" && $$2=="1" { found=1 } END { exit found?0:1 }' $(P9016_EXPECTED_SEP_SMOKE_ROOT)/scaffold_expected_msep1p5_lsep0p5_smoke/p9016_full.manifest.tsv
@@ -148,9 +151,9 @@ smoke_blind_p9016_resolution_chain: run_blind_p9016_minimal.bin audit_blind_p901
 	HK_BLIND_P9016_MINIMAL_N_ITER=1 \
 	HK_BLIND_P9016_MINIMAL_RELAX_STEPS=1 \
 	./run_blind_p9016_minimal.bin
-	./audit_blind_p9016_full_cpu_output.bin $(P9016_RESOLUTION_CHAIN_SMOKE_ROOT)/4m/minimal_soft_sep_off
-	./audit_blind_p9016_full_cpu_output.bin $(P9016_RESOLUTION_CHAIN_SMOKE_ROOT)/1m/minimal_soft_sep_off
-	./audit_blind_p9016_full_cpu_output.bin $(P9016_RESOLUTION_CHAIN_SMOKE_ROOT)/200k/minimal_soft_sep_off
+	HK_BLIND_AUDIT_ALLOW_CUSTOM_RAW_PAIRS=1 ./audit_blind_p9016_full_cpu_output.bin $(P9016_RESOLUTION_CHAIN_SMOKE_ROOT)/4m/minimal_soft_sep_off
+	HK_BLIND_AUDIT_ALLOW_CUSTOM_RAW_PAIRS=1 ./audit_blind_p9016_full_cpu_output.bin $(P9016_RESOLUTION_CHAIN_SMOKE_ROOT)/1m/minimal_soft_sep_off
+	HK_BLIND_AUDIT_ALLOW_CUSTOM_RAW_PAIRS=1 ./audit_blind_p9016_full_cpu_output.bin $(P9016_RESOLUTION_CHAIN_SMOKE_ROOT)/200k/minimal_soft_sep_off
 
 audit_blind_p9016_full_cpu_output: audit_blind_p9016_full_cpu_output.bin
 

@@ -1,0 +1,23 @@
+CONFIG=p9016_pcgamma1_msep1_lsep0p5_copytrack0p03_prior0p5
+gamma=1 min_sep=1 lambda_sep=0.5 lambda_copytrack=0.03 prior_lambda=0.5
+minimal P9016: input=testdata/p9016_blind_smoke.pairs output_root=/tmp/hk_blind_test_res_021_smoke/021-smoke-p9016_trans_chr_pair_prior_1m/work_outputs/p9016_pcgamma1_msep1_lsep0p5_copytrack0p03_prior0p5 config=p9016_pcgamma1_msep1_lsep0p5_copytrack0p03_prior0p5 baseline=softall n_iter=1 relax_steps=1 relax_step=0.012 chain=0 init_mode=unphased_scaffold_split init_eps=0.5 init_noise=0 init_scale=10 init_seed=17 min_sep=1 lambda_sep=0.5 lambda_copytrack=0.029999999 trans_chr_pair_prior_lambda=0.5 trans_chr_pair_prior_eps=0.001 d_scale_mode=posterior_count d_scale_input=posterior_count d_scale_formula=n_raw*posterior_prob^1 d_scale_gamma=1 d_scale_eps=1e-06 relax_backend=cpu
+minimal P9016: stage 1/1 name=1m bin_size_bp=1000000 parent=0
+[M::hk_map_read] read 8 pairs
+[M::hk_bmap_gen] generated 10 beads
+[M::hk_bmap_gen] 2 bin pairs
+minimal P9016[1m]: build binned contacts
+minimal P9016[1m]: init mode=unphased_scaffold_split seed=17 scale=10
+[M::hk_fdg] mid_dist:1000000 max_nei:7
+[M::hk_fdg1_cpu] iter:10 elapsed:0.00s rep_coef:0.2092 RMS_force:3.1314 n_rep:1.7000 energy:0.8512,2.3188,0.0074 dist:1.9130,3.5043,1.2804
+[M::hk_fdg1_cpu] iter:20 elapsed:0.00s rep_coef:0.6615 RMS_force:0.8877 n_rep:2.4000 energy:0.1332,0.0501,0.0278 dist:1.2967,1.7238,1.2031
+[M::hk_fdg1_cpu] iter:30 elapsed:0.00s rep_coef:0.9352 RMS_force:0.4158 n_rep:2.7000 energy:0.0258,0.0000,0.0441 dist:1.0187,1.0583,1.1324
+[M::hk_fdg1_cpu] iter:40 elapsed:0.00s rep_coef:0.9907 RMS_force:0.2885 n_rep:2.9000 energy:0.0050,0.0000,0.0451 dist:0.9569,1.0557,1.1527
+[M::hk_fdg1_cpu] iter:50 elapsed:0.00s rep_coef:0.9987 RMS_force:0.2461 n_rep:2.9000 energy:0.0023,0.0000,0.0430 dist:0.9587,1.1124,1.1770
+minimal P9016[1m]: run softall, n_iter=1 relax_steps=1 relax_step=0.012 relax_backend=cpu
+[W::hk_sd_ploidy_XY] no sex chromosomes (identified by 'X' or 'Y' in chr names)
+minimal P9016[1m]: write outputs to /tmp/hk_blind_test_res_021_smoke/021-smoke-p9016_trans_chr_pair_prior_1m/work_outputs/p9016_pcgamma1_msep1_lsep0p5_copytrack0p03_prior0p5/p9016_pcgamma1_msep1_lsep0p5_copytrack0p03_prior0p5
+[W::hk_sd_ploidy_XY] no sex chromosomes (identified by 'X' or 'Y' in chr names)
+minimal P9016[1m]: status=OK final_entropy=1.320296 final_pU=0.95239228
+minimal P9016: summary /tmp/hk_blind_test_res_021_smoke/021-smoke-p9016_trans_chr_pair_prior_1m/work_outputs/p9016_pcgamma1_msep1_lsep0p5_copytrack0p03_prior0p5/matrix_summary.tsv
+manifest example: manifest posterior refresh fields are invalid
+audit status: FAIL n_raw=8 n_bpair=1 n_beads=10 bpair_rows=0 coord_rows=0 raw_rows=0 posterior_bad_rows=0 coord_bad_rows=0 raw_bad_rows=0 forbidden_string_hits=0
