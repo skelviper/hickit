@@ -1,0 +1,24 @@
+source_type	observation_id	stage	number_of_segments	number_of_pair_expansions	total_input_mass	total_state_mass	total_mstep_force_coefficient	notes	expected_total_state_mass	state_mass_pass	force_policy_pass	pass
+raw_pair	pmax_0.25_posterior_once	state_expansion_and_target_conversion	2	1	1.0	1.0	1.0	posterior enters force exactly once	1.0	1	1	1
+raw_pair	pmax_0.25_legacy_posterior_target	state_expansion_and_target_conversion	2	1	1.0	1.0	0.6299605249474366	FAIL: posterior also changes target distance	1.0	1	0	0
+raw_pair	pmax_0.5_posterior_once	state_expansion_and_target_conversion	2	1	1.0	1.0000000000000002	1.0000000000000002	posterior enters force exactly once	1.0	1	1	1
+raw_pair	pmax_0.5_legacy_posterior_target	state_expansion_and_target_conversion	2	1	1.0	1.0000000000000002	0.6720108670666023	FAIL: posterior also changes target distance	1.0	1	0	0
+raw_pair	pmax_0.75_posterior_once	state_expansion_and_target_conversion	2	1	1.0	1.0	1.0	posterior enters force exactly once	1.0	1	1	1
+raw_pair	pmax_0.75_legacy_posterior_target	state_expansion_and_target_conversion	2	1	1.0	1.0	0.7906177804040898	FAIL: posterior also changes target distance	1.0	1	0	0
+raw_pair	pmax_0.95_posterior_once	state_expansion_and_target_conversion	2	1	1.0	1.0	1.0	posterior enters force exactly once	1.0	1	1	1
+raw_pair	pmax_0.95_legacy_posterior_target	state_expansion_and_target_conversion	2	1	1.0	1.0	0.9466670177402065	FAIL: posterior also changes target distance	1.0	1	0	0
+raw_pair	pmax_0.999_posterior_once	state_expansion_and_target_conversion	2	1	1.0	1.0	1.0	posterior enters force exactly once	1.0	1	1	1
+raw_pair	pmax_0.999_legacy_posterior_target	state_expansion_and_target_conversion	2	1	1.0	1.0	0.9987362250657276	FAIL: posterior also changes target distance	1.0	1	0	0
+raw_pair	audit_posterior_sharpening_renormalized	posterior_sharpening_renormalized	2	1	1.0	0.9999999999999999	0.9999999999999999	power sharpening followed by normalization	1.0	1	1	1
+raw_pair	audit_entropy_gate_soft_weight	entropy_gate_soft_weight	2	1	1.0	0.4	0.4	gate rho=0.4 may abstain but cannot amplify source mass	0.4	1	1	1
+raw_pair	audit_contact_aggregation_two_raw	contact_aggregation_two_raw	2	2	2.0	2.0	2.0	two raw observations retain total mass two after aggregation	2.0	1	1	1
+raw_pair	audit_resampling_three_copies_normalized	resampling_three_copies_normalized	2	3	1.0	1.0	1.0	three resamples share one original-observation mass	1.0	1	1	1
+raw_pair	audit_resolution_change_four_children_normalized	resolution_change_four_children_normalized	2	4	1.0	1.0	1.0	four child-bin expansions share one parent-observation mass	1.0	1	1	1
+readchain_molecule	molecule_segments_2	all_pair_expansion_normalized	2	1	1.0	1.0	1.0	each pair receives 1/choose(m,2) before four-state expansion	1.0	1	1	1
+readchain_molecule_legacy	legacy_segments_2	all_pair_expansion_unnormalized	2	1	1.0	1.0	1.0	FAIL for m>2: current C pair-expansion baseline gives every derived pair unit mass	1.0	1	1	1
+readchain_molecule	molecule_segments_3	all_pair_expansion_normalized	3	3	1.0	1.0	1.0	each pair receives 1/choose(m,2) before four-state expansion	1.0	1	1	1
+readchain_molecule_legacy	legacy_segments_3	all_pair_expansion_unnormalized	3	3	1.0	3.0	3.0	FAIL for m>2: current C pair-expansion baseline gives every derived pair unit mass	1.0	0	0	0
+readchain_molecule	molecule_segments_4	all_pair_expansion_normalized	4	6	1.0	0.9999999999999999	0.9999999999999999	each pair receives 1/choose(m,2) before four-state expansion	1.0	1	1	1
+readchain_molecule_legacy	legacy_segments_4	all_pair_expansion_unnormalized	4	6	1.0	6.0	6.0	FAIL for m>2: current C pair-expansion baseline gives every derived pair unit mass	1.0	0	0	0
+readchain_molecule	molecule_segments_8	all_pair_expansion_normalized	8	28	1.0	0.9999999999999999	0.9999999999999999	each pair receives 1/choose(m,2) before four-state expansion	1.0	1	1	1
+readchain_molecule_legacy	legacy_segments_8	all_pair_expansion_unnormalized	8	28	1.0	28.0	28.0	FAIL for m>2: current C pair-expansion baseline gives every derived pair unit mass	1.0	0	0	0

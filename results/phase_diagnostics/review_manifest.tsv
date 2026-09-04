@@ -1,0 +1,24 @@
+field	value	source_file	notes
+review_package	phase-diagnostics-057-059-review	PHASE_DIAGNOSTICS_REVIEW.md	compact code and key-result branch
+public_base_commit	2df02c60261995b5297132852513917d7ceb0b29	git ls-remote origin phase	live remote base at package creation
+local_patch_base_commit	cfa590306e953cdc3a3ea35860b803a5669b895c	patches/phase_diagnostics_c_core.patch	unpublished parent required only to apply the C delta
+corrected_run_source_commit	fb1eebf522578ed4c31ba49d4d7ffbc8e3bba33e	results/phase_diagnostics/057/provenance.json	corrected experiment source
+corrected_results_commit	9fdd34855b5363f94d81d36a37d7a385a5499f53	docs/phase_diagnostics_final_report.md	logical 057-059 result generation
+formal_package_commit	38c1aa48e9a0a7a8c53ca6316b76ba11e52a0384	docs/phase_diagnostics_final_report.md	local packages 119-121 intentionally omitted here
+full_local_head	e94ca15787a5c55f5a1e70489eb6bb240ec57163	git rev-parse phase-diagnostics-057-059	source of curated files
+compact_code_commit	bccb04c285af15dba216198b1a2f79dddfafad17	git rev-parse HEAD~1	pure Python code plus review-only C patch
+resolution_bp	1000000	results/phase_diagnostics/057/run_manifest.tsv	P9016 and formal diagnostic resolution
+p9016_contact_count	1703888	docs/phase_diagnostics_final_report.md	1135454 cis and 568434 trans
+p9016_evaluation_contact_count	350034	docs/phase_diagnostics_final_report.md	206057 cis and 143977 trans
+truth_boundary	blind inference reads raw P9016 contacts only	docs/phase_model_audit.md	phase and CHARM/3DG restricted to ORACLE or evaluation
+copy_label_policy	chromosome-level Z2 gauge labels	docs/phase_diagnostics_final_report.md	copy0/copy1 are not maternal/paternal
+exp057_status	complete diagnostic decomposition	results/phase_diagnostics/057/run_manifest.tsv	ORACLE rows explicitly labeled
+exp058_real_status	PARTIAL	results/phase_diagnostics/058/split_manifest.tsv	P9016 split audit complete; repeated held-out fits not run
+exp059_status	complete synthetic diagnostic	results/phase_diagnostics/059/conditions.tsv	98 conditions; three replicates; not a P9016 information bound
+supported_claim	D	docs/phase_diagnostics_final_report.md	stable blind per-cell diploid reconstruction not demonstrated
+python_test_status	47 passed	results/phase_diagnostics/test_python.log	run in Conda analysis environment
+c_test_status	PASS in full source tree	results/phase_diagnostics/test_c.log	not rebuilt against compact public base
+omitted_large_result	results/phase_diagnostics/059/metrics_long.tsv	results/phase_diagnostics/059/replicate_summary.tsv	35382711-byte long table replaced by aggregate summary
+omitted_large_result_sha256	a3188e748e4a87e4486b8b678808c399b543a4a323ef126d4647625b9f7ebe93	full local diagnostic result	permits integrity verification without publishing the large table
+omitted_formal_archives	test_res/116-121	docs/phase_diagnostics_final_report.md	superseded or duplicate packages
+omitted_data	raw pairs; reference coordinates; 3dg intermediates	PHASE_DIAGNOSTICS_REVIEW.md	no sequencing input or large intermediate is published
