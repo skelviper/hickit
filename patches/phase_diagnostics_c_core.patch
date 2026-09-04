@@ -1,0 +1,454 @@
+diff --git a/.gitignore b/.gitignore
+index 1710be0..a81eb0f 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -15,3 +15,12 @@ test_blind_*
+ !test_blind_*.c
+ __pycache__/
+ .pytest_cache/
++test_res/smoke/
++results/phase_diagnostics/**/work/
++results/phase_diagnostics/**/logs/
++results/phase_diagnostics/**/raw/
++results/phase_diagnostics/**/*.pt
++results/phase_diagnostics/**/*.npy
++results/phase_diagnostics/**/*.npz
++results/phase_diagnostics/**/*.3dg
++results/phase_diagnostics/**/*.3dg.gz
+diff --git a/Makefile b/Makefile
+index ce20851..b0257ce 100644
+--- a/Makefile
++++ b/Makefile
+@@ -50,7 +50,7 @@ ifneq ($(gl),)
+ 	endif
+ endif
+ 
+-.PHONY: all clean depend test test_diploid_marginal test_p9016_geometry_evaluator_v1 test_p9016_unordered_homolog test_p9016_079_filter_off_causal test_p9016_corrected_convergence_launcher test_p9016_historical_gap_attribution test_p9016_denovo_estep_step_ablation test_p9016_069_posthoc_recovery test_p9016_071_corrected_repulsion_force_causal test_p9016_078_corrected_combined_candidate test_p9016_top1_gauge_correction test_force_causal_ablation test_p9016_force_mode test_p9016_force_mode_gpu test_blind_gradient_units test_blind_gradient_units_gpu test_blind_estep_scores test_blind_relax_step_policy test_blind_relax_step_policy_gpu test_blind_endpoint_backtracking test_p9016_endpoint_backtracking test_p9016_endpoint_backtracking_gpu test_p9016_fixed_source_coords test_optimizer_stability_control test_optimizer_stability_control_launcher test_audit_optimizer_trace_manifest test_graph_diagnostics test_fixed_posterior_graph_ablation test_formal_presplit_boundary smoke_blind_estep_modes smoke_blind_p9016_minimal smoke_blind_p9016_sep_on smoke_blind_p9016_expected_sep smoke_blind_p9016_resolution_chain smoke_blind_resolution_ploidy audit_blind_p9016_full_cpu_output
++.PHONY: all clean depend test test_phase_diagnostics test_diploid_marginal test_p9016_geometry_evaluator_v1 test_p9016_unordered_homolog test_p9016_079_filter_off_causal test_p9016_corrected_convergence_launcher test_p9016_historical_gap_attribution test_p9016_denovo_estep_step_ablation test_p9016_069_posthoc_recovery test_p9016_071_corrected_repulsion_force_causal test_p9016_078_corrected_combined_candidate test_p9016_top1_gauge_correction test_force_causal_ablation test_p9016_force_mode test_p9016_force_mode_gpu test_blind_gradient_units test_blind_gradient_units_gpu test_blind_estep_scores test_blind_relax_step_policy test_blind_relax_step_policy_gpu test_blind_endpoint_backtracking test_p9016_endpoint_backtracking test_p9016_endpoint_backtracking_gpu test_p9016_fixed_source_coords test_optimizer_stability_control test_optimizer_stability_control_launcher test_audit_optimizer_trace_manifest test_graph_diagnostics test_fixed_posterior_graph_ablation test_formal_presplit_boundary smoke_blind_estep_modes smoke_blind_p9016_minimal smoke_blind_p9016_sep_on smoke_blind_p9016_expected_sep smoke_blind_p9016_resolution_chain smoke_blind_resolution_ploidy audit_blind_p9016_full_cpu_output
+ .SUFFIXES: .c .o
+ 
+ .c.o:
+@@ -70,7 +70,10 @@ all: $(PROG)
+ hickit: $(OBJS) main.o
+ 	$(CC) $(LDFLAGS) -o $@ $^ $(ASAN_FLAG) $(LIBS_GL) $(LIBS)
+ 
+-test: test_blind_gradient_units test_blind_estep_scores test_blind_relax_step_policy test_blind_endpoint_backtracking test_p9016_endpoint_backtracking test_p9016_force_mode test_p9016_fixed_source_coords test_optimizer_stability_control test_optimizer_stability_control_launcher test_audit_optimizer_trace_manifest smoke_blind_estep_modes smoke_blind_p9016_minimal smoke_blind_p9016_sep_on smoke_blind_p9016_expected_sep smoke_blind_p9016_resolution_chain test_graph_diagnostics test_fixed_posterior_graph_ablation test_force_causal_ablation smoke_blind_resolution_ploidy test_diploid_marginal test_formal_presplit_boundary test_p9016_geometry_evaluator_v1 test_p9016_corrected_convergence_launcher test_p9016_historical_gap_attribution test_p9016_denovo_estep_step_ablation test_p9016_069_posthoc_recovery
++test: test_phase_diagnostics test_blind_gradient_units test_blind_estep_scores test_blind_relax_step_policy test_blind_endpoint_backtracking test_p9016_endpoint_backtracking test_p9016_force_mode test_p9016_fixed_source_coords test_optimizer_stability_control test_optimizer_stability_control_launcher test_audit_optimizer_trace_manifest smoke_blind_estep_modes smoke_blind_p9016_minimal smoke_blind_p9016_sep_on smoke_blind_p9016_expected_sep smoke_blind_p9016_resolution_chain test_graph_diagnostics test_fixed_posterior_graph_ablation test_force_causal_ablation smoke_blind_resolution_ploidy test_diploid_marginal test_formal_presplit_boundary test_p9016_geometry_evaluator_v1 test_p9016_corrected_convergence_launcher test_p9016_historical_gap_attribution test_p9016_denovo_estep_step_ablation test_p9016_069_posthoc_recovery
++
++test_phase_diagnostics:
++	conda run -n analysis python -m pytest -q tests/test_phase_diagnostics.py
+ 
+ test_diploid_marginal:
+ 	conda run -n analysis python -m pytest -q prototype/diploid_marginal/tests
+@@ -217,6 +220,7 @@ smoke_blind_estep_modes: run_blind_p9016_minimal.bin audit_blind_p9016_full_cpu_
+ 	HK_BLIND_P9016_MINIMAL_RELAX_STEPS=0 \
+ 	HK_BLIND_P9016_ALLOW_LEGACY_INTERNAL_HELDOUT=1 \
+ 	HK_BLIND_P9016_HELDOUT_FRACTION=0.25 \
++	HK_BLIND_P9016_ESTEP_SCORE_MODE=legacy_fdg_flat \
+ 	./run_blind_p9016_minimal.bin
+ 	HK_BLIND_AUDIT_ALLOW_CUSTOM_RAW_PAIRS=1 ./audit_blind_p9016_full_cpu_output.bin $(SMOKE_RES_ROOT)/hk_blind_estep_modes_smoke/legacy_heldout/legacy_internal_heldout
+ 	awk -F'\t' '$$1=="legacy_estep_reproducibility_mode" && $$2=="1" { legacy=1 } $$1=="heldout_enabled" && $$2=="1" { enabled=1 } $$1=="heldout_n_raw_heldout" && ($$2+0)>0 { heldout=1 } END { exit legacy&&enabled&&heldout?0:1 }' $(SMOKE_RES_ROOT)/hk_blind_estep_modes_smoke/legacy_heldout/legacy_internal_heldout/p9016_full.manifest.tsv
+@@ -411,6 +415,7 @@ smoke_blind_p9016_minimal: run_blind_p9016_minimal.bin audit_blind_p9016_full_cp
+ 	HK_BLIND_P9016_MIN_SEP_UNIT=0.0 \
+ 	HK_BLIND_P9016_LAMBDA_SEP=0.0 \
+ 	HK_BLIND_P9016_INIT_SEED=17 \
++	HK_BLIND_P9016_ESTEP_SCORE_MODE=legacy_fdg_flat \
+ 	./run_blind_p9016_minimal.bin
+ 	HK_BLIND_AUDIT_ALLOW_CUSTOM_RAW_PAIRS=1 ./audit_blind_p9016_full_cpu_output.bin $(P9016_MINIMAL_SMOKE_ROOT)/minimal_soft_sep_off
+ 	awk -F'\t' '$$1=="estep_prior_semantics" && $$2=="legacy_normalized_prior" { semantics=1 } $$1=="legacy_estep_reproducibility_mode" && $$2=="1" { legacy=1 } END { exit semantics&&legacy?0:1 }' $(P9016_MINIMAL_SMOKE_ROOT)/minimal_soft_sep_off/p9016_full.manifest.tsv
+diff --git a/blind.c b/blind.c
+index d085b93..ab7af84 100644
+--- a/blind.c
++++ b/blind.c
+@@ -239,6 +239,8 @@ const char *hk_blind_estep_score_mode_name(int mode)
+ 	case HK_BLIND_ESTEP_SCORE_LOGDIST2: return "logdist2";
+ 	case HK_BLIND_ESTEP_SCORE_MONOTONIC_POWERLAW: return "monotonic_powerlaw";
+ 	case HK_BLIND_ESTEP_SCORE_DIST2: return "dist2";
++	case HK_BLIND_ESTEP_SCORE_MONOTONE_LOG: return "monotone_log";
++	case HK_BLIND_ESTEP_SCORE_MONOTONE_LOGISTIC: return "monotone_logistic";
+ 	default: return "unknown";
+ 	}
+ }
+@@ -419,7 +421,9 @@ int hk_blind_estep_score_mode_valid(int mode)
+ 	return mode == HK_BLIND_ESTEP_SCORE_FDG_FLAT ||
+ 		   mode == HK_BLIND_ESTEP_SCORE_LOGDIST2 ||
+ 		   mode == HK_BLIND_ESTEP_SCORE_MONOTONIC_POWERLAW ||
+-		   mode == HK_BLIND_ESTEP_SCORE_DIST2;
++		   mode == HK_BLIND_ESTEP_SCORE_DIST2 ||
++		   mode == HK_BLIND_ESTEP_SCORE_MONOTONE_LOG ||
++		   mode == HK_BLIND_ESTEP_SCORE_MONOTONE_LOGISTIC;
+ }
+ 
+ int hk_blind_base_k_mode_valid(int mode)
+@@ -1186,6 +1190,13 @@ static float hk_blind_estep_energy_from_distance(const struct hk_fdg_conf *conf,
+ 		return k * log1pf((r * r) / 1.0e-6f);
+ 	if (estep_score_mode == HK_BLIND_ESTEP_SCORE_MONOTONIC_POWERLAW)
+ 		return k * log1pf(r * r);
++	if (estep_score_mode == HK_BLIND_ESTEP_SCORE_MONOTONE_LOG)
++		return k * 2.0f * logf(r + 0.05f);
++	if (estep_score_mode == HK_BLIND_ESTEP_SCORE_MONOTONE_LOGISTIC) {
++		const float x = (r - 1.0f) / 0.25f;
++		/* softplus(x) is stable on both tails and equals -log(sigmoid(-x)). */
++		return k * (x > 20.0f? x : (x < -20.0f? expf(x) : log1pf(expf(x))));
++	}
+ 	return k * r * r;
+ }
+ 
+@@ -9032,6 +9043,7 @@ int hk_blind_write_raw_contact_posterior_tsv(FILE *fp, const struct hk_blind_pai
+ 		const struct hk_blind_bpair *bp;
+ 		float raw_p4[HK_BLIND_N_STATE];
+ 		float psame_raw, pcross_raw;
++		float raw_entropy, raw_pmax, raw_margin, raw_rho_output, raw_pU;
+ 		int32_t raw_bid[2];
+ 		char chr0_buf[32], chr1_buf[32];
+ 		const char *chr0, *chr1;
+@@ -9043,6 +9055,8 @@ int hk_blind_write_raw_contact_posterior_tsv(FILE *fp, const struct hk_blind_pai
+ 			memcpy(raw_p4, &set->raw_p4[(size_t)i * HK_BLIND_N_STATE], sizeof(raw_p4));
+ 		else
+ 			hk_blind_p4_to_raw_order(bp->p4, r2b->swapped, raw_p4);
++		hk_blind_p4_uncertainty(raw_p4, &raw_entropy, &raw_pmax, &raw_margin,
++								&raw_rho_output, &raw_pU);
+ 		psame_raw = raw_p4[HK_BLIND_STATE_00] + raw_p4[HK_BLIND_STATE_11];
+ 		pcross_raw = raw_p4[HK_BLIND_STATE_01] + raw_p4[HK_BLIND_STATE_10];
+ 		chr0 = hk_blind_chr_label(bmap, raw[i].chr[0], chr0_buf);
+@@ -9053,8 +9067,8 @@ int hk_blind_write_raw_contact_posterior_tsv(FILE *fp, const struct hk_blind_pai
+ 					r2b->bpair_id, bp->key.bid[0], bp->key.bid[1], (unsigned)r2b->swapped,
+ 					raw_p4[HK_BLIND_STATE_00], raw_p4[HK_BLIND_STATE_01],
+ 					raw_p4[HK_BLIND_STATE_10], raw_p4[HK_BLIND_STATE_11],
+-					bp->pU, psame_raw, pcross_raw, bp->entropy, bp->margin,
+-					bp->pmax, bp->rho_output,
++					raw_pU, psame_raw, pcross_raw, raw_entropy, raw_margin,
++					raw_pmax, raw_rho_output,
+ 					hk_blind_contact_class_name(hk_blind_bpair_contact_class_or_default(bp))) < 0)
+ 			return -1;
+ 	}
+diff --git a/eval/evaluate_p9016_baseline.py b/eval/evaluate_p9016_baseline.py
+index 5de4b62..e608518 100644
+--- a/eval/evaluate_p9016_baseline.py
++++ b/eval/evaluate_p9016_baseline.py
+@@ -1466,7 +1466,10 @@ def update_accuracy_stats(stats: dict[str, float], counts: np.ndarray, p4_truth_
+     pred = int(np.argmax(p4_truth_gauge))
+     pmax = float(np.max(p4_truth_gauge))
+     correct = int(counts[pred])
+-    pred_same = pred in (0, 3)
++    # Parity is a coarser probabilistic target: aggregate state mass before top1.
++    pred_same = float(p4_truth_gauge[0] + p4_truth_gauge[3]) >= float(
++        p4_truth_gauge[1] + p4_truth_gauge[2]
++    )
+     same_counts = int(counts[0] + counts[3])
+     cross_counts = int(counts[1] + counts[2])
+     same_cross_correct = same_counts if pred_same else cross_counts
+diff --git a/hickit.h b/hickit.h
+index 996c350..79ba5d2 100644
+--- a/hickit.h
++++ b/hickit.h
+@@ -81,6 +81,8 @@ enum hk_blind_estep_score_mode {
+ 	HK_BLIND_ESTEP_SCORE_LOGDIST2 = 1,
+ 	HK_BLIND_ESTEP_SCORE_DIST2 = 2,
+ 	HK_BLIND_ESTEP_SCORE_MONOTONIC_POWERLAW = 3,
++	HK_BLIND_ESTEP_SCORE_MONOTONE_LOG = 4,
++	HK_BLIND_ESTEP_SCORE_MONOTONE_LOGISTIC = 5,
+ 	HK_BLIND_ESTEP_SCORE_CONTACT_LOG_INTENSITY = HK_BLIND_ESTEP_SCORE_MONOTONIC_POWERLAW
+ };
+ 
+diff --git a/run_blind_p9016_minimal.c b/run_blind_p9016_minimal.c
+index d6abc77..e7a674a 100644
+--- a/run_blind_p9016_minimal.c
++++ b/run_blind_p9016_minimal.c
+@@ -1127,7 +1127,8 @@ static int load_minimal_params(struct hk_p9016_minimal_params *p)
+ 	if (p->cis_rate_mode < 0)
+ 		return -1;
+ 	p->legacy_estep_semantics =
+-		!p->estep_score_mode_explicit && !p->cis_rate_mode_explicit;
++		strcmp(p->estep_score_mode_input_string, "legacy_fdg_flat") == 0 &&
++		!p->cis_rate_mode_explicit;
+ 	if (!p->legacy_estep_semantics && p->trans_chr_pair_prior_lambda > 0.0f) {
+ 		fprintf(stderr, "HK_BLIND_P9016_TRANS_CHR_PAIR_PRIOR_LAMBDA must be 0 with explicit rate-score E-step semantics\n");
+ 		return -1;
+@@ -1208,7 +1209,7 @@ static int load_minimal_params(struct hk_p9016_minimal_params *p)
+ 		fprintf(stderr, "HK_BLIND_P9016_D_SCALE_MODE is too long\n");
+ 		return -1;
+ 	}
+-	if (strcmp(config_env, "raw_count") == 0) {
++	if (strcmp(config_env, "raw_count") == 0 || strcmp(config_env, "posterior_once") == 0) {
+ 		p->d_scale_mode = HK_BLIND_D_SCALE_RAW_COUNT;
+ 	} else if (strcmp(config_env, "posterior_count") == 0) {
+ 		p->d_scale_mode = HK_BLIND_D_SCALE_POSTERIOR_COUNT;
+@@ -1218,7 +1219,7 @@ static int load_minimal_params(struct hk_p9016_minimal_params *p)
+ 	} else if (strcmp(config_env, "tempered_posterior_count") == 0) {
+ 		p->d_scale_mode = HK_BLIND_D_SCALE_TEMPERED_POSTERIOR_COUNT;
+ 	} else {
+-		fprintf(stderr, "invalid HK_BLIND_P9016_D_SCALE_MODE=%s; expected raw_count, posterior_count, expected_count, or tempered_posterior_count\n",
++		fprintf(stderr, "invalid HK_BLIND_P9016_D_SCALE_MODE=%s; expected posterior_once, raw_count, posterior_count, expected_count, or tempered_posterior_count\n",
+ 				config_env);
+ 		return -1;
+ 	}
+@@ -1420,16 +1421,22 @@ static int parse_estep_score_mode(char *input, size_t input_size, int *is_explic
+ 	assert(input);
+ 	assert(input_size > 0);
+ 	if (is_explicit) *is_explicit = s && s[0]? 1 : 0;
+-	if (s == 0 || s[0] == 0) s = "fdg_flat";
+-	if (strcmp(s, "fdg_flat") == 0)
++	if (s == 0 || s[0] == 0) s = "monotone_log";
++	if (strcmp(s, "fdg_flat") == 0 || strcmp(s, "legacy_fdg_flat") == 0)
+ 		mode = HK_BLIND_ESTEP_SCORE_FDG_FLAT;
+ 	else if (strcmp(s, "logdist2") == 0)
+ 		mode = HK_BLIND_ESTEP_SCORE_LOGDIST2;
++	else if (strcmp(s, "dist2") == 0)
++		mode = HK_BLIND_ESTEP_SCORE_DIST2;
+ 	else if (strcmp(s, "monotonic_powerlaw") == 0 ||
+ 			 strcmp(s, "contact_log_intensity") == 0)
+ 		mode = HK_BLIND_ESTEP_SCORE_MONOTONIC_POWERLAW;
++	else if (strcmp(s, "monotone_log") == 0)
++		mode = HK_BLIND_ESTEP_SCORE_MONOTONE_LOG;
++	else if (strcmp(s, "monotone_logistic") == 0)
++		mode = HK_BLIND_ESTEP_SCORE_MONOTONE_LOGISTIC;
+ 	else {
+-		fprintf(stderr, "invalid HK_BLIND_P9016_ESTEP_SCORE_MODE=%s; expected fdg_flat, logdist2, monotonic_powerlaw, or contact_log_intensity\n", s);
++		fprintf(stderr, "invalid HK_BLIND_P9016_ESTEP_SCORE_MODE=%s; expected legacy_fdg_flat, fdg_flat, dist2, logdist2, monotonic_powerlaw, monotone_log, monotone_logistic, or contact_log_intensity\n", s);
+ 		return -1;
+ 	}
+ 	n = snprintf(input, input_size, "%s", s);
+@@ -5528,8 +5535,37 @@ static int run_minimal_config(struct hk_bmap *bmap, const struct hk_blind_pair *
+ 	return failed? 1 : 0;
+ }
+ 
+-int main(void)
++static int parse_cli(int argc, char **argv)
+ {
++	int i;
++	for (i = 1; i < argc; ++i) {
++		if (strcmp(argv[i], "--help") == 0) {
++			fprintf(stdout, "usage: %s [--estep-score MODE]\n", argv[0]);
++			fprintf(stdout, "MODE: monotone_log (default), monotone_logistic, dist2, logdist2, fdg_flat, or legacy_fdg_flat\n");
++			return 1;
++		}
++		if (strcmp(argv[i], "--estep-score") == 0) {
++			if (++i >= argc) {
++				fprintf(stderr, "--estep-score requires a mode\n");
++				return -1;
++			}
++			if (setenv("HK_BLIND_P9016_ESTEP_SCORE_MODE", argv[i], 1) != 0) {
++				fprintf(stderr, "failed to set --estep-score: %s\n", strerror(errno));
++				return -1;
++			}
++			continue;
++		}
++		fprintf(stderr, "unknown argument: %s (use --help)\n", argv[i]);
++		return -1;
++	}
++	return 0;
++}
++
++int main(int argc, char **argv)
++{
++	int cli_status = parse_cli(argc, argv);
++	if (cli_status != 0)
++		return cli_status > 0? 0 : 1;
+ 	const char *pairs_path = env_or_default("HK_BLIND_P9016_PAIRS", HK_P9016_DEFAULT_PAIRS);
+ 	const char *source_pairs_path = env_or_default("HK_BLIND_P9016_SOURCE_PAIRS_PATH", pairs_path);
+ 	int bin_size_bp = env_int_or_default("HK_BLIND_P9016_BIN_SIZE_BP",
+diff --git a/test_blind_estep_scores.c b/test_blind_estep_scores.c
+index 26edfaf..86f2ada 100644
+--- a/test_blind_estep_scores.c
++++ b/test_blind_estep_scores.c
+@@ -1,15 +1,142 @@
+ #include <math.h>
+ #include <stddef.h>
+ #include <stdio.h>
++#include <stdlib.h>
+ #include <string.h>
+ 
+ #include "hickit.h"
++#include "hkpriv.h"
+ 
+ static int close_enough(double a, double b)
+ {
+ 	return fabs(a - b) <= 1e-7 * fmax(1.0, fmax(fabs(a), fabs(b)));
+ }
+ 
++static double tsv_numeric_column(char *line, int target)
++{
++	char *field;
++	int column = 0;
++	for (field = strtok(line, "\t\n"); field; field = strtok(0, "\t\n"), ++column)
++		if (column == target)
++			return strtod(field, 0);
++	return NAN;
++}
++
++static int check_endpoint_canonicalization_roundtrip(void)
++{
++	struct hk_bmap bmap;
++	struct hk_bead beads[2];
++	struct hk_blind_pair raw[2];
++	struct hk_blind_raw2binned raw2binned[2];
++	struct hk_blind_bpair bpair;
++	struct hk_blind_bpair_set set;
++	float raw_p4[2 * HK_BLIND_N_STATE];
++	int state;
++
++	memset(&bmap, 0, sizeof(bmap));
++	memset(beads, 0, sizeof(beads));
++	memset(raw, 0, sizeof(raw));
++	memset(raw2binned, 0, sizeof(raw2binned));
++	memset(&bpair, 0, sizeof(bpair));
++	memset(&set, 0, sizeof(set));
++	bmap.d = hk_sd_init();
++	if (!bmap.d)
++		return -1;
++	beads[0].chr = hk_sd_put(bmap.d, "chr1", 1000000);
++	beads[1].chr = hk_sd_put(bmap.d, "chr2", 1000000);
++	beads[0].st = beads[1].st = 0;
++	beads[0].en = beads[1].en = 1000000;
++	bmap.n_beads = 2;
++	bmap.beads = beads;
++	hk_bmap_set_offcnt(&bmap);
++	raw[0].chr[0] = beads[0].chr;
++	raw[0].chr[1] = beads[1].chr;
++	raw[1].chr[0] = beads[1].chr;
++	raw[1].chr[1] = beads[0].chr;
++	raw[0].pos[0] = raw[0].pos[1] = raw[1].pos[0] = raw[1].pos[1] = 100;
++	for (state = 0; state < 2; ++state) {
++		struct hk_blind_bpair_key key;
++		uint8_t swapped = 0;
++		hk_blind_pair_to_bpair_key(&bmap, &raw[state], &key, &swapped);
++		if (key.bid[0] != 0 || key.bid[1] != 1 || swapped != (uint8_t)state) {
++			fprintf(stderr, "FAIL endpoint key canonicalization raw %d\n", state);
++			free(bmap.offcnt);
++			hk_sd_destroy(bmap.d);
++			return -1;
++		}
++		hk_blind_raw2binned_set(&raw2binned[state], 0, swapped);
++	}
++	bpair.key.bid[0] = 0;
++	bpair.key.bid[1] = 1;
++	bpair.n_raw = 2;
++	bpair.base_d_scale = bpair.base_k = 1.0f;
++	bpair.contact_class = HK_BLIND_CONTACT_TRANS;
++	set.bpairs = &bpair;
++	set.n_bpairs = 1;
++	set.raw = raw;
++	set.raw2binned = raw2binned;
++	set.raw_p4 = raw_p4;
++	set.n_raw = 2;
++
++	for (state = 0; state < HK_BLIND_N_STATE; ++state) {
++		float canonical[HK_BLIND_N_STATE] = {0.0f, 0.0f, 0.0f, 0.0f};
++		int s;
++		canonical[state] = 1.0f;
++		hk_blind_p4_to_raw_order(canonical, 0, &raw_p4[0]);
++		hk_blind_p4_to_raw_order(canonical, 1, &raw_p4[HK_BLIND_N_STATE]);
++		if (hk_blind_bpair_set_aggregate_raw_p4_to_bpair(&set) != 0) {
++			free(bmap.offcnt);
++			hk_sd_destroy(bmap.d);
++			return -1;
++		}
++		for (s = 0; s < HK_BLIND_N_STATE; ++s) {
++			double expected = s == state? 1.0 : 0.0;
++			if (!close_enough(bpair.p4[s], expected) ||
++				hk_blind_raw_state_to_canonical_state(s, 1) !=
++					(s == HK_BLIND_STATE_01? HK_BLIND_STATE_10 :
++					 s == HK_BLIND_STATE_10? HK_BLIND_STATE_01 : s)) {
++				fprintf(stderr, "FAIL endpoint state aggregation pure %d output %d\n", state, s);
++				free(bmap.offcnt);
++				hk_sd_destroy(bmap.d);
++				return -1;
++			}
++		}
++		{
++			FILE *fp = tmpfile();
++			char header[2048], row[2048], copy[2048];
++			int raw_state = hk_blind_raw_state_to_canonical_state(state, 1);
++			if (!fp || hk_blind_write_bpair_posterior_tsv(fp, &bmap, &set) != 0)
++				return -1;
++			rewind(fp);
++			if (!fgets(header, sizeof(header), fp) || !fgets(row, sizeof(row), fp))
++				return -1;
++			strcpy(copy, row);
++			if (!close_enough(tsv_numeric_column(copy, 11 + state), 1.0)) {
++				fprintf(stderr, "FAIL bpair posterior serialization/reload state %d\n", state);
++				return -1;
++			}
++			fclose(fp);
++			fp = tmpfile();
++			if (!fp || hk_blind_write_raw_contact_posterior_tsv(fp, raw, 2, &bmap, &set) != 0)
++				return -1;
++			rewind(fp);
++			if (!fgets(header, sizeof(header), fp) || !fgets(row, sizeof(row), fp) ||
++				!fgets(row, sizeof(row), fp))
++				return -1;
++			strcpy(copy, row);
++			if (!close_enough(tsv_numeric_column(copy, 11 + raw_state), 1.0)) {
++				fprintf(stderr, "FAIL reversed raw posterior serialization/reload state %d\n", state);
++				return -1;
++			}
++			fclose(fp);
++		}
++	}
++	free(bmap.offcnt);
++	hk_sd_destroy(bmap.d);
++	printf("PASS endpoint order canonicalization, all pure states, aggregation, and TSV roundtrip\n");
++	return 0;
++}
++
+ struct legacy_hk_blind_bpair_layout {
+ 	struct hk_blind_bpair_key key;
+ 	int32_t n_raw;
+@@ -141,6 +268,45 @@ static int check_kernel_target(void)
+ 	return 0;
+ }
+ 
++static int check_monotone_contact_likelihood_modes(void)
++{
++	struct hk_fdg_conf conf;
++	const float near_distance[HK_BLIND_N_STATE] = {0.0f, 0.0f, 0.0f, 0.0f};
++	const float far_distance[HK_BLIND_N_STATE] = {4.0f, 4.0f, 4.0f, 4.0f};
++	const int modes[] = {
++		HK_BLIND_ESTEP_SCORE_DIST2,
++		HK_BLIND_ESTEP_SCORE_LOGDIST2,
++		HK_BLIND_ESTEP_SCORE_MONOTONIC_POWERLAW,
++		HK_BLIND_ESTEP_SCORE_MONOTONE_LOG,
++		HK_BLIND_ESTEP_SCORE_MONOTONE_LOGISTIC
++	};
++	size_t i;
++	hk_fdg_conf_init(&conf);
++	for (i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
++		double near_score = hk_blind_contact_kernel_sum_from_distances(
++			&conf, near_distance, 1.0f, 1.0f, 1.0f, 1.0f,
++			modes[i], HK_BLIND_CONTACT_TRANS, 1.0f);
++		double far_score = hk_blind_contact_kernel_sum_from_distances(
++			&conf, far_distance, 1.0f, 1.0f, 1.0f, 1.0f,
++			modes[i], HK_BLIND_CONTACT_TRANS, 1.0f);
++		if (!hk_blind_estep_score_mode_valid(modes[i]) ||
++			!isfinite(near_score) || !isfinite(far_score) || near_score < far_score) {
++			fprintf(stderr, "FAIL non-monotone or unstable E-step mode %s: %.17g %.17g\n",
++				hk_blind_estep_score_mode_name(modes[i]), near_score, far_score);
++			return -1;
++		}
++	}
++	if (strcmp(hk_blind_estep_score_mode_name(HK_BLIND_ESTEP_SCORE_MONOTONE_LOG),
++			   "monotone_log") != 0 ||
++		strcmp(hk_blind_estep_score_mode_name(HK_BLIND_ESTEP_SCORE_MONOTONE_LOGISTIC),
++			   "monotone_logistic") != 0) {
++		fprintf(stderr, "FAIL new E-step score mode names\n");
++		return -1;
++	}
++	printf("PASS monotone E-step modes and near-zero stability\n");
++	return 0;
++}
++
+ static int check_actual_posterior_rate_path(void)
+ {
+ 	struct hk_fdg_conf conf;
+@@ -428,8 +594,10 @@ static int check_fixed_alpha_prior(void)
+ int main(void)
+ {
+ 	int failed = 0;
++	failed |= check_endpoint_canonicalization_roundtrip() != 0;
+ 	failed |= check_public_api_compatibility() != 0;
+ 	failed |= check_kernel_target() != 0;
++	failed |= check_monotone_contact_likelihood_modes() != 0;
+ 	failed |= check_actual_posterior_rate_path() != 0;
+ 	failed |= check_symmetries() != 0;
+ 	failed |= check_blind_density_model_alpha() != 0;
